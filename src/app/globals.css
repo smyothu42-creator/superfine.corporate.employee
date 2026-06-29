@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-sans), system-ui, sans-serif;
+  }
+
+  /* Visible keyboard focus on links and any element without its own ring */
+  a:focus-visible,
+  [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline: 2px solid #007078;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Respect users who prefer reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full;
+    background: #d9d2bd;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c4bca3;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-sans), system-ui, sans-serif;
+  }
+  .text-overline {
+    @apply text-2xs font-semibold uppercase tracking-[0.12em] text-muted-foreground;
+  }
+  .nums {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Hand-drawn line-art vibe from the site's hero — subtle dotted food texture */
+  .bg-pattern {
+    background-image: radial-gradient(rgba(0, 64, 69, 0.10) 1.5px, transparent 1.5px);
+    background-size: 18px 18px;
+  }
+  /* Multi-day panel slides out from under the "Hi Maya" box. */
+  .animate-reveal-down {
+    animation: reveal-down 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  @keyframes reveal-down {
+    from {
+      transform: translateY(-100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+}

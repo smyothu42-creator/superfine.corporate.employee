@@ -1,0 +1,887 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import {
+  CheckCircle2,
+  Check,
+  MapPin,
+  Clock,
+  CreditCard,
+  CalendarDays,
+  Lock,
+  Mail,
+  ShoppingBag,
+  Bell,
+  X,
+  Smartphone,
+  Pencil,
+  XCircle,
+} from "lucide-react";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
+import { ThemeSelect } from "@/components/ui/theme-select";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { CartDayList } from "@/features/cart/cart-view";
+import { useCartStore } from "@/store/use-cart-store";
+import { toast } from "@/store/use-toast-store";
+import { program, addresses, getAddress } from "@/data/program";
+import { me } from "@/data/me";
+import { fromISODate, formatDay } from "@/lib/dates";
+import { cutoffFor, demoNow } from "@/lib/cutoff";
+import { formatCurrency, cn } from "@/lib/utils";
+import type { PaymentChoice } from "@/data/types";
+
+export function CheckoutView() {
+  const [mounted, setMounted] = React.useState(false);
+  const [placed, setPlaced] = React.useState(false);
+  const cart = useCartStore();
+
+  React.useEffect(() => setMounted(true), []);
+
+  const owed = mounted ? cart.totalEmployeePaid() : 0;
+  const [payment, setPayment] = React.useState<PaymentChoice>(
+    me.permissions.payLater ? "pay_later" : "pay_now",
+  );
+  const [commonWindow, setCommonWindow] = React.useState(program.deliveryWindows[1]);
+  const [notifOpen, setNotifOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [timeModalOpen, setTimeModalOpen] = React.useState(false);
+  const [addressOpen, setAddressOpen] = React.useState(false);
+
+  if (!mounted) {
+    return <Skeleton className="h-96 rounded-2xl" />;
+  }
+
+  const dates = cart.dates();
+
+  if (placed) {
+    return <Confirmation owed={owed} payment={owed === 0 ? "covered" : payment} />;
+  }
+
+  if (dates.length === 0) {
+    return (
+      <Card>
+        <CardBody className="flex flex-col items-center gap-4 py-16 text-center">
+          <span className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <ShoppingBag className="size-7" />
+          </span>
+          <h2 className="font-display text-xl font-semibold tracking-tight">Nothing to check out</h2>
+          <Button asChild>
+            <Link href="/menu">Browse the menu</Link>
+          </Button>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  const address = getAddress(cart.addressId);
+  const subtotal = cart.subtotal();
+  const subsidy = cart.totalSubsidy();
+
+  // Per-day cutoff status (against the demo "now").
+  const now = demoNow().getTime();
+  const cutoffs = dates.map((date) => ({
+    date,
+    passed: cutoffFor(date).getTime() - now <= 0,
+  }));
+
+  function applyCommonWindow(w: string) {
+    setCommonWindow(w);
+    dates.forEach((d) => cart.setWindow(d, w));
+  }
+
+  function placeOrder() {
+    const resolvedPayment: PaymentChoice = owed === 0 ? "covered" : payment;
+    cart.setPayment(resolvedPayment);
+    toast.success(
+      "Order placed",
+      owed === 0 ? "Fully covered — confirmation on its way." : "Confirmation on its way.",
+    );
+    setPlaced(true);
+    cart.clear();
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="sticky top-16 z-20 -mx-4 bg-background px-4 py-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <Steps current={1} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="space-y-5 lg:col-span-2">
+          {/* Cutoff check */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Cutoff check</CardTitle>
+            </CardHeader>
+            <CardBody className="space-y-3">
+              <div className="rounded-xl border border-border bg-muted/40 p-3">
+                <div className="flex flex-wrap gap-2">
+                  {cutoffs.map((c) => (
+                    <span
+                      key={c.date}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-2xs font-semibold",
+                        c.passed
+                          ? "border-danger-border bg-danger-bg text-danger"
+                          : "border-success-border bg-success-bg text-success",
+                      )}
+                    >
+                      {c.passed ? <XCircle className="size-3" /> : <Check className="size-3" />}
+                      {formatDay(fromISODate(c.date))}
+                      {c.passed ? " · cutoff passed" : null}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <Notice tone="warning" className="text-xs">
+                Complete each order before its day-before cutoff or that day is cancelled automatically.
+              </Notice>
+            </CardBody>
+          </Card>
+
+          {/* Delivery address */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Delivery address</CardTitle>
+              <Button size="sm" variant="ghost" onClick={() => setNotifOpen(true)}>
+                <Bell className="size-3.5" /> Delivery notification
+              </Button>
+            </CardHeader>
+            <CardBody>
+              <div className="flex items-start gap-3 rounded-xl border border-border bg-muted/40 p-3">
+                <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
+                <div className="min-w-0 flex-1 text-[13px]">
+                  <div className="font-semibold">{address.name}</div>
+                  <div className="text-muted-foreground">{address.address}</div>
+                  {address.instructions ? (
+                    <div className="mt-1 text-2xs text-muted-foreground">{address.instructions}</div>
+                  ) : null}
+                </div>
+                {addresses.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setAddressOpen(true)}
+                    aria-label="Change delivery address"
+                    className="shrink-0 rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Pencil className="size-4" />
+                  </button>
+                ) : null}
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* Delivery time — one common time for all days, editable per day in a modal */}
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <div className="flex items-center gap-4">
+                <span className="flex items-center gap-2 whitespace-nowrap font-display text-base font-semibold tracking-tight">
+                  <CalendarDays className="size-4 text-primary" /> All delivery days
+                </span>
+                {me.permissions.flexibleDelivery ? (
+                  <div className="w-44 shrink-0 sm:w-56">
+                    <ThemeSelect
+                      value={commonWindow}
+                      onValueChange={applyCommonWindow}
+                      options={program.deliveryWindows.map((w) => ({ value: w, label: w }))}
+                      aria-label="Delivery window for all days"
+                      size="sm"
+                      align="right"
+                    />
+                  </div>
+                ) : (
+                  <span className="flex items-center gap-1.5 whitespace-nowrap text-[13px] text-muted-foreground">
+                    <Clock className="size-3.5" /> {program.deliveryWindows[1]}
+                  </span>
+                )}
+              </div>
+              {me.permissions.flexibleDelivery && dates.length > 1 ? (
+                <Button size="sm" variant="ghost" onClick={() => setTimeModalOpen(true)}>
+                  <CalendarDays className="size-3.5" /> Set time per day
+                </Button>
+              ) : null}
+            </div>
+          </Card>
+
+          {/* Payment */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Payment</CardTitle>
+            </CardHeader>
+            <CardBody className="space-y-3">
+              {owed === 0 ? (
+                <Notice tone="success">
+                  <CheckCircle2 className="inline size-3.5" /> Your order is fully covered by{" "}
+                  {program.company}. <strong>No payment needed.</strong>
+                </Notice>
+              ) : (
+                <>
+                  <p className="text-[13px] text-muted-foreground">
+                    {program.company} covers {formatCurrency(subsidy)}. You owe{" "}
+                    <strong className="text-foreground">{formatCurrency(owed)}</strong> for the extras.
+                  </p>
+                  <div className="space-y-2">
+                    {me.permissions.payLater ? (
+                      <PayOption
+                        active={payment === "pay_later"}
+                        onClick={() => setPayment("pay_later")}
+                        title="Add to my company invoice"
+                        subtitle="Settled with payroll — nothing to pay now"
+                      />
+                    ) : null}
+                    <PayOption
+                      active={payment === "pay_now"}
+                      onClick={() => setPayment("pay_now")}
+                      title="Pay with card on file"
+                      subtitle="•••• 4242 · charged 24h before delivery"
+                    />
+                  </div>
+                </>
+              )}
+              <Notice tone="info" className="text-xs">
+                <Lock className="inline size-3.5" /> Your order locks in and{" "}
+                <strong>payment is taken 24 hours before delivery</strong> — never before. You can edit
+                until then.
+              </Notice>
+            </CardBody>
+          </Card>
+        </div>
+
+        {/* Summary */}
+        <div>
+          <Card className="lg:sticky lg:top-32">
+            <CardHeader>
+              <CardTitle>Order summary</CardTitle>
+              <Button size="sm" variant="ghost" onClick={() => setEditOpen(true)}>
+                <Pencil className="size-3.5" /> Edit order
+              </Button>
+            </CardHeader>
+            <CardBody className="space-y-3">
+              {dates.map((date) => (
+                <div key={date} className="border-b border-border pb-2 last:border-0 last:pb-0">
+                  <div className="text-overline">{formatDay(fromISODate(date))}</div>
+                  <ul className="mt-1 space-y-1">
+                    {cart.itemsForDate(date).map((line) => (
+                      <li key={line.uid} className="flex justify-between gap-2 text-[13px]">
+                        <span className="text-muted-foreground">
+                          {line.name} ×{line.qty}
+                        </span>
+                        {program.showPrices ? (
+                          <span className="nums">{formatCurrency(line.unitPrice * line.qty)}</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+
+              {program.showPrices ? (
+                <div className="space-y-1.5 pt-1">
+                  <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
+                  <SummaryRow label="Company subsidy" value={`−${formatCurrency(subsidy)}`} tone="success" />
+                  <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
+                    <span>You pay</span>
+                    <span className="nums">{formatCurrency(owed)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
+                  <span>You pay</span>
+                  <span className="nums text-success">{formatCurrency(0)}</span>
+                </div>
+              )}
+
+              <Button block size="lg" onClick={placeOrder}>
+                Place order
+              </Button>
+              <Button asChild variant="ghost" block>
+                <Link href="/cart">Back to cart</Link>
+              </Button>
+            </CardBody>
+          </Card>
+        </div>
+      </div>
+
+      {notifOpen ? <DeliveryNotificationsModal onClose={() => setNotifOpen(false)} /> : null}
+      {addressOpen ? <AddressModal onClose={() => setAddressOpen(false)} /> : null}
+      {editOpen ? <EditOrderModal onClose={() => setEditOpen(false)} /> : null}
+      {timeModalOpen ? (
+        <PerDayTimeModal
+          dates={dates}
+          commonWindow={commonWindow}
+          onClose={() => setTimeModalOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Delivery address picker — modal with radio options                       */
+/* ---------------------------------------------------------------------- */
+
+function AddressModal({ onClose }: { onClose: () => void }) {
+  const [shown, setShown] = React.useState(false);
+  const cart = useCartStore();
+  const [selected, setSelected] = React.useState(cart.addressId);
+
+  React.useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+      />
+      <div
+        className={cn(
+          "relative w-full max-w-md rounded-3xl bg-card p-5 shadow-raised transition-all duration-200",
+          shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
+        )}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+              <MapPin className="size-4 text-primary" /> Delivery address
+            </h3>
+            <p className="text-[13px] text-muted-foreground">Pick where your meals are delivered.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2" role="radiogroup" aria-label="Delivery address">
+          {addresses.map((a) => {
+            const active = a.id === selected;
+            return (
+              <button
+                key={a.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setSelected(a.id)}
+                className={cn(
+                  "flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors",
+                  active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+                )}
+              >
+                <span
+                  className={cn(
+                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+                    active ? "border-primary" : "border-border",
+                  )}
+                >
+                  {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
+                </span>
+                <span className="min-w-0 flex-1 text-[13px]">
+                  <span className="block font-semibold">{a.name}</span>
+                  <span className="block text-muted-foreground">{a.address}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <Button
+          block
+          className="mt-4"
+          onClick={() => {
+            cart.setAddress(selected);
+            toast.success("Delivery address updated");
+            onClose();
+          }}
+        >
+          Save address
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Edit order — the cart, shown as a modal with a pinned bottom summary     */
+/* ---------------------------------------------------------------------- */
+
+function EditOrderModal({ onClose }: { onClose: () => void }) {
+  const [shown, setShown] = React.useState(false);
+  const cart = useCartStore();
+  const subtotal = cart.subtotal();
+  const subsidy = cart.totalSubsidy();
+  const owed = cart.totalEmployeePaid();
+
+  React.useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+      />
+      <div
+        className={cn(
+          "relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-card shadow-raised transition-all duration-200",
+          shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
+        )}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
+          <h3 className="font-display text-lg font-semibold tracking-tight">Edit order</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <CartDayList />
+        </div>
+
+        <div className="shrink-0 space-y-3 border-t border-border bg-card p-5">
+          {program.showPrices ? (
+            <>
+              <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
+              <SummaryRow label="Company subsidy" value={`−${formatCurrency(subsidy)}`} tone="success" />
+              <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
+                <span>You pay</span>
+                <span className="nums">{formatCurrency(owed)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-between text-base font-bold">
+              <span>Your meals are fully covered</span>
+              <span className="nums text-success">{formatCurrency(0)}</span>
+            </div>
+          )}
+          <Button
+            block
+            size="lg"
+            onClick={() => {
+              toast.success("Order updated");
+              onClose();
+            }}
+          >
+            Save order
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Per-day delivery time — modal                                           */
+/* ---------------------------------------------------------------------- */
+
+function PerDayTimeModal({
+  dates,
+  commonWindow,
+  onClose,
+}: {
+  dates: string[];
+  commonWindow: string;
+  onClose: () => void;
+}) {
+  const [shown, setShown] = React.useState(false);
+  const cart = useCartStore();
+
+  React.useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+      />
+      <div
+        className={cn(
+          "relative flex w-full max-w-md flex-col rounded-3xl bg-card shadow-raised transition-all duration-200",
+          shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
+        )}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h3 className="font-display text-lg font-semibold tracking-tight">Delivery time per day</h3>
+            <p className="text-[13px] text-muted-foreground">Pick a window for each delivery day.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3 p-5">
+          {dates.map((date) => {
+            const win = cart.windows[date] ?? commonWindow;
+            return (
+              <div key={date} className="flex items-center justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
+                <span className="flex items-center gap-2 whitespace-nowrap text-base font-semibold">
+                  <CalendarDays className="size-4 text-primary" />
+                  {formatDay(fromISODate(date))}
+                </span>
+                <div className="w-44 shrink-0 sm:w-56">
+                  <ThemeSelect
+                    value={win}
+                    onValueChange={(v) => cart.setWindow(date, v)}
+                    options={program.deliveryWindows.map((w) => ({ value: w, label: w }))}
+                    aria-label={`Delivery window for ${formatDay(fromISODate(date))}`}
+                    align="right"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="rounded-b-3xl border-t border-border bg-card p-5">
+          <Button block size="lg" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CheckRow({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-xl border p-3 text-left text-[13px] transition-colors",
+        checked ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-md border",
+          checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
+        )}
+      >
+        {checked ? <Check className="size-3.5" /> : null}
+      </span>
+      {label}
+    </button>
+  );
+}
+
+function DeliveryNotificationsModal({ onClose }: { onClose: () => void }) {
+  const [shown, setShown] = React.useState(false);
+  const [prefs, setPrefs] = React.useState({
+    emailConfirmed: me.notifications.orderConfirmation,
+    smsOutForDelivery: me.notifications.channel === "email_text",
+    smsDelivered: false,
+    emailWeekly: me.notifications.weeklySpecials,
+  });
+  const set = (k: keyof typeof prefs, v: boolean) => setPrefs((p) => ({ ...p, [k]: v }));
+  const [editingPhone, setEditingPhone] = React.useState(false);
+  const [phone, setPhone] = React.useState("(555) 123-4567");
+
+  React.useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+      />
+      <div
+        className={cn(
+          "relative w-full max-w-md rounded-3xl bg-card p-5 shadow-raised transition-all duration-200",
+          shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
+        )}
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+            <Bell className="size-4 text-primary" /> Delivery notifications
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <CheckRow
+            checked={prefs.emailConfirmed}
+            onChange={(v) => set("emailConfirmed", v)}
+            label="Email when order is confirmed"
+          />
+          <CheckRow
+            checked={prefs.smsOutForDelivery}
+            onChange={(v) => set("smsOutForDelivery", v)}
+            label="SMS when out for delivery"
+          />
+          <CheckRow
+            checked={prefs.smsDelivered}
+            onChange={(v) => set("smsDelivered", v)}
+            label="SMS when delivered"
+          />
+          <CheckRow
+            checked={prefs.emailWeekly}
+            onChange={(v) => set("emailWeekly", v)}
+            label="Email weekly summary"
+          />
+        </div>
+
+        <div className="mt-3 border-t border-border pt-3">
+          {editingPhone ? (
+            <div className="flex items-center gap-2">
+              <span className="flex h-11 shrink-0 items-center gap-1 rounded-xl border border-input bg-muted px-3 text-sm font-medium text-muted-foreground">
+                🇺🇸 +1
+              </span>
+              <Input
+                type="tel"
+                inputMode="tel"
+                autoFocus
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="(555) 123-4567"
+                aria-label="Phone number"
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingPhone(false);
+                  toast.success("Phone updated", `+1 ${phone}`);
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2 text-[13px]">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Smartphone className="size-3.5" /> +1 {phone}
+              </span>
+              <button
+                type="button"
+                onClick={() => setEditingPhone(true)}
+                className="text-2xs font-semibold text-primary hover:underline"
+              >
+                Edit
+              </button>
+            </div>
+          )}
+        </div>
+
+        <Button
+          block
+          className="mt-4"
+          onClick={() => {
+            toast.success("Notification preferences saved");
+            onClose();
+          }}
+        >
+          Done
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Confirmation({ owed, payment }: { owed: number; payment: PaymentChoice }) {
+  return (
+    <Card>
+      <CardBody className="flex flex-col items-center gap-4 py-14 text-center">
+        <span className="flex size-16 items-center justify-center rounded-full bg-success-bg text-success">
+          <CheckCircle2 className="size-9" />
+        </span>
+        <div>
+          <h2 className="font-display text-2xl font-semibold tracking-tight">Order confirmed 🎉</h2>
+          <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-muted-foreground">
+            Order <strong>#ORD-2892</strong> is in. We&apos;ve emailed your confirmation to{" "}
+            <strong>{me.email}</strong>.{" "}
+            {owed === 0 ? (
+              <>This order is fully covered by {me.company} — nothing to pay.</>
+            ) : payment === "pay_later" ? (
+              <>The {formatCurrency(owed)} balance will appear on your company invoice.</>
+            ) : (
+              <>Your card on file will be charged {formatCurrency(owed)} 24 hours before delivery.</>
+            )}
+          </p>
+        </div>
+        <Notice tone="info" className="max-w-md text-left text-xs">
+          <Mail className="inline size-3.5" /> You&apos;ll get one email now, and a heads-up the day before
+          delivery — no surprise &quot;payment taken&quot; emails.
+        </Notice>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button asChild>
+            <Link href="/orders">Track my orders</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/menu">Order more</Link>
+          </Button>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function Steps({ current }: { current: number }) {
+  const labels = ["Cart", "Checkout", "Confirmed"];
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-card">
+      {labels.map((label, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <React.Fragment key={label}>
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "flex size-7 shrink-0 items-center justify-center rounded-full text-2xs font-bold transition-colors",
+                  done && "bg-success text-white",
+                  active && "bg-primary text-primary-foreground",
+                  !done && !active && "border border-border text-muted-foreground",
+                )}
+              >
+                {done ? <Check className="size-3.5" /> : i + 1}
+              </span>
+              <span
+                className={cn(
+                  "text-[13px] font-semibold transition-colors",
+                  active ? "text-teal-deep" : done ? "text-foreground" : "text-muted-foreground",
+                  active ? "inline" : "hidden sm:inline",
+                )}
+              >
+                {label}
+              </span>
+            </div>
+            {i < labels.length - 1 ? (
+              <span
+                className={cn(
+                  "h-0.5 flex-1 rounded-full transition-colors",
+                  done ? "bg-success" : "bg-border",
+                )}
+              />
+            ) : null}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function PayOption({
+  active,
+  onClick,
+  title,
+  subtitle,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
+        active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-full border",
+          active ? "border-primary" : "border-border",
+        )}
+      >
+        {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
+      </span>
+      <CreditCard className="size-4 text-muted-foreground" />
+      <span>
+        <strong>{title}</strong>
+        <span className="block text-muted-foreground">{subtitle}</span>
+      </span>
+    </button>
+  );
+}
+
+function SummaryRow({ label, value, tone }: { label: string; value: string; tone?: "success" }) {
+  return (
+    <div className="flex items-center justify-between text-[13px]">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("font-medium nums", tone === "success" && "text-success")}>{value}</span>
+    </div>
+  );
+}
