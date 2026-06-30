@@ -164,7 +164,7 @@ Three‑column layout (form + sticky order summary). Sections:
 - **Delivery address** card: shows the selected address + an **edit (pencil)
   icon** that opens a modal of **radio‑button** addresses and a **Save address**
   button. (A **Delivery notification** button in the header opens a modal of
-  themed check rows for email/SMS preferences + an editable USA phone input.)
+  themed check rows for email notification preferences — email only.)
 - **Delivery time** card: one **common time for all days** (themed dropdown
   sized to match the button); a **Set time per day** button opens a modal with a
   per‑day themed dropdown for each day.

@@ -60,6 +60,39 @@ export interface AddOnGroup {
   options: AddOnOption[];
 }
 
+/** One resolved option within a combo (structurally a cart add-on). */
+export interface ComboSelection {
+  groupId: string;
+  /** The group this option came from, e.g. "Spice level", "Add a side". */
+  groupName: string;
+  optionId: string;
+  name: string;
+  price: number;
+}
+
+/** One line in a combo's "what's included" breakdown, e.g. { group: "Side", item: "Sumac fries" }. */
+export interface ComboInclude {
+  group: string;
+  item: string;
+}
+
+/**
+ * A pre-bundled set of add-ons — one option per group — that the user picks as
+ * a single choice instead of resolving each group separately. Auto-generated
+ * from an item's add-on groups (the cartesian product of one option per group).
+ */
+export interface MenuCombo {
+  id: string;
+  /** Display label, e.g. "Mild · Sumac fries". */
+  name: string;
+  /** What the combo includes, broken down by group (protein / sauce / side …). */
+  includes: ComboInclude[];
+  /** The resolved add-on selections this combo maps to. */
+  selections: ComboSelection[];
+  /** Up-charge over the base price (sum of selection prices). */
+  upcharge: number;
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -114,8 +147,8 @@ export interface NotificationPrefs {
   dailyReminder: boolean;
   arrivalAlert: boolean;
   weeklySpecials: boolean;
-  /** Delivery channel for opt-in alerts. */
-  channel: "email" | "email_text";
+  /** Delivery channel for opt-in alerts. Email only (SMS is a later feature). */
+  channel: "email";
 }
 
 /** Automatic ordering — "set it and forget it" rotation from saved favourites. */
@@ -166,6 +199,8 @@ export interface MealProgram {
   individualSoftCutoff: string;
   individualHardCutoff: string;
   familyCutoff: string;
+  /** Minimum group size for a family-style order. */
+  familyMinPeople: number;
   /** How long before delivery an order can still be cancelled/changed. */
   changeWindow: string;
   deliveryWindows: string[];
@@ -210,6 +245,10 @@ export interface Order {
   placedAt: string;
   /** Set when an invoice/receipt is available to download. */
   invoiceId?: string;
+  /** How the order was created. "auto" = drafted by Auto-Order 24h before cutoff. */
+  source?: "manual" | "auto";
+  /** For auto-order drafts: the human cutoff label the user must review by. */
+  reviewBy?: string;
 }
 
 export type NotificationType =

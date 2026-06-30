@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddOnModal } from "@/components/menu/add-on-modal";
-import { hasRequiredAddOns, hasOptionalAddOns } from "@/data/menu";
+import { hasRequiredAddOns, hasOptionalAddOns, menuCategory } from "@/data/menu";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
 import { useCartStore } from "@/store/use-cart-store";
@@ -77,7 +77,7 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
               <div>
                 <h2 className="font-display text-2xl font-semibold tracking-tight">{item.name}</h2>
                 <p className="mt-0.5 text-[13px] text-muted-foreground">
-                  {item.cuisine} · {item.category}
+                  {item.cuisine} · {menuCategory(item)}
                   {item.serves ? ` · serves ${item.serves}` : ""}
                 </p>
               </div>

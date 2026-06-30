@@ -86,6 +86,33 @@ export const orders: Order[] = [
     status: "draft",
     locked: false,
     placedAt: "2026-06-28 9:40 AM",
+    // Drafted by Auto-Order 24h before the cutoff — awaiting the employee's review.
+    source: "auto",
+    reviewBy: "Today, 4:00 PM",
+  },
+  {
+    // Auto-Order draft the employee left untouched — it auto-confirmed at cutoff.
+    id: "ORD-2895",
+    date: "2026-07-01",
+    type: "individual",
+    days: [
+      {
+        date: "2026-07-01",
+        deliveryWindow: "12:00 PM – 12:30 PM",
+        items: [
+          { itemId: "quinoa-salad", name: "Quinoa Harvest Salad", qty: 1, addOns: ["Crispy tofu"], price: 16.5 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 16.5,
+    subsidy: 15.0,
+    employeePaid: 1.5,
+    payment: "pay_later",
+    status: "confirmed",
+    locked: false,
+    placedAt: "2026-06-30 4:00 PM (auto)",
+    source: "auto",
   },
   {
     id: "ORD-2885",
@@ -200,6 +227,31 @@ export const orders: Order[] = [
     status: "cancelled",
     locked: true,
     placedAt: "2026-06-11 9:02 AM",
+  },
+  {
+    // Delivered Auto-Order from last week — shows auto-order history with an invoice.
+    id: "ORD-2858",
+    date: "2026-06-24",
+    type: "individual",
+    days: [
+      {
+        date: "2026-06-24",
+        deliveryWindow: "12:00 PM – 12:30 PM",
+        items: [
+          { itemId: "jackfruit-tacos", name: "Jackfruit Tacos", qty: 1, addOns: ["Salsa verde"], price: 13.0 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 13.0,
+    subsidy: 13.0,
+    employeePaid: 0,
+    payment: "covered",
+    status: "delivered",
+    locked: true,
+    placedAt: "2026-06-23 4:00 PM (auto)",
+    invoiceId: "INV-2858",
+    source: "auto",
   },
 ];
 

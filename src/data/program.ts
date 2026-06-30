@@ -18,6 +18,7 @@ export const program: MealProgram = {
   individualSoftCutoff: "9:00 PM the day before",
   individualHardCutoff: "24 hours before delivery",
   familyCutoff: "72 hours before delivery",
+  familyMinPeople: 8,
   changeWindow: "Up to 48 hours before delivery",
   deliveryWindows: ["11:30 AM – 12:00 PM", "12:00 PM – 12:30 PM", "12:30 PM – 1:00 PM"],
   utensilsPolicy: "Optional — you choose per order",

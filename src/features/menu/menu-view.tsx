@@ -7,29 +7,28 @@ import {
   Check,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   ShoppingBag,
   CalendarRange,
-  UtensilsCrossed,
-  Sprout,
-  Carrot,
-  Moon,
-  WheatOff,
-  NutOff,
-  MilkOff,
-  type LucideIcon,
+  CalendarDays,
+  AlarmClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { ThemeSelect } from "@/components/ui/theme-select";
+import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
 import { AddOnModal } from "@/components/menu/add-on-modal";
 import { DateRangeModal } from "@/features/menu/date-range-modal";
 import {
-  menuForWeekday,
+  menuFor,
   cuisines,
-  proteinTypes,
-  dietaryFilters,
+  categoriesForType,
+  menuCategory,
+  allergenOptions,
+  dietaryPreferences,
+  itemHasAnyAllergen,
   hasRequiredAddOns,
   hasOptionalAddOns,
 } from "@/data/menu";
@@ -41,16 +40,28 @@ import {
   nextServiceDays,
   serviceDaysInRange,
   startOfToday,
+  addDays,
   fromISODate,
   toISODate,
   isoWeekday,
   formatDay,
+  formatDayLong,
   formatShort,
   WEEKDAY_SHORT,
+  WEEKDAY_LONG,
 } from "@/lib/dates";
+import {
+  nextOpenDays,
+  cutoffFor,
+  demoNow,
+  isCutoffPassed,
+  isServiceDay,
+  isHoliday,
+  HOLIDAYS,
+} from "@/lib/cutoff";
 import { formatCurrency, cn } from "@/lib/utils";
 import { bumpCart } from "@/lib/fly-to-cart";
-import type { MenuItem } from "@/data/types";
+import type { MenuItem, OrderType } from "@/data/types";
 
 type Mode = "single" | "multi";
 
@@ -68,6 +79,9 @@ const PRICE_OPTIONS = [
 export function MenuView() {
   const [mounted, setMounted] = React.useState(false);
   const [mode, setMode] = React.useState<Mode>("single");
+  // Individual (single-serving) vs. family-style (shared) menu. Drives which
+  // items, prices and cutoff rules are shown. Defaults to individual.
+  const [menuType, setMenuType] = React.useState<OrderType>("individual");
 
   // Date state (populated after mount to avoid SSR/CSR date mismatch).
   // One-day mode orders for the next service day (no picker); multi-day mode
@@ -83,12 +97,25 @@ export function MenuView() {
   // Filters
   const [query, setQuery] = React.useState("");
   const [cuisine, setCuisine] = React.useState("");
-  const [protein, setProtein] = React.useState("");
   const [priceMax, setPriceMax] = React.useState("");
-  const [diet, setDiet] = React.useState<string | null>(null);
+  // Branded category tag (e.g. "Stack, Wrap & Roll"). "" = All.
+  const [category, setCategory] = React.useState("");
+  // Two distinct filters: allergens to AVOID (hide matches) and dietary
+  // preferences to REQUIRE (show only matches). This is for *extra* allergens
+  // the user wants to avoid today — their saved profile allergens are ALWAYS
+  // hidden (hard safety filter below), so this starts empty.
+  const [allergens, setAllergens] = React.useState<string[]>([]);
+  const [diets, setDiets] = React.useState<string[]>([]);
 
   // Add-on sheet
   const [customizing, setCustomizing] = React.useState<MenuItem | null>(null);
+
+  // Collapse the attached box (Ordering for / day strip) while scrolling down,
+  // restore it when scrolling back up. `boxOverflowVisible` lets the Change-date
+  // dropdown escape once the box is fully expanded (overflow is clipped mid-slide).
+  const [boxCollapsed, setBoxCollapsed] = React.useState(false);
+  const [boxOverflowVisible, setBoxOverflowVisible] = React.useState(true);
+  const boxCollapsedRef = React.useRef(false);
 
   const cart = useCartStore();
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
@@ -106,13 +133,63 @@ export function MenuView() {
 
   React.useEffect(() => {
     const today = startOfToday();
-    const upcoming = nextServiceDays(today, MULTI_DAY_NUMS, 8).map(toISODate);
-    setSelectedDate(upcoming[0] ?? "");
-    setActiveDate(upcoming[0] ?? "");
+    // SuperFine can't deliver same-day. Default to the next service day whose
+    // cutoff hasn't passed — that's tomorrow at the earliest, and auto-shifts
+    // forward if tomorrow's cutoff is already gone or it's a weekend/holiday.
+    const open = nextOpenDays(toISODate(today), 8);
+    const firstOpen = open[0] ?? nextServiceDays(today, MULTI_DAY_NUMS, 1).map(toISODate)[0] ?? "";
+    setSelectedDate(firstOpen);
+    setActiveDate(firstOpen);
     const week = nextServiceDays(today, MULTI_DAY_NUMS, 3).map(toISODate);
     setRangeStart(week[0] ?? "");
     setRangeEnd(week[week.length - 1] ?? "");
     setMounted(true);
+  }, []);
+
+  // Hide the attached box on scroll-down, show it on scroll-up (and near the top).
+  React.useEffect(() => {
+    let lastY = window.scrollY;
+    let ticking = false;
+    let locked = false;
+    let lockTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function apply(next: boolean) {
+      if (boxCollapsedRef.current === next) return;
+      boxCollapsedRef.current = next;
+      setBoxCollapsed(next);
+      // Collapsing: clip overflow immediately. Expanding: restore on transition end.
+      if (next) setBoxOverflowVisible(false);
+      // Lock out further toggles while the slide + reflow settle. Collapsing the
+      // header shifts content above the viewport, so the browser's scroll
+      // anchoring nudges scrollY — without this lock that feeds back and the box
+      // oscillates (the glitch). After it settles we re-baseline lastY.
+      locked = true;
+      if (lockTimer) clearTimeout(lockTimer);
+      lockTimer = setTimeout(() => {
+        locked = false;
+        lastY = window.scrollY;
+      }, 380);
+    }
+    function update() {
+      ticking = false;
+      if (locked) return;
+      const y = window.scrollY;
+      if (y <= 8) apply(false);
+      else if (y > lastY + 6 && y > 96) apply(true);
+      else if (y < lastY - 6) apply(false);
+      lastY = y;
+    }
+    function onScroll() {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(update);
+      }
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (lockTimer) clearTimeout(lockTimer);
+    };
   }, []);
 
   // Resolve the multi-day range into service days (weekends auto-skipped).
@@ -157,10 +234,21 @@ export function MenuView() {
   const daysAdded = rangeDays.filter((d) => cart.itemsForDate(d).length > 0).length;
   const daysRemaining = rangeDays.length - daysAdded;
 
+  // Branded category tags for the current menu type (all 9 show for Individual;
+  // Family shows the subset that has family items). Day-limited categories still
+  // appear — picking one on a day it isn't served shows the empty state.
+  const availableCategories = React.useMemo<string[]>(() => categoriesForType(menuType), [menuType]);
+
   const dayMenu = React.useMemo(() => {
     if (!day) return [];
     const weekday = isoWeekday(fromISODate(day));
-    let items = menuForWeekday(weekday);
+    // Menu fetch keys off (menu type × date) — both mandatory.
+    let items = menuFor(menuType, weekday);
+    // Branded category tag (ignored if it isn't in this menu — e.g. after a
+    // type/day switch — so the grid never blanks out unexpectedly).
+    if (category && availableCategories.includes(category)) {
+      items = items.filter((i) => menuCategory(i) === category);
+    }
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       items = items.filter(
@@ -171,11 +259,15 @@ export function MenuView() {
       );
     }
     if (cuisine) items = items.filter((i) => i.cuisine === cuisine);
-    if (protein) items = items.filter((i) => i.proteinType === protein);
     if (priceMax) items = items.filter((i) => i.price <= Number(priceMax));
-    if (diet) items = items.filter((i) => i.tags.includes(diet as MenuItem["tags"][number]));
+    // Allergens: the employee's saved allergens are ALWAYS hidden (never shown,
+    // not greyed), plus any extra allergens chosen in the filter.
+    const avoid = [...me.allergens, ...allergens];
+    if (avoid.length) items = items.filter((i) => !itemHasAnyAllergen(i, avoid));
+    // Dietary: show only items matching every selected preference.
+    if (diets.length) items = items.filter((i) => diets.every((d) => (i.tags as string[]).includes(d)));
     return items;
-  }, [day, query, cuisine, protein, priceMax, diet]);
+  }, [day, menuType, category, availableCategories, query, cuisine, priceMax, allergens, diets]);
 
   function inCartFor(itemId: string) {
     return cart
@@ -204,12 +296,6 @@ export function MenuView() {
     }
   }
 
-  function allergenWarning(item: MenuItem) {
-    if (!me.allergens.length) return false;
-    const text = `${item.allergens} ${item.ingredients ?? ""}`.toLowerCase();
-    return me.allergens.some((a) => text.includes(a.toLowerCase()));
-  }
-
   if (!mounted) {
     return (
       <div className="space-y-4">
@@ -228,16 +314,55 @@ export function MenuView() {
   const cartTotal = cart.subtotal();
   const cartOwed = cart.totalEmployeePaid();
 
+  // Single-day delivery-date framing (next 12 days for the picker; service days
+  // before cutoff are selectable, everything else is greyed with a reason).
+  const datePickerDays = Array.from({ length: 12 }, (_, i) => {
+    const d = addDays(startOfToday(), i + 1); // start tomorrow — never same-day
+    const iso = toISODate(d);
+    let disabled = false;
+    let reason = "";
+    if (isHoliday(iso)) {
+      disabled = true;
+      reason = HOLIDAYS[iso] ?? "Holiday";
+    } else if (!isServiceDay(iso)) {
+      disabled = true;
+      reason = "Weekend";
+    } else if (isCutoffPassed(iso)) {
+      disabled = true;
+      reason = "Cutoff passed";
+    }
+    return { iso, date: d, disabled, reason };
+  });
+
+  // Cutoff prompt for the selected single day.
+  const selDateObj = selectedDate ? fromISODate(selectedDate) : null;
+  const cutoff = selectedDate ? cutoffFor(selectedDate) : null;
+  const msToCutoff = cutoff ? cutoff.getTime() - demoNow().getTime() : 0;
+  const cutoffUrgent = msToCutoff > 0 && msToCutoff < 3 * 60 * 60 * 1000; // < 3h
+  const cutoffTimeLabel = cutoff
+    ? cutoff.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    : "";
+  const cutoffWeekday = cutoff ? WEEKDAY_LONG[cutoff.getDay()] : "";
+  const deliveryWeekday = selDateObj ? WEEKDAY_LONG[selDateObj.getDay()] : "";
+  const isFamily = menuType === "family_style";
+  // An attached box hangs off the bottom of the header card: the "Ordering for"
+  // row in one-day mode, or the day strip in multi-day mode.
+  const oneDayBoxOpen = mode === "single" && Boolean(selectedDate);
+  const attachedOpen = oneDayBoxOpen || daysBoxOpen;
+
   return (
     <div className="space-y-5 pb-4">
       {/* Start an order — date selection. The sticky wrapper pins flush to the
           topbar with a solid background so nothing shows through the float gap,
           while the inner card sits below it with a shadow (floating look). */}
-      <div className="sticky top-16 z-20 bg-background pb-1 pt-4">
+      <div className="sticky top-16 z-20 bg-background pb-1 pt-2">
+      {/* One shadow on the whole card so the attached box never gets the header
+          card's drop shadow cast onto it (which read as a gradient). */}
+      <div className="relative z-10 rounded-2xl shadow-raised">
       <section
         className={cn(
-          "relative z-10 rounded-2xl border border-border bg-card p-4 shadow-raised sm:p-5",
-          daysBoxOpen && "rounded-b-none",
+          "relative z-10 rounded-2xl border border-border bg-card p-4 sm:p-5",
+          attachedOpen && !boxCollapsed && "rounded-b-none",
         )}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -246,10 +371,7 @@ export function MenuView() {
               Hi {me.firstName}, what would you like to eat?
             </h2>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              {mode === "single"
-                ? "Add meals for your next service day."
-                : "Pick a date range and add meals day by day."}{" "}
-              {program.company} covers {formatCurrency(program.subsidyPerDay)} each service day.
+              {program.company} covers {formatCurrency(program.subsidyPerDay)} a day.
             </p>
           </div>
           <Tabs
@@ -267,7 +389,8 @@ export function MenuView() {
           />
         </div>
 
-        {/* Unified search bar — search, cuisine and price in one pill */}
+        {/* Filter bar — search + Meal Style / Allergens / Dietary / Cuisine /
+            Price, separated by vertical dividers. */}
         <div className="mt-4 flex items-center gap-1 rounded-full border border-border bg-card p-1.5 shadow-sm">
           <div className="relative flex min-w-0 flex-1 items-center">
             <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
@@ -279,6 +402,34 @@ export function MenuView() {
               className="h-9 w-full rounded-full bg-transparent pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
             />
           </div>
+          <div className="h-6 w-px shrink-0 bg-border" />
+          <ThemeSelect
+            value={menuType}
+            onValueChange={(v) => setMenuType(v as OrderType)}
+            aria-label="Filter by meal style"
+            variant="pill"
+            align="right"
+            options={[
+              { value: "individual", label: "Individual Meal" },
+              { value: "family_style", label: "Family Style Meal" },
+            ]}
+          />
+          <div className="h-6 w-px shrink-0 bg-border" />
+          <MultiSelectFilter
+            label="Allergens"
+            aria-label="Filter out allergens to avoid"
+            options={allergenOptions}
+            selected={allergens}
+            onChange={setAllergens}
+          />
+          <div className="h-6 w-px shrink-0 bg-border" />
+          <MultiSelectFilter
+            label="Dietary"
+            aria-label="Filter by dietary preference"
+            options={dietaryPreferences}
+            selected={diets}
+            onChange={setDiets}
+          />
           <div className="h-6 w-px shrink-0 bg-border" />
           <ThemeSelect
             value={cuisine}
@@ -293,18 +444,6 @@ export function MenuView() {
           />
           <div className="h-6 w-px shrink-0 bg-border" />
           <ThemeSelect
-            value={protein}
-            onValueChange={setProtein}
-            aria-label="Filter by protein"
-            variant="pill"
-            align="right"
-            options={[
-              { value: "", label: "Any protein" },
-              ...proteinTypes.map((p) => ({ value: p, label: p })),
-            ]}
-          />
-          <div className="h-6 w-px shrink-0 bg-border" />
-          <ThemeSelect
             value={priceMax}
             onValueChange={setPriceMax}
             aria-label="Filter by price"
@@ -315,82 +454,128 @@ export function MenuView() {
         </div>
       </section>
 
-      {/* Multi-day "days" box — attached to the bottom of the Hi Maya box and
-          slides out from under it. Lives in the same sticky wrapper so it sticks
-          together with the box above. */}
-      {daysBoxOpen ? (
-        <div className="overflow-hidden">
-          <div className="animate-reveal-down rounded-b-2xl border border-t-0 border-border bg-card p-4 shadow-raised sm:p-5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                <CalendarRange className="size-4 text-primary" />
-                {formatDay(fromISODate(rangeStart))} – {formatDay(fromISODate(rangeEnd))}
-              </span>
-              <button
-                type="button"
-                onClick={() => setRangePickerOpen(true)}
-                className="text-[13px] font-semibold text-primary hover:underline"
-              >
-                Change
-              </button>
-            </div>
-
-            <div className="mt-3">
-              <div className="mb-1.5 flex items-center justify-end">
-                <span className="text-2xs font-semibold text-muted-foreground">
-                  {daysAdded}/{rangeDays.length} done
-                </span>
+      {/* Attached box under the header card — one-day "Ordering for" row, or the
+          multi-day day strip. Collapses on scroll-down, expands on scroll-up via a
+          grid-rows slide; clips overflow mid-slide so it tucks under the card. */}
+      {attachedOpen ? (
+        <div
+          className={cn(
+            "grid transition-all duration-300 ease-out",
+            boxCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+          )}
+          onTransitionEnd={() => {
+            if (!boxCollapsedRef.current) setBoxOverflowVisible(true);
+          }}
+        >
+          <div className={cn("min-h-0", boxOverflowVisible ? "overflow-visible" : "overflow-hidden")}>
+            {oneDayBoxOpen ? (
+              <div className="rounded-b-2xl border border-t-0 border-border bg-card px-4 py-2.5 sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="flex items-center gap-1.5 text-[13px] font-semibold text-teal-deep">
+                      {!isFamily && cutoffUrgent ? (
+                        <AlarmClock className="size-4 shrink-0 text-danger" />
+                      ) : (
+                        <CalendarDays className="size-4 shrink-0 text-primary" />
+                      )}
+                      Ordering for {formatDayLong(fromISODate(selectedDate))}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-2xs",
+                        !isFamily && cutoffUrgent ? "font-semibold text-danger" : "text-muted-foreground",
+                      )}
+                    >
+                      {isFamily
+                        ? "· Order 72 hours ahead"
+                        : cutoffUrgent
+                          ? `· Order within ${remainingLabel(msToCutoff)}`
+                          : `· Order by ${cutoffTimeLabel} ${cutoffWeekday}`}
+                    </span>
+                  </div>
+                  <DatePickerDropdown
+                    days={datePickerDays}
+                    selected={selectedDate}
+                    onSelect={(iso) => {
+                      setSelectedDate(iso);
+                      setActiveDate(iso);
+                    }}
+                  />
+                </div>
               </div>
-              <DayStrip
-                cells={rangeDays.map((iso) => {
-                  const d = fromISODate(iso);
-                  const items = cart.itemsForDate(iso);
-                  const owed = cart.dayEmployeePaid(iso);
-                  const has = items.length > 0;
-                  return {
-                    iso,
-                    weekday: WEEKDAY_SHORT[d.getDay()],
-                    dayNum: d.getDate(),
-                    fullLabel: formatDay(d),
-                    has,
-                    owed,
-                    total: cart.dayTotal(iso),
-                    itemCount: items.reduce((s, l) => s + l.qty, 0),
-                    subLabel: has ? (owed > 0 ? formatCurrency(owed) : "added") : formatShort(d).split(" ")[0],
-                  };
-                })}
-                activeDate={activeDate}
-                onSelect={setActiveDate}
-              />
-            </div>
+            ) : (
+              <div className="rounded-b-2xl border border-t-0 border-border bg-card p-3 sm:p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <CalendarRange className="size-4 text-primary" />
+                    {formatDay(fromISODate(rangeStart))} – {formatDay(fromISODate(rangeEnd))}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xs font-semibold text-muted-foreground">
+                      {daysAdded}/{rangeDays.length} done
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setRangePickerOpen(true)}
+                      className="text-[13px] font-semibold text-primary hover:underline"
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
 
-            {daysRemaining === 0 ? (
-              <div className="mt-3">
-                <Button variant="teal" block size="lg" onClick={openCart}>
-                  <Check className="size-4" /> All {rangeDays.length} days added · Review cart
-                </Button>
+                <div className="mt-2.5">
+                  <DayStrip
+                    cells={rangeDays.map((iso) => {
+                      const d = fromISODate(iso);
+                      const items = cart.itemsForDate(iso);
+                      const owed = cart.dayEmployeePaid(iso);
+                      const has = items.length > 0;
+                      return {
+                        iso,
+                        weekday: WEEKDAY_SHORT[d.getDay()],
+                        dayNum: d.getDate(),
+                        fullLabel: formatDay(d),
+                        has,
+                        owed,
+                        total: cart.dayTotal(iso),
+                        itemCount: items.reduce((s, l) => s + l.qty, 0),
+                        subLabel: has ? (owed > 0 ? formatCurrency(owed) : "added") : formatShort(d).split(" ")[0],
+                      };
+                    })}
+                    activeDate={activeDate}
+                    onSelect={setActiveDate}
+                  />
+                </div>
+
+                {daysRemaining === 0 ? (
+                  <div className="mt-2.5">
+                    <Button variant="teal" block onClick={openCart}>
+                      <Check className="size-4" /> All {rangeDays.length} days added · Review cart
+                    </Button>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       ) : null}
-
-      {/* Dietary filters — a little spacing below the box above */}
-      <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <FilterPill icon={UtensilsCrossed} active={!diet} onClick={() => setDiet(null)}>
-          All
-        </FilterPill>
-        {dietaryFilters.map((d) => (
-          <FilterPill
-            key={d}
-            icon={DIET_ICON[d]}
-            active={diet === d}
-            onClick={() => setDiet(diet === d ? null : d)}
-          >
-            {d}
-          </FilterPill>
-        ))}
       </div>
+
+      {/* Category tags — branded SFK sections, horizontally scrollable. */}
+      {availableCategories.length ? (
+        <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <CategoryChip active={!category} onClick={() => setCategory("")}>
+            All
+          </CategoryChip>
+          {availableCategories.map((c) => (
+            <CategoryChip key={c} active={category === c} onClick={() => setCategory(category === c ? "" : c)}>
+              {c}
+            </CategoryChip>
+          ))}
+        </div>
+      ) : null}
+
       </div>
 
       {/* Menu grid */}
@@ -402,7 +587,6 @@ export function MenuView() {
               item={item}
               inCart={inCartFor(item.id)}
               showPrice={program.showPrices}
-              allergenWarning={allergenWarning(item)}
               onAdd={() => quickAdd(item)}
               onCustomize={() => handleAdd(item)}
             />
@@ -485,16 +669,6 @@ export function MenuView() {
     </div>
   );
 }
-
-/** Dietary-filter icons — small "illustration" per chip, DoorDash/Airbnb style. */
-const DIET_ICON: Record<string, LucideIcon> = {
-  Vegan: Sprout,
-  Vegetarian: Carrot,
-  Halal: Moon,
-  "Gluten-Free": WheatOff,
-  "Nut-Free": NutOff,
-  "Dairy-Free": MilkOff,
-};
 
 /** One day in the multi-day strip, with its order summary for the hover card. */
 interface DayCell {
@@ -619,7 +793,7 @@ function DayStrip({
               }}
               onMouseLeave={() => setHover(null)}
               className={cn(
-                "relative flex min-w-[64px] flex-col items-center rounded-2xl border px-3 py-2 transition-colors",
+                "relative flex min-w-[60px] flex-col items-center rounded-xl border px-3 py-1.5 transition-colors",
                 active
                   ? "border-primary bg-primary text-primary-foreground"
                   : cell.has
@@ -628,10 +802,10 @@ function DayStrip({
               )}
             >
               <span className="text-2xs font-semibold uppercase">{cell.weekday}</span>
-              <span className="font-display text-lg font-semibold leading-none">{cell.dayNum}</span>
+              <span className="font-display text-base font-semibold leading-none">{cell.dayNum}</span>
               <span
                 className={cn(
-                  "mt-1 text-[10px]",
+                  "mt-0.5 text-[10px]",
                   cell.has && "font-bold",
                   active ? "text-primary-foreground/80" : "text-muted-foreground",
                 )}
@@ -714,13 +888,23 @@ function DayStrip({
   );
 }
 
-function FilterPill({
-  icon: Icon,
+/** Human "time left until cutoff" — e.g. "2 hours", "1 hour 20 min", "15 minutes". */
+function remainingLabel(ms: number) {
+  const mins = Math.max(1, Math.round(ms / 60000));
+  if (mins >= 120) return `${Math.round(mins / 60)} hours`;
+  if (mins >= 60) {
+    const rem = mins % 60;
+    return rem ? `1 hour ${rem} min` : "1 hour";
+  }
+  return `${mins} minutes`;
+}
+
+/** A branded category tag chip (single-select, with an "All" reset). */
+function CategoryChip({
   active,
   onClick,
   children,
 }: {
-  icon?: LucideIcon;
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
@@ -730,16 +914,201 @@ function FilterPill({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
+        "shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
         active
           ? "border-primary bg-primary text-primary-foreground shadow-card"
           : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-muted",
       )}
     >
-      {Icon ? (
-        <Icon className={cn("size-4 shrink-0", active ? "text-primary-foreground" : "text-primary")} />
-      ) : null}
       {children}
     </button>
+  );
+}
+
+interface DateOption {
+  iso: string;
+  date: Date;
+  disabled: boolean;
+  reason: string;
+}
+
+/**
+ * Themed single-day picker. Shows upcoming calendar days; service days before
+ * cutoff are selectable, weekends/holidays/past-cutoff days are greyed with a
+ * reason. Matches the site dropdown style (cream surface, teal highlight).
+ */
+function DatePickerDropdown({
+  days,
+  selected,
+  onSelect,
+}: {
+  days: DateOption[];
+  selected: string;
+  onSelect: (iso: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex items-center gap-1.5 rounded-full border bg-card px-3.5 py-2 text-[13px] font-semibold text-teal-deep shadow-sm transition-colors",
+          open ? "border-primary ring-2 ring-ring/30" : "border-border hover:border-primary/40 hover:bg-teal-wash",
+        )}
+      >
+        <CalendarDays className="size-4 text-primary" /> Change date
+        <ChevronDown className={cn("size-4 text-primary transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open ? (
+        <MiniCalendar
+          days={days}
+          selected={selected}
+          onSelect={(iso) => {
+            onSelect(iso);
+            setOpen(false);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Small month-calendar popover for the single-day picker. Only the upcoming
+ * service days before cutoff are pickable; weekends, holidays and past-cutoff
+ * days are greyed (with their reason on hover). You can pick exactly one day.
+ */
+function MiniCalendar({
+  days,
+  selected,
+  onSelect,
+}: {
+  days: DateOption[];
+  selected: string;
+  onSelect: (iso: string) => void;
+}) {
+  const byIso = React.useMemo(() => {
+    const m = new Map<string, DateOption>();
+    for (const d of days) m.set(d.iso, d);
+    return m;
+  }, [days]);
+
+  // First and last day the window covers — bounds month navigation.
+  const firstIso = days[0]?.iso ?? "";
+  const lastIso = days[days.length - 1]?.iso ?? "";
+
+  // Open on the selected date's month, else the first selectable day's month.
+  const anchor = selected
+    ? fromISODate(selected)
+    : days.find((d) => !d.disabled)?.date ?? days[0]?.date ?? startOfToday();
+  const [view, setView] = React.useState(() => new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+
+  const year = view.getFullYear();
+  const month = view.getMonth();
+  const monthStartIso = toISODate(new Date(year, month, 1));
+  const monthEndIso = toISODate(new Date(year, month + 1, 0));
+  const canPrev = Boolean(firstIso) && firstIso < monthStartIso;
+  const canNext = Boolean(lastIso) && lastIso > monthEndIso;
+
+  // Calendar cells: leading blanks to align the 1st, then each day of the month.
+  const leading = new Date(year, month, 1).getDay(); // 0 = Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (Date | null)[] = [
+    ...Array.from({ length: leading }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1)),
+  ];
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Choose a delivery date"
+      className="absolute right-0 top-full z-50 mt-2 w-64 rounded-2xl border border-border bg-card p-3 shadow-raised"
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <button
+          type="button"
+          aria-label="Previous month"
+          disabled={!canPrev}
+          onClick={() => setView(new Date(year, month - 1, 1))}
+          className="rounded-lg p-1 text-primary transition-colors hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+        <span className="text-[13px] font-semibold text-foreground">
+          {view.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+        </span>
+        <button
+          type="button"
+          aria-label="Next month"
+          disabled={!canNext}
+          onClick={() => setView(new Date(year, month + 1, 1))}
+          className="rounded-lg p-1 text-primary transition-colors hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5">
+        {WEEKDAY_SHORT.map((w) => (
+          <span key={w} className="py-1 text-center text-2xs font-semibold text-muted-foreground">
+            {w[0]}
+          </span>
+        ))}
+        {cells.map((d, i) =>
+          d === null ? (
+            <span key={`blank-${i}`} />
+          ) : (
+            (() => {
+              const iso = toISODate(d);
+              const opt = byIso.get(iso);
+              const selectable = Boolean(opt) && !opt!.disabled;
+              const active = iso === selected;
+              return (
+                <button
+                  key={iso}
+                  type="button"
+                  disabled={!selectable}
+                  title={opt?.disabled ? opt.reason : undefined}
+                  aria-pressed={active}
+                  onClick={() => selectable && onSelect(iso)}
+                  className={cn(
+                    "flex aspect-square items-center justify-center rounded-lg text-[13px] font-medium transition-colors",
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : selectable
+                        ? "text-foreground hover:bg-teal-wash"
+                        : "cursor-not-allowed text-muted-foreground/40",
+                  )}
+                >
+                  {d.getDate()}
+                </button>
+              );
+            })()
+          ),
+        )}
+      </div>
+    </div>
   );
 }

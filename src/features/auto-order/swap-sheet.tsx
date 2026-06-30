@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X, Check, Lock } from "lucide-react";
+import { X, Check } from "lucide-react";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { program } from "@/data/program";
@@ -39,7 +39,8 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
   }, [onClose]);
 
   const favItems = favorites.map((id) => getItem(id)).filter(Boolean);
-  const list = tab === "favorites" ? favItems : mealPool;
+  // Items with the employee's saved allergens are never shown (not greyed).
+  const list = (tab === "favorites" ? favItems : mealPool).filter((item) => item && !hasAllergen(item));
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
@@ -93,18 +94,15 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
         <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-6">
           {list.map((item) => {
             if (!item) return null;
-            const blocked = hasAllergen(item);
             const current = item.id === currentItemId;
             return (
               <button
                 key={item.id}
                 type="button"
-                disabled={blocked}
                 onClick={() => onPick(item.id)}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-2xl border p-2.5 text-left transition-colors",
                   current ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted",
-                  blocked && "opacity-60",
                 )}
               >
                 <FoodPhoto src={item.image} alt={item.name} className="size-14 rounded-xl" iconClassName="size-5" />
@@ -114,11 +112,6 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
                     {current ? <Check className="size-4 shrink-0 text-primary" /> : null}
                   </div>
                   <p className="line-clamp-1 text-2xs text-muted-foreground">{item.description}</p>
-                  {blocked ? (
-                    <span className="mt-0.5 inline-flex items-center gap-1 text-2xs font-semibold text-danger">
-                      <Lock className="size-3" /> Contains an allergen — blocked
-                    </span>
-                  ) : null}
                 </div>
                 {program.showPrices ? (
                   <span className="shrink-0 text-sm font-semibold nums">{formatCurrency(item.price)}</span>

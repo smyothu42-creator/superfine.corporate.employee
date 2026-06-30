@@ -12,9 +12,7 @@ import {
   Lock,
   Mail,
   ShoppingBag,
-  Bell,
   X,
-  Smartphone,
   Pencil,
   XCircle,
   AlertTriangle,
@@ -24,7 +22,6 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { ThemeSelect } from "@/components/ui/theme-select";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CartDayList } from "@/features/cart/cart-view";
 import { useCartStore } from "@/store/use-cart-store";
@@ -63,7 +60,7 @@ export function CheckoutView() {
     me.permissions.payLater ? "pay_later" : "pay_now",
   );
   const [commonWindow, setCommonWindow] = React.useState(program.deliveryWindows[1]);
-  const [notifOpen, setNotifOpen] = React.useState(false);
+  // Email-only order updates — address where confirmation/updates are sent.
   const [editOpen, setEditOpen] = React.useState(false);
   const [timeModalOpen, setTimeModalOpen] = React.useState(false);
   const [addressOpen, setAddressOpen] = React.useState(false);
@@ -195,9 +192,6 @@ export function CheckoutView() {
           <Card>
             <CardHeader>
               <CardTitle>Delivery address</CardTitle>
-              <Button size="sm" variant="ghost" onClick={() => setNotifOpen(true)}>
-                <Bell className="size-3.5" /> Delivery notification
-              </Button>
             </CardHeader>
             <CardBody>
               <div className="flex items-start gap-3 rounded-xl border border-border bg-muted/40 p-3">
@@ -253,6 +247,10 @@ export function CheckoutView() {
                 </Button>
               ) : null}
             </div>
+            <div className="flex items-center gap-2 border-t border-border px-5 py-3 text-2xs text-muted-foreground">
+              <Mail className="size-3.5 shrink-0 text-primary" />
+              You&apos;ll receive an email when your order is confirmed.
+            </div>
           </Card>
 
           {/* Payment */}
@@ -278,7 +276,7 @@ export function CheckoutView() {
                         active={payment === "pay_later"}
                         onClick={() => setPayment("pay_later")}
                         title="Add to my company invoice"
-                        subtitle="Settled with payroll — nothing to pay now"
+                        subtitle="Added to your company's monthly invoice — nothing to pay now"
                       />
                     ) : null}
                     <PayOption
@@ -375,7 +373,6 @@ export function CheckoutView() {
         </div>
       </div>
 
-      {notifOpen ? <DeliveryNotificationsModal onClose={() => setNotifOpen(false)} /> : null}
       {addressOpen ? <AddressModal onClose={() => setAddressOpen(false)} /> : null}
       {editOpen ? <EditOrderModal onClose={() => setEditOpen(false)} /> : null}
       {timeModalOpen ? (
@@ -659,168 +656,6 @@ function PerDayTimeModal({
             Done
           </Button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function CheckRow({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "flex w-full items-center gap-2.5 rounded-xl border p-3 text-left text-[13px] transition-colors",
-        checked ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
-      )}
-    >
-      <span
-        className={cn(
-          "flex size-5 shrink-0 items-center justify-center rounded-md border",
-          checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
-        )}
-      >
-        {checked ? <Check className="size-3.5" /> : null}
-      </span>
-      {label}
-    </button>
-  );
-}
-
-function DeliveryNotificationsModal({ onClose }: { onClose: () => void }) {
-  const [shown, setShown] = React.useState(false);
-  const [prefs, setPrefs] = React.useState({
-    emailConfirmed: me.notifications.orderConfirmation,
-    smsOutForDelivery: me.notifications.channel === "email_text",
-    smsDelivered: false,
-    emailWeekly: me.notifications.weeklySpecials,
-  });
-  const set = (k: keyof typeof prefs, v: boolean) => setPrefs((p) => ({ ...p, [k]: v }));
-  const [editingPhone, setEditingPhone] = React.useState(false);
-  const [phone, setPhone] = React.useState("(555) 123-4567");
-
-  React.useEffect(() => {
-    const id = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
-      />
-      <div
-        className={cn(
-          "relative w-full max-w-md rounded-3xl bg-card p-5 shadow-raised transition-all duration-200",
-          shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
-        )}
-      >
-        <div className="flex items-start justify-between">
-          <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
-            <Bell className="size-4 text-primary" /> Delivery notifications
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="mt-4 space-y-2">
-          <CheckRow
-            checked={prefs.emailConfirmed}
-            onChange={(v) => set("emailConfirmed", v)}
-            label="Email when order is confirmed"
-          />
-          <CheckRow
-            checked={prefs.smsOutForDelivery}
-            onChange={(v) => set("smsOutForDelivery", v)}
-            label="SMS when out for delivery"
-          />
-          <CheckRow
-            checked={prefs.smsDelivered}
-            onChange={(v) => set("smsDelivered", v)}
-            label="SMS when delivered"
-          />
-          <CheckRow
-            checked={prefs.emailWeekly}
-            onChange={(v) => set("emailWeekly", v)}
-            label="Email weekly summary"
-          />
-        </div>
-
-        <div className="mt-3 border-t border-border pt-3">
-          {editingPhone ? (
-            <div className="flex items-center gap-2">
-              <span className="flex h-11 shrink-0 items-center gap-1 rounded-xl border border-input bg-muted px-3 text-sm font-medium text-muted-foreground">
-                🇺🇸 +1
-              </span>
-              <Input
-                type="tel"
-                inputMode="tel"
-                autoFocus
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="(555) 123-4567"
-                aria-label="Phone number"
-              />
-              <Button
-                size="sm"
-                onClick={() => {
-                  setEditingPhone(false);
-                  toast.success("Phone updated", `+1 ${phone}`);
-                }}
-              >
-                Save
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-2 text-[13px]">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Smartphone className="size-3.5" /> +1 {phone}
-              </span>
-              <button
-                type="button"
-                onClick={() => setEditingPhone(true)}
-                className="text-2xs font-semibold text-primary hover:underline"
-              >
-                Edit
-              </button>
-            </div>
-          )}
-        </div>
-
-        <Button
-          block
-          className="mt-4"
-          onClick={() => {
-            toast.success("Notification preferences saved");
-            onClose();
-          }}
-        >
-          Done
-        </Button>
       </div>
     </div>
   );

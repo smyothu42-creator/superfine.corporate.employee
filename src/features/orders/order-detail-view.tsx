@@ -28,7 +28,7 @@ import type { Order, PaymentChoice } from "@/data/types";
 
 const PAYMENT_LABEL: Record<PaymentChoice, string> = {
   covered: "Fully covered by company",
-  pay_later: "On company invoice",
+  pay_later: "Invoice to company",
   pay_now: "Card on file",
 };
 

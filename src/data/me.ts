@@ -28,7 +28,7 @@ export const me: Employee = {
     dailyReminder: true,
     arrivalAlert: true,
     weeklySpecials: false,
-    channel: "email_text",
+    channel: "email",
   },
   autoOrder: {
     enabled: false,

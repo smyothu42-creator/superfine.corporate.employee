@@ -13,6 +13,9 @@ import {
   CheckCircle2,
   XCircle,
   CheckCheck,
+  Repeat,
+  Info,
+  Ban,
 } from "lucide-react";
 import { NAV_ITEMS, isActive } from "@/lib/nav";
 import { useUiStore } from "@/store/use-ui-store";
@@ -21,7 +24,6 @@ import { useAutoOrderStore, type AutoOrderHeader } from "@/store/use-auto-order-
 import { useOOOStore } from "@/store/use-ooo-store";
 import { useNotificationsStore } from "@/store/use-notifications-store";
 import { Button } from "@/components/ui/button";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { DateMultiModal } from "@/components/ui/date-multi-modal";
 import { program } from "@/data/program";
 import { toast } from "@/store/use-toast-store";
@@ -57,9 +59,11 @@ function Topbar() {
   const activeOrderDate = useUiStore((s) => s.activeOrderDate);
   const cart = useCartStore();
   const cartCount = cart.count();
-  const title = deriveTitle(pathname);
   const autoHeader = useAutoOrderStore((s) => s.header);
+  const autoNavTitle = useAutoOrderStore((s) => s.navTitle);
   const onAutoOrder = pathname.startsWith("/auto-order");
+  // Auto-order title is contextual (set per view state); fall back to the route default.
+  const title = onAutoOrder && autoNavTitle ? autoNavTitle : deriveTitle(pathname);
   const onOrders = pathname === "/orders";
   const onCheckout = pathname === "/checkout";
   const onNotifications = pathname === "/notifications";
@@ -81,11 +85,18 @@ function Topbar() {
           <Menu className="size-5" />
         </button>
         <h1 className="font-display text-lg font-semibold tracking-tight">{title}</h1>
+        {onAutoOrder && autoHeader ? (
+          <span className="hidden items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-2xs font-semibold text-foreground sm:flex">
+            <Repeat className="size-3.5 text-primary" />
+            <span className="nums">{autoHeader.poolCount}</span>{" "}
+            {autoHeader.poolCount === 1 ? "meal" : "meals"} in rotation
+          </span>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
         {onAutoOrder ? (
-          /* Auto-Order: weekly Total · Budget · Remaining + the Auto-Order switch. */
+          /* Auto-Order: Stop ordering + Edit Auto Order in the nav. */
           autoHeader ? <AutoOrderControls header={autoHeader} /> : null
         ) : onOrders ? (
           /* Orders: out-of-office toggle instead of subsidy + cart. */
@@ -131,30 +142,20 @@ function Topbar() {
 }
 
 /* ----------------------------------------------------------------------- */
-/* Auto-Order header controls — weekly stats + the Auto-Order toggle         */
+/* Auto-Order header controls — pool count + Edit / Stop ordering             */
 /* ----------------------------------------------------------------------- */
 
 function AutoOrderControls({ header }: { header: AutoOrderHeader }) {
   return (
     <div className="flex items-center gap-2 sm:gap-3">
-      <div className="hidden items-stretch divide-x divide-border overflow-hidden rounded-full border border-border bg-card sm:flex">
-        <HeaderStat label="Total" value={formatCurrency(header.total)} />
-        <HeaderStat label="Budget" value={formatCurrency(header.budget)} />
-        <HeaderStat label="Remaining" value={formatCurrency(header.remaining)} tone="success" />
-      </div>
-      <span className="flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] font-semibold">
-        <span className="hidden text-foreground sm:inline">Auto-Order</span>
-        <ToggleSwitch checked onCheckedChange={header.onToggle} aria-label="Auto-Order" />
-      </span>
-    </div>
-  );
-}
-
-function HeaderStat({ label, value, tone }: { label: string; value: string; tone?: "success" }) {
-  return (
-    <div className="px-5 py-1.5 text-center leading-tight">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={cn("text-[13px] font-semibold nums", tone === "success" && "text-success")}>{value}</p>
+      <Button variant="ghost" size="sm" onClick={header.onHowItWorks}>
+        <Info className="size-4" /> How it works
+      </Button>
+      {header.onStop ? (
+        <Button variant="ghost" size="sm" onClick={header.onStop} className="text-danger hover:text-danger">
+          <Ban className="size-4" /> Turn Off Auto Order
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -163,35 +164,59 @@ function HeaderStat({ label, value, tone }: { label: string; value: string; tone
 /* Out-of-office toggle (Orders page) — opens a date picker, then alerts      */
 /* ----------------------------------------------------------------------- */
 
-function OutOfOfficeControl() {
-  const { active, dates, set, clear } = useOOOStore();
-  const [picker, setPicker] = React.useState(false);
+/** Compact label for the out-of-office days, e.g. "Sat, Jul 4" or "Sat, Jul 4 +2 more". */
+function oooLabel(dates: string[]) {
+  if (!dates.length) return "";
+  const first = formatDay(fromISODate(dates[0]));
+  if (dates.length === 1) return first;
+  return `${first} +${dates.length - 1} more`;
+}
 
-  function onToggle(next: boolean) {
-    if (next) setPicker(true);
-    else clear();
-  }
+function OutOfOfficeControl() {
+  const { active, dates, set } = useOOOStore();
+  const [picker, setPicker] = React.useState(false);
 
   return (
     <>
-      <span className="flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] font-semibold">
-        <CalendarOff className="size-4 text-primary" />
-        <span className="hidden text-foreground sm:inline">Out of office</span>
-        <ToggleSwitch checked={active} onCheckedChange={onToggle} aria-label="Out of office" />
-      </span>
+      {active ? (
+        <button
+          type="button"
+          onClick={() => setPicker(true)}
+          aria-label={`Edit out of office (${oooLabel(dates)})`}
+          className="flex items-center gap-2 rounded-full border border-primary bg-teal-wash px-3.5 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors hover:bg-teal-wash/70"
+        >
+          <CalendarOff className="size-4 text-primary" />
+          <span className="hidden sm:inline">Edit Out of Office</span>
+          <span className="rounded-full bg-white/70 px-2 py-0.5 text-2xs font-semibold nums">
+            {oooLabel(dates)}
+          </span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPicker(true)}
+          className="flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-muted"
+        >
+          <CalendarOff className="size-4 text-primary" /> Set Out of Office
+        </button>
+      )}
 
       {picker ? (
         <DateMultiModal
           title="Out of office"
           subtitle="Tap the days you'll be away."
           initialDates={dates}
+          allowClear={active}
+          emptyApplyLabel="Clear out of office"
           onClose={() => setPicker(false)}
           onApply={(picked) => {
             setPicker(false);
             set(picked);
             toast.success(
-              "Out of office set",
-              `Auto-orders paused for ${picked.length} day${picked.length > 1 ? "s" : ""}.`,
+              picked.length ? "Out of office set" : "Out of office cleared",
+              picked.length
+                ? `Auto-orders paused for ${picked.length} day${picked.length > 1 ? "s" : ""}.`
+                : "You're marked as in office again.",
             );
           }}
         />

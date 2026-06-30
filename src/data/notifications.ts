@@ -7,6 +7,14 @@ import type { AppNotification } from "./types";
  */
 export const notifications: AppNotification[] = [
   {
+    id: "n-0",
+    type: "reminder",
+    title: "Your auto-order for Tuesday is ready",
+    body: "Chicken Shawarma Wrap · Tue, Jun 30. Tap to review or change before the 4:00 PM cutoff, or we'll confirm it for you.",
+    time: "Today, 4:00 PM",
+    read: false,
+  },
+  {
     id: "n-1",
     type: "arrival",
     title: "Your lunch arrives tomorrow",

@@ -4,7 +4,6 @@ import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Field } from "@/components/ui/input";
 import { me } from "@/data/me";
-import { program } from "@/data/program";
 
 /**
  * Employee sign-in. Addresses the #1 interview pain point: one front door —
@@ -75,7 +74,7 @@ export default function LoginPage() {
           <div className="rounded-3xl border border-border bg-card p-7 shadow-card sm:p-9">
             <h2 className="font-display text-2xl font-semibold tracking-tight">Welcome back</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {program.company} · Superfine Kitchen meal program
+              For Superfine Kitchen meal program
             </p>
 
             <p className="mt-5 rounded-xl border border-info-border bg-info-bg px-4 py-3 text-[13px] leading-relaxed text-info">

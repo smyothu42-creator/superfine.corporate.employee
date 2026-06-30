@@ -1,4 +1,4 @@
-import type { MenuItem, ProteinType } from "./types";
+import type { MenuItem, MenuCombo, OrderType, ProteinType } from "./types";
 
 /**
  * The company's curated menu. Menus rotate by weekday (the User Flow notes the
@@ -441,9 +441,182 @@ export const menu: MenuItem[] = [
       },
     ],
   },
+  {
+    id: "mezze-feast",
+    name: "Mediterranean Mezze Feast",
+    category: "Family Style",
+    cuisine: "Mediterranean",
+    description: "Hummus, falafel, shawarma, salads, pita & dips — a spread for the whole team.",
+    proteinType: "Chicken",
+    allergens: "gluten, sesame, dairy",
+    tags: ["Vegetarian"],
+    price: 140.0,
+    type: "family_style",
+    serves: 8,
+    ingredients:
+      "Hummus, baba ganoush, falafel, chicken shawarma, tabbouleh, fattoush, warm pita, tzatziki, tahini",
+    nutrition: { calories: 640, protein: 34, carbs: 58, fat: 28 },
+  },
+  {
+    id: "taco-fiesta-bar",
+    name: "Taco Fiesta Bar",
+    category: "Family Style",
+    cuisine: "Mexican",
+    description: "Build-your-own taco bar with three proteins, salsas, guac & all the fixings.",
+    proteinType: "Beef",
+    allergens: "dairy",
+    tags: ["Gluten-Free"],
+    price: 165.0,
+    type: "family_style",
+    serves: 12,
+    ingredients:
+      "Carne asada, chicken tinga, pinto-bean picadillo, corn & flour tortillas, salsa roja & verde, guacamole, cotija, lime crema",
+    nutrition: { calories: 680, protein: 38, carbs: 62, fat: 30 },
+  },
+  {
+    id: "pan-asian-banquet",
+    name: "Pan-Asian Banquet",
+    category: "Family Style",
+    cuisine: "Asian",
+    description: "Family platters of stir-fries, dumplings, fried rice & noodles to share.",
+    proteinType: "Plant-based",
+    allergens: "soy, sesame, gluten",
+    tags: ["Vegetarian"],
+    price: 175.0,
+    type: "family_style",
+    serves: 10,
+    ingredients:
+      "Veg & chicken stir-fries, pork + veggie dumplings, egg fried rice, garlic noodles, bok choy, dipping sauces",
+    nutrition: { calories: 700, protein: 33, carbs: 72, fat: 26 },
+  },
+  {
+    id: "iced-matcha-latte",
+    name: "Iced Matcha Latte",
+    category: "Beverages",
+    cuisine: "Cafe",
+    description: "Ceremonial matcha over oat milk, lightly sweetened. Served over ice.",
+    proteinType: "Plant-based",
+    allergens: "none",
+    tags: ["Vegan", "Vegetarian", "Gluten-Free"],
+    price: 5.5,
+    type: "individual",
+    ingredients: "Ceremonial-grade matcha, oat milk, agave, ice",
+    nutrition: { calories: 120, protein: 2, carbs: 18, fat: 4 },
+  },
+  {
+    id: "cold-brew-coffee",
+    name: "Cold Brew Coffee",
+    category: "Beverages",
+    cuisine: "Cafe",
+    description: "Slow-steeped 18 hours for a smooth, low-acid brew. Black, over ice.",
+    proteinType: "Plant-based",
+    allergens: "none",
+    tags: ["Vegan", "Vegetarian", "Gluten-Free", "Dairy-Free"],
+    price: 4.5,
+    type: "individual",
+    ingredients: "Cold-brewed arabica coffee, ice",
+    nutrition: { calories: 5, protein: 0, carbs: 0, fat: 0 },
+  },
+  {
+    id: "sparkling-lemonade",
+    name: "Sparkling Lemonade",
+    category: "Beverages",
+    cuisine: "Cafe",
+    description: "Fresh-squeezed lemon, a touch of cane sugar, topped with sparkling water.",
+    proteinType: "Plant-based",
+    allergens: "none",
+    tags: ["Vegan", "Vegetarian", "Gluten-Free", "Dairy-Free"],
+    price: 4.0,
+    type: "individual",
+    ingredients: "Fresh lemon juice, cane sugar, sparkling water, mint",
+    nutrition: { calories: 110, protein: 0, carbs: 27, fat: 0 },
+  },
 ];
 
-export const menuCategories = ["Mains", "Salads", "Sides", "Family Style"];
+/**
+ * Menu fetch for an order. Both parameters are mandatory — the backend keys the
+ * menu off (menu type × delivery date), so individual and family-style menus,
+ * pricing and availability are returned separately.
+ *
+ * @param type    "individual" | "family_style"
+ * @param weekday 1 = Mon … 7 = Sun (the delivery date's weekday)
+ */
+export function menuFor(type: OrderType, weekday: number) {
+  return menu.filter(
+    (m) =>
+      m.type === type &&
+      (!m.availableDays || m.availableDays.length === 0 || m.availableDays.includes(weekday)),
+  );
+}
+
+/**
+ * Customer-facing menu categories (the branded SFK sections), shown as filter
+ * tags under the menu header. Ordered as they appear on the site.
+ */
+export const menuCategories = [
+  "Craft Your Plate",
+  "The Weekly Drop",
+  "Sizzlin' Summer",
+  "SFK Staples",
+  "Leaves & Grains",
+  "Stack, Wrap & Roll",
+  "Savvy Servings",
+  "Add Ons",
+  "Beverages",
+] as const;
+
+export type MenuCategory = (typeof menuCategories)[number];
+
+/** Which branded section each menu item belongs to. */
+const CATEGORY_BY_ID: Record<string, MenuCategory> = {
+  // Craft Your Plate — build-your-own bowls
+  "bbq-brisket-bowl": "Craft Your Plate",
+  "paneer-bowl": "Craft Your Plate",
+  bibimbap: "Craft Your Plate",
+  "buddha-bowl": "Craft Your Plate",
+  "pan-asian-banquet": "Craft Your Plate",
+  // The Weekly Drop — rotating features
+  "teriyaki-salmon-bowl": "The Weekly Drop",
+  "margherita-flatbread": "The Weekly Drop",
+  // Sizzlin' Summer — seasonal
+  "quinoa-salad": "Sizzlin' Summer",
+  "fruit-cup": "Sizzlin' Summer",
+  // SFK Staples — signature mains
+  "beef-pho": "SFK Staples",
+  "pad-thai": "SFK Staples",
+  "bbq-family-style": "SFK Staples",
+  // Leaves & Grains — salads & grain bowls
+  "cobb-salad": "Leaves & Grains",
+  "mezze-box": "Leaves & Grains",
+  "mezze-feast": "Leaves & Grains",
+  // Stack, Wrap & Roll — sandwiches, wraps, tacos, flatbreads
+  "chicken-shawarma": "Stack, Wrap & Roll",
+  "jackfruit-tacos": "Stack, Wrap & Roll",
+  "caprese-sandwich": "Stack, Wrap & Roll",
+  "taco-fiesta-bar": "Stack, Wrap & Roll",
+  // Savvy Servings — light bites
+  "miso-soup": "Savvy Servings",
+  // Add Ons — snacks & extras
+  "greek-yogurt-parfait": "Add Ons",
+  // Beverages
+  "iced-matcha-latte": "Beverages",
+  "cold-brew-coffee": "Beverages",
+  "sparkling-lemonade": "Beverages",
+};
+
+/** The branded category an item belongs to (falls back to SFK Staples). */
+export function menuCategory(item: MenuItem): MenuCategory {
+  return CATEGORY_BY_ID[item.id] ?? "SFK Staples";
+}
+
+/**
+ * Branded categories that have at least one item for a menu type (across all
+ * days) — used for the category tag row so every relevant tag is shown, even if
+ * a given day's rotation doesn't include it.
+ */
+export function categoriesForType(type: OrderType): MenuCategory[] {
+  return menuCategories.filter((c) => menu.some((m) => m.type === type && menuCategory(m) === c));
+}
 
 export const dietaryFilters = [
   "Vegan",
@@ -453,6 +626,74 @@ export const dietaryFilters = [
   "Nut-Free",
   "Dairy-Free",
 ] as const;
+
+/**
+ * Allergens shown in the "Allergens to avoid" multiselect (menu filter + the
+ * profile). Separate from dietary preferences — the two are distinct concerns.
+ */
+export const allergenOptions = [
+  "Peanuts",
+  "Tree Nuts",
+  "Dairy",
+  "Eggs",
+  "Shellfish",
+  "Soy",
+  "Wheat",
+  "Gluten",
+  "Fish",
+  "Sesame",
+] as const;
+
+/**
+ * Dietary preferences shown in the "Dietary" multiselect (menu filter + the
+ * profile). Selecting these *shows only* matching items (vs. allergens, which
+ * *hide* matching items).
+ */
+export const dietaryPreferences = [
+  "Vegetarian",
+  "Vegan",
+  "Gluten-Free",
+  "Dairy-Free",
+  "Keto",
+  "Low-Calorie",
+  "Halal",
+  "Kosher",
+] as const;
+
+/** Tokens that signal each filter allergen's presence on an item. */
+const ALLERGEN_KEYWORDS: Record<string, string[]> = {
+  Peanuts: ["peanuts", "peanut"],
+  "Tree Nuts": ["nuts", "tree nuts", "almonds", "cashews", "walnuts", "pecans", "hazelnuts", "pistachios"],
+  Dairy: ["dairy", "milk", "cheese", "butter", "cream", "yogurt"],
+  Eggs: ["egg", "eggs"],
+  Shellfish: ["shellfish", "shrimp", "prawns", "crab", "lobster", "clams", "mussels", "oysters", "scallops"],
+  Soy: ["soy", "soya", "tofu", "edamame", "miso"],
+  Wheat: ["wheat", "gluten"],
+  Gluten: ["gluten", "wheat", "barley", "rye"],
+  Fish: ["fish", "salmon", "tuna", "cod", "anchovy"],
+  Sesame: ["sesame", "tahini"],
+};
+
+/** The allergen tokens declared on an item, e.g. "gluten, sesame" → {gluten, sesame}. */
+function itemAllergenTokens(item: MenuItem) {
+  return new Set(
+    item.allergens
+      .toLowerCase()
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s && s !== "none"),
+  );
+}
+
+/** True when the item contains ANY of the selected allergens (drives the avoid filter). */
+export function itemHasAnyAllergen(item: MenuItem, selected: string[]) {
+  if (!selected.length) return false;
+  const tokens = itemAllergenTokens(item);
+  return selected.some((label) => {
+    const keywords = ALLERGEN_KEYWORDS[label] ?? [label.toLowerCase()];
+    return keywords.some((kw) => tokens.has(kw));
+  });
+}
 
 export const cuisines = Array.from(new Set(menu.map((m) => m.cuisine))).sort();
 
@@ -464,11 +705,55 @@ export function getItem(id: string) {
   return menu.find((m) => m.id === id);
 }
 
-/** Items available on a given weekday (1=Mon … 7=Sun). */
-export function menuForWeekday(weekday: number) {
-  return menu.filter(
-    (m) => !m.availableDays || m.availableDays.length === 0 || m.availableDays.includes(weekday),
-  );
+/** Strip a trailing price parenthetical like " (+$3)" from an option name. */
+function cleanOptionName(name: string) {
+  return name.replace(/\s*\(\+\$[\d.]+\)\s*$/, "").trim();
+}
+
+/** A "no add-on" style option (e.g. "No extra", "Keep it vegan") — omitted from combo labels. */
+function isNoneOption(name: string, price: number) {
+  return price === 0 && /^(no\b|none\b|keep it)/i.test(name);
+}
+
+/**
+ * Build the pre-bundled combos for an item — the cartesian product of one
+ * option per add-on group. The picker shows these as a single choice so the
+ * user selects a whole combo rather than resolving each group on its own.
+ * Returns [] for items with no add-ons.
+ */
+export function buildCombos(item: MenuItem): MenuCombo[] {
+  const groups = item.addOns ?? [];
+  if (groups.length === 0) return [];
+
+  let combos: MenuCombo[] = [{ id: "", name: "", includes: [], selections: [], upcharge: 0 }];
+  for (const g of groups) {
+    const next: MenuCombo[] = [];
+    for (const base of combos) {
+      for (const opt of g.options) {
+        next.push({
+          id: base.id ? `${base.id}|${g.id}:${opt.id}` : `${g.id}:${opt.id}`,
+          name: "",
+          includes: [],
+          selections: [
+            ...base.selections,
+            { groupId: g.id, groupName: g.name, optionId: opt.id, name: opt.name, price: opt.price },
+          ],
+          upcharge: base.upcharge + opt.price,
+        });
+      }
+    }
+    combos = next;
+  }
+
+  return combos.map((c) => {
+    // Friendly label from the parts that actually add something.
+    const parts = c.selections
+      .filter((s) => !isNoneOption(s.name, s.price))
+      .map((s) => cleanOptionName(s.name));
+    // Full per-group breakdown so the user sees protein / sauce / side at a glance.
+    const includes = c.selections.map((s) => ({ group: s.groupName, item: cleanOptionName(s.name) }));
+    return { ...c, name: parts.length ? parts.join(" · ") : "Classic", includes };
+  });
 }
 
 /** Does an item have any required add-on group? (User Flow's mandatory branch) */

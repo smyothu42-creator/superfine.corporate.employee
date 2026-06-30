@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
+import { toast } from "@/store/use-toast-store";
+import { useAutoOrderStore } from "@/store/use-auto-order-store";
 import { formatCurrency } from "@/lib/utils";
 import { SetupWizard } from "./setup-wizard";
 import { ActiveDashboard } from "./active-dashboard";
-import type { AutoConfig, Weekday } from "./shared";
+import type { AutoConfig } from "./shared";
 
 export function AutoOrderView() {
   const [mounted, setMounted] = React.useState(false);
@@ -18,13 +20,29 @@ export function AutoOrderView() {
 
   const [config, setConfig] = React.useState<AutoConfig>(() => ({
     status: me.autoOrder.enabled ? "active" : "inactive",
-    strategy: "round-robin",
     favorites: me.autoOrder.favorites,
-    schedule: (me.autoOrder.days as Weekday[]) ?? ["Mon", "Tue", "Wed", "Thu", "Fri"],
-    reminder: me.autoOrder.reminderIfEmpty ? "1-day" : "none",
-    soldOut: "next-favorite",
+    soldOut: "notify",
   }));
   const [setupOpen, setSetupOpen] = React.useState(false);
+
+  // Drive the topbar title per state: while picking meals it's "Edit Your Auto
+  // Order" when an active/paused config already exists (you came in via Edit),
+  // else "Build Your Auto Order". Once active it's "Auto Order Dashboard",
+  // otherwise plain "Auto-Order".
+  const setNavTitle = useAutoOrderStore((s) => s.setNavTitle);
+  React.useEffect(() => {
+    const active = config.status === "active" || config.status === "paused";
+    setNavTitle(
+      setupOpen
+        ? active
+          ? "Edit Your Auto Order"
+          : "Build Your Auto Order"
+        : active
+          ? "Auto Order Dashboard"
+          : "Auto-Order",
+    );
+    return () => setNavTitle(null);
+  }, [setupOpen, config.status, setNavTitle]);
 
   if (!mounted) {
     return (
@@ -37,11 +55,21 @@ export function AutoOrderView() {
   }
 
   if (setupOpen) {
+    const editing = config.status === "active" || config.status === "paused";
     return (
       <SetupWizard
+        editing={editing}
+        initialFavorites={editing ? config.favorites : []}
+        initialSoldOut={editing ? config.soldOut : "notify"}
         onActivate={(c) => {
           setConfig(c);
           setSetupOpen(false);
+          toast.success(
+            editing ? "Auto-Order updated" : "Auto-Order is on",
+            editing
+              ? "Your meal pool and rules have been saved."
+              : "We'll draft each day's order 24h before its cutoff and email you to review.",
+          );
         }}
         onCancel={() => setSetupOpen(false)}
       />
@@ -64,14 +92,18 @@ export function AutoOrderView() {
             <Repeat className="size-6" />
           </span>
           <h2 className="mt-3 font-display text-2xl font-semibold tracking-tight">Set it and forget it</h2>
-          <p className="mt-1 max-w-sm text-sm">
-            Auto-Order rotates your favorite meals on the days you choose — so a busy week never means a
-            missed lunch. Change any day before the {program.individualSoftCutoff} cutoff.
+          <p className="mt-1 w-full text-sm">
+            Pick a pool of favorite meals once. We draft each day&apos;s order automatically 24 hours before
+            the cutoff and email you to review it in My Orders — no missed lunches, no surprises.
           </p>
         </div>
 
         <div className="space-y-3 p-6">
-          <Benefit icon={Clock} title="Zero forgotten lunches" desc="We order before the cutoff, every service day." />
+          <Benefit
+            icon={Clock}
+            title="Zero forgotten lunches"
+            desc="A draft lands in My Orders before every cutoff for you to review."
+          />
           <Benefit
             icon={Wallet}
             title={`Stays within your ${formatCurrency(program.subsidyPerDay)}/day`}

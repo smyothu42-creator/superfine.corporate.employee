@@ -3,73 +3,44 @@
 import * as React from "react";
 import { X, Plus, Minus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { formatCurrency, cn } from "@/lib/utils";
-import type { MenuItem, AddOnGroup } from "@/data/types";
+import { buildCombos } from "@/data/menu";
+import type { MenuItem } from "@/data/types";
 import type { CartAddOn } from "@/store/use-cart-store";
 
 interface AddOnModalProps {
   item: MenuItem;
   dateLabel: string;
+  /** Confirm-button verb, e.g. "Add to order" (default) or "Add to auto order". */
+  confirmLabel?: string;
+  /** Show the quantity stepper (off for the Auto-Order picker, which is 1 each). */
+  showQuantity?: boolean;
   onClose: () => void;
   onConfirm: (addOns: CartAddOn[], qty: number, unitPrice: number) => void;
 }
 
-type Selection = Record<string, string[]>; // groupId -> optionIds
-
-function initialSelection(groups: AddOnGroup[]): Selection {
-  const sel: Selection = {};
-  for (const g of groups) {
-    // Pre-select the first option of a required single group (sensible default).
-    sel[g.id] = g.required && g.select === "single" ? [g.options[0].id] : [];
-  }
-  return sel;
-}
-
 /**
- * Bottom-sheet add-on picker. Mandatory groups must be resolved before the
- * "Add" button enables (the User Flow's "Choose the required add-ons first"),
- * while optional groups are the "Customize" path. Forced selection via a bottom
- * sheet is exactly the pattern called for in the design sessions.
+ * Bottom-sheet combo picker. The item's add-on groups are pre-bundled into
+ * whole combos (one option per group), so the user picks a single combo rather
+ * than resolving protein / sauce / side separately. The first combo is selected
+ * by default, so the "Add" button is ready immediately.
  */
-export function AddOnModal({ item, dateLabel, onClose, onConfirm }: AddOnModalProps) {
-  const groups = item.addOns ?? [];
-  const [sel, setSel] = React.useState<Selection>(() => initialSelection(groups));
+export function AddOnModal({
+  item,
+  dateLabel,
+  confirmLabel = "Add to order",
+  showQuantity = true,
+  onClose,
+  onConfirm,
+}: AddOnModalProps) {
+  const combos = React.useMemo(() => buildCombos(item), [item]);
+  const [comboId, setComboId] = React.useState(() => combos[0]?.id ?? "");
   const [qty, setQty] = React.useState(1);
 
-  function toggle(group: AddOnGroup, optionId: string) {
-    setSel((prev) => {
-      const current = prev[group.id] ?? [];
-      if (group.select === "single") {
-        return { ...prev, [group.id]: [optionId] };
-      }
-      // multi
-      if (current.includes(optionId)) {
-        return { ...prev, [group.id]: current.filter((id) => id !== optionId) };
-      }
-      if (group.max && current.length >= group.max) return prev; // cap reached
-      return { ...prev, [group.id]: [...current, optionId] };
-    });
-  }
-
-  const resolved: CartAddOn[] = groups.flatMap((g) =>
-    (sel[g.id] ?? []).map((optId) => {
-      const opt = g.options.find((o) => o.id === optId)!;
-      return { groupId: g.id, optionId: opt.id, name: opt.name, price: opt.price };
-    }),
-  );
-
-  const addOnTotal = resolved.reduce((s, a) => s + a.price, 0);
-  const unitPrice = item.price + addOnTotal;
-
-  const unmet = groups.filter((g) => {
-    if (!g.required) return false;
-    const n = (sel[g.id] ?? []).length;
-    if (g.select === "single") return n < 1;
-    const need = g.max ?? 1;
-    return n < need; // required multi must hit its target count (e.g. "choose 2")
-  });
-  const canAdd = unmet.length === 0;
+  const combo = combos.find((c) => c.id === comboId) ?? combos[0];
+  const resolved: CartAddOn[] = combo ? combo.selections : [];
+  const unitPrice = item.price + (combo?.upcharge ?? 0);
+  const canAdd = Boolean(combo);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={`Customize ${item.name}`}>
@@ -91,92 +62,82 @@ export function AddOnModal({ item, dateLabel, onClose, onConfirm }: AddOnModalPr
           </button>
         </div>
 
-        <div className="flex-1 space-y-5 overflow-y-auto p-5">
-          {groups.map((group) => {
-            const current = sel[group.id] ?? [];
+        <div className="flex-1 space-y-2 overflow-y-auto p-5">
+          <div className="text-overline">Choose a combo</div>
+          {combos.map((c) => {
+            const checked = c.id === comboId;
             return (
-              <fieldset key={group.id}>
-                <legend className="flex w-full items-center justify-between">
-                  <span className="text-overline">{group.name}</span>
-                  {group.required ? (
-                    <Badge tone="warning">Required</Badge>
-                  ) : (
-                    <Badge tone="neutral">Optional{group.max ? ` · up to ${group.max}` : ""}</Badge>
-                  )}
-                </legend>
-                <div className="mt-2 space-y-2">
-                  {group.options.map((opt) => {
-                    const checked = current.includes(opt.id);
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => toggle(group, opt.id)}
-                        className={cn(
-                          "flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
-                          checked ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
-                        )}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <span
-                            className={cn(
-                              "flex size-5 shrink-0 items-center justify-center border",
-                              group.select === "single" ? "rounded-full" : "rounded-md",
-                              checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
-                            )}
-                          >
-                            {checked ? <Check className="size-3.5" /> : null}
-                          </span>
-                          {opt.name}
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setComboId(c.id)}
+                className={cn(
+                  "flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
+                  checked ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+                )}
+              >
+                <span className="flex min-w-0 items-start gap-2.5">
+                  <span
+                    className={cn(
+                      "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+                      checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
+                    )}
+                  >
+                    {checked ? <Check className="size-3.5" /> : null}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="font-medium">{c.name}</span>
+                    <span className="mt-1 block space-y-0.5">
+                      {c.includes.map((inc) => (
+                        <span key={inc.group} className="block text-2xs text-muted-foreground">
+                          <span className="font-semibold text-foreground/70">{inc.group}:</span> {inc.item}
                         </span>
-                        {opt.price > 0 ? (
-                          <span className="font-semibold nums">+{formatCurrency(opt.price)}</span>
-                        ) : (
-                          <span className="text-2xs text-muted-foreground">included</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </fieldset>
+                      ))}
+                    </span>
+                  </span>
+                </span>
+                {c.upcharge > 0 ? (
+                  <span className="shrink-0 font-semibold nums">+{formatCurrency(c.upcharge)}</span>
+                ) : (
+                  <span className="shrink-0 text-2xs text-muted-foreground">included</span>
+                )}
+              </button>
             );
           })}
         </div>
 
         <div className="border-t border-border p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-[13px] font-semibold text-muted-foreground">Quantity</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label="Decrease quantity"
-                onClick={() => setQty((q) => Math.max(1, q - 1))}
-                className="flex size-8 items-center justify-center rounded-full border border-border bg-card hover:bg-muted"
-              >
-                <Minus className="size-3.5" />
-              </button>
-              <span className="w-6 text-center text-sm font-semibold nums">{qty}</span>
-              <button
-                type="button"
-                aria-label="Increase quantity"
-                onClick={() => setQty((q) => q + 1)}
-                className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep"
-              >
-                <Plus className="size-3.5" />
-              </button>
+          {showQuantity ? (
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-muted-foreground">Quantity</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Decrease quantity"
+                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+                  className="flex size-8 items-center justify-center rounded-full border border-border bg-card hover:bg-muted"
+                >
+                  <Minus className="size-3.5" />
+                </button>
+                <span className="w-6 text-center text-sm font-semibold nums">{qty}</span>
+                <button
+                  type="button"
+                  aria-label="Increase quantity"
+                  onClick={() => setQty((q) => q + 1)}
+                  className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep"
+                >
+                  <Plus className="size-3.5" />
+                </button>
+              </div>
             </div>
-          </div>
+          ) : null}
           <Button
             block
             size="lg"
             disabled={!canAdd}
             onClick={() => onConfirm(resolved, qty, unitPrice)}
           >
-            {canAdd ? (
-              <>Add to order · {formatCurrency(unitPrice * qty)}</>
-            ) : (
-              <>Choose {unmet[0].name.toLowerCase()}</>
-            )}
+            {confirmLabel} · {formatCurrency(unitPrice * qty)}
           </Button>
         </div>
       </div>

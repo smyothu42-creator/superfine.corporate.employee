@@ -1,52 +1,30 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
-  Check,
-  X,
-  Lock,
-  Clock,
-  RefreshCw,
-  Settings2,
-  Play,
-  CalendarPlus,
+  Repeat,
   ShieldCheck,
-  CalendarDays,
-  MoreVertical,
+  BellRing,
+  Mail,
+  CheckCircle2,
+  CalendarClock,
+  ChevronRight,
+  Lock,
+  X,
+  Settings2,
 } from "lucide-react";
-import { addDays, fromISODate, toISODate } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
-import { Tabs } from "@/components/ui/tabs";
 import { Notice } from "@/components/ui/notice";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
 import { confirm } from "@/store/use-confirm-store";
-import { toast } from "@/store/use-toast-store";
 import { useAutoOrderStore } from "@/store/use-auto-order-store";
 import { formatCurrency, cn } from "@/lib/utils";
-import { isCutoffPassed } from "@/lib/cutoff";
-import { SwapSheet } from "./swap-sheet";
-import {
-  generateWeek,
-  weekTotal,
-  weeklyBudget,
-  safeFavorites,
-  shortDate,
-  dayMealIds,
-  type AutoConfig,
-  type PlanDay,
-  type DayStatus,
-} from "./shared";
-
-const STATUS_META: Record<DayStatus, { label: string; cls: string }> = {
-  confirmed: { label: "Confirmed", cls: "border-success-border bg-success-bg text-success" },
-  review: { label: "Review", cls: "border-warning-border bg-warning-bg text-coral-deep" },
-  skipped: { label: "Skipped", cls: "border-danger-border bg-danger-bg text-danger" },
-  "sold-out": { label: "Sold out", cls: "border-warning-border bg-warning-bg text-coral-deep" },
-  "day-off": { label: "Day off", cls: "border-border bg-muted text-muted-foreground" },
-};
+import { nextServiceDays, addDays, formatDay, formatDayLong } from "@/lib/dates";
+import { safeFavorites, type AutoConfig } from "./shared";
 
 export function ActiveDashboard({
   config,
@@ -57,152 +35,45 @@ export function ActiveDashboard({
   setConfig: (c: AutoConfig) => void;
   onEditSetup: () => void;
 }) {
-  // Demo: flag the last upcoming scheduled day as sold-out so the edge case shows.
-  const soldOutSeed = React.useMemo(() => {
-    const upcoming = generateWeek(config).filter((d) => d.status === "review");
-    return upcoming.length ? upcoming[upcoming.length - 1].dateISO : undefined;
-  }, [config]);
-
-  // Each tab is a week; week 0 is the current (editable) week, 1+ are upcoming.
-  const [weeks, setWeeks] = React.useState<Record<number, PlanDay[]>>(() => ({
-    0: generateWeek(config, soldOutSeed),
-  }));
-  const [activeWeek, setActiveWeek] = React.useState(0);
-  const [planCount, setPlanCount] = React.useState(4); // this week + 3 upcoming
-  const [swapping, setSwapping] = React.useState<PlanDay | null>(null);
-
   const paused = config.status === "paused";
-  const week = weeks[activeWeek] ?? weeks[0];
-
-  const setWeek = React.useCallback(
-    (updater: PlanDay[] | ((prev: PlanDay[]) => PlanDay[])) => {
-      setWeeks((prev) => {
-        const cur = prev[activeWeek] ?? [];
-        const next = typeof updater === "function" ? (updater as (p: PlanDay[]) => PlanDay[])(cur) : updater;
-        return { ...prev, [activeWeek]: next };
-      });
-    },
-    [activeWeek],
-  );
-
-  function selectWeek(offset: number) {
-    setWeeks((prev) => (prev[offset] ? prev : { ...prev, [offset]: generateWeek(config, undefined, offset) }));
-    setActiveWeek(offset);
-  }
-
-  function planMore() {
-    const offset = planCount;
-    setPlanCount((c) => c + 1);
-    selectWeek(offset);
-    toast.success("Planning ahead", "We'll keep rotating your favorites each week.");
-  }
-
-  function updateDay(dateISO: string, patch: Partial<PlanDay>) {
-    setWeek((prev) => prev.map((d) => (d.dateISO === dateISO ? { ...d, ...patch } : d)));
-  }
-
-  async function acceptSoldOutSwap(day: PlanDay) {
-    const pool = safeFavorites(config.favorites);
-    const next = pool.find((id) => id !== day.itemId) ?? pool[0];
-    if (!next) return;
-    const ok = await confirm({
-      title: `Swap ${day.weekday}'s lunch?`,
-      description: `We'll replace your sold-out pick with ${getItem(next)?.name}.`,
-      confirmLabel: "Confirm swap",
-    });
-    if (!ok) return;
-    updateDay(day.dateISO, {
-      itemId: next,
-      originalItemId: day.itemId,
-      status: "review",
-      userModified: true,
-      kitchenReview: true,
-    });
-    toast.success("Swapped in your next favorite", getItem(next)?.name);
-  }
-
-  async function toggleAutoOrder(next: boolean) {
-    if (next) {
-      setConfig({ ...config, status: "active" });
-      return;
-    }
-    const ok = await confirm({
-      title: "Turn off Auto-Order?",
-      description: "We'll keep your favorites and settings so you can switch it back on anytime.",
-      tone: "danger",
-      confirmLabel: "Turn off",
-    });
-    if (ok) setConfig({ ...config, status: "inactive" });
-  }
-
-  async function skipDay(day: PlanDay) {
-    const ok = await confirm({
-      title: `Skip ${day.weekday}?`,
-      description: "You won't get lunch that day.",
-      tone: "warning",
-      confirmLabel: "Yes, skip",
-      cancelLabel: "Keep it",
-    });
-    if (ok) updateDay(day.dateISO, { status: "skipped", itemId: undefined });
-  }
-
-  const visibleDays = week;
-  const total = weekTotal(week);
-  const budget = weeklyBudget(config);
-  const soldOutDay = week.find((d) => d.status === "sold-out");
-  const suggestedSwap = React.useMemo(() => {
-    if (!soldOutDay) return undefined;
-    const pool = safeFavorites(config.favorites);
-    const id = pool.find((fid) => fid !== soldOutDay.itemId) ?? pool[0];
-    return id ? getItem(id) : undefined;
-  }, [soldOutDay, config.favorites]);
-  const nextReview = week.find((d) => d.status === "review");
+  const pool = safeFavorites(config.favorites);
   const blockedFavorite = config.favorites.find((id) => !safeFavorites([id]).length);
 
-  // Publish the weekly summary + toggle to the Topbar so the nav header adapts.
+  // The next service day we'll build a draft for, and when that draft lands.
+  // Cutoff is 4PM the day before delivery; the draft is created 24h earlier —
+  // i.e. two days before delivery at 4PM (Mon delivery → Sat 4PM draft).
+  const nextDelivery = React.useMemo(
+    () => nextServiceDays(new Date(), program.serviceDayNums, 1)[0],
+    [],
+  );
+  const draftDay = nextDelivery ? addDays(nextDelivery, -2) : undefined;
+
+  const [howItWorksOpen, setHowItWorksOpen] = React.useState(false);
+
+  const stopOrdering = React.useCallback(async () => {
+    const ok = await confirm({
+      title: "Turn off auto-order?",
+      description: "We'll keep your meals and settings so you can turn it back on anytime.",
+      tone: "danger",
+      confirmLabel: "Turn off auto order",
+    });
+    if (ok) setConfig({ ...config, status: "inactive" });
+  }, [config, setConfig]);
+
+  // Publish pool size + Edit / How-it-works / Turn-off actions to the Topbar nav.
   const setAutoOrderHeader = useAutoOrderStore((s) => s.setHeader);
-  const toggleRef = React.useRef(toggleAutoOrder);
-  toggleRef.current = toggleAutoOrder;
   React.useEffect(() => {
     setAutoOrderHeader({
-      total,
-      budget,
-      remaining: Math.max(0, budget - total),
-      paused,
-      onToggle: (next) => toggleRef.current(next),
+      poolCount: pool.length,
+      onEdit: onEditSetup,
+      onHowItWorks: () => setHowItWorksOpen(true),
+      onStop: paused ? undefined : stopOrdering,
     });
     return () => setAutoOrderHeader(null);
-  }, [total, budget, paused, setAutoOrderHeader]);
-
-  const weekTabs = React.useMemo(() => {
-    const mon = fromISODate(weeks[0][0].dateISO);
-    return Array.from({ length: planCount }, (_, w) => {
-      if (w === 0) return { id: "0", label: "This week" };
-      const start = addDays(mon, 7 * w);
-      const end = addDays(start, 4);
-      return { id: String(w), label: `${shortDate(toISODate(start))} – ${shortDate(toISODate(end))}` };
-    });
-  }, [planCount, weeks]);
+  }, [pool.length, onEditSetup, setAutoOrderHeader, paused, stopOrdering]);
 
   return (
     <div className="w-full space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight">
-          <CalendarDays className="size-5 text-primary" />
-          Week of {shortDate(week[0].dateISO)}–{shortDate(week[week.length - 1].dateISO)}
-        </h2>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={planMore}>
-            <CalendarPlus className="size-4" /> Plan more weeks
-          </Button>
-          <Button variant="brand" size="sm" onClick={onEditSetup}>
-            <Settings2 className="size-4" /> Edit Auto Ordering
-          </Button>
-        </div>
-      </div>
-
-      {/* Edge-case banners */}
       {blockedFavorite ? (
         <Notice tone="success">
           <ShieldCheck className="inline size-3.5" /> Allergy-safe mode is on —{" "}
@@ -211,384 +82,209 @@ export function ActiveDashboard({
         </Notice>
       ) : null}
 
-      {!paused && nextReview ? (
-        <div className="flex items-center gap-2 rounded-xl border border-warning-border bg-warning-bg px-3 py-2 text-[13px] font-semibold text-coral-deep">
-          <Clock className="size-4 shrink-0" />
-          Confirm {nextReview.weekday}&apos;s order before {program.individualSoftCutoff} or it auto-skips.
-        </div>
-      ) : null}
-
-      {/* Week tabs — switch the orders shown below */}
-      <div className="overflow-x-auto pb-1">
-        <Tabs
-          tabs={weekTabs}
-          value={String(activeWeek)}
-          onValueChange={(id) => selectWeek(Number(id))}
-        />
-      </div>
-
-      {/* Day cards — single box, one row per day */}
-      <div className="divide-y divide-border rounded-2xl border border-border bg-card">
-        {visibleDays.map((day) => (
-          <DayCard
-            key={day.dateISO}
-            day={day}
-            suggestedItem={day.status === "sold-out" ? suggestedSwap : undefined}
-            onSwap={() => setSwapping(day)}
-            onSkip={() => skipDay(day)}
-            onUndoSkip={() => updateDay(day.dateISO, { status: "review" })}
-            onAddOrder={() => setSwapping(day)}
-            onAcceptSwap={() => acceptSoldOutSwap(day)}
-          />
-        ))}
-      </div>
-
-      {swapping ? (
-        <SwapSheet
-          dateISO={swapping.dateISO}
-          weekday={swapping.weekday}
-          currentItemId={swapping.itemId}
-          favorites={config.favorites}
-          onClose={() => setSwapping(null)}
-          onPick={async (itemId) => {
-            const ok = await confirm({
-              title: `Swap ${swapping.weekday}'s lunch?`,
-              description: `Order ${getItem(itemId)?.name} for ${shortDate(swapping.dateISO)}?`,
-              confirmLabel: "Confirm swap",
-            });
-            if (!ok) return;
-            updateDay(swapping.dateISO, {
-              itemId,
-              originalItemId: swapping.itemId ?? swapping.originalItemId,
-              status: "review",
-              userModified: true,
-              kitchenReview: swapping.status === "sold-out",
-            });
-            setSwapping(null);
-            toast.success(`${swapping.weekday} updated`, getItem(itemId)?.name);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function DayCard({
-  day,
-  suggestedItem,
-  onSwap,
-  onSkip,
-  onUndoSkip,
-  onAddOrder,
-  onAcceptSwap,
-}: {
-  day: PlanDay;
-  suggestedItem?: ReturnType<typeof getItem>;
-  onSwap: () => void;
-  onSkip: () => void;
-  onUndoSkip: () => void;
-  onAddOrder: () => void;
-  onAcceptSwap: () => void;
-}) {
-  const item = day.itemId ? getItem(day.itemId) : undefined;
-  const meta = STATUS_META[day.status];
-  const soldOut = day.status === "sold-out";
-  const mealIds = dayMealIds(day);
-  const multi = mealIds.length > 1;
-  const mealTotal = mealIds.reduce((s, id) => s + (getItem(id)?.price ?? 0), 0);
-  const reviewing = day.kitchenReview === true;
-  const badge = reviewing
-    ? { label: "Reviewing", cls: "border-warning-border bg-warning-bg text-coral-deep" }
-    : meta;
-  const cutoffLabel = isCutoffPassed(day.dateISO) ? "Cutoff passed" : `Review by cutoff`;
-
-  return (
-    <div
-      className={cn(
-        "px-3 py-4 transition-colors",
-        day.status === "skipped" && "opacity-70",
-      )}
-    >
-      <div className="flex items-center gap-3">
-        <div className="w-12 shrink-0 text-center">
-          <p className="text-2xs font-semibold uppercase text-muted-foreground">{day.weekday}</p>
-          <p className="font-display text-lg font-semibold leading-none">{shortDate(day.dateISO).split(" ")[1]}</p>
+      {/* Status hero — "Auto-Order is on" + Stop ordering, with Next up (and the
+          Review-drafts link) tucked inside the box. */}
+      <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-card">
+        <div
+          className={cn(
+            "flex items-start gap-3 px-6 py-5",
+            paused ? "bg-muted text-foreground" : "bg-hero-yellow text-teal-deep",
+          )}
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/40">
+            {paused ? <Lock className="size-5" /> : <CheckCircle2 className="size-5" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-display text-lg font-semibold tracking-tight">
+              {paused ? "Auto-Order is paused" : "Auto-Order is on"}
+            </h3>
+            <p className="mt-0.5 text-[13px]">
+              {paused
+                ? "No drafts will be created until you switch it back on."
+                : "Nothing to do right now — we'll build each day's order and email you to review it before the cutoff."}
+            </p>
+          </div>
         </div>
 
-        {day.status === "day-off" ? (
-          <div className="flex flex-1 items-center justify-between">
-            <span className="text-[13px] text-muted-foreground">No order (day off)</span>
-            <Button variant="ghost" size="sm" onClick={onAddOrder}>
-              <CalendarPlus className="size-4" /> Add order
-            </Button>
+        {/* Next up — the upcoming draft, with a compact Review action. */}
+        {!paused && nextDelivery && draftDay ? (
+          <div className="flex items-center gap-3 border-t border-border px-6 py-4">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-teal-wash text-primary">
+              <CalendarClock className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Next up
+              </p>
+              <p className="text-[13px] font-semibold">Lunch for {formatDayLong(nextDelivery)}</p>
+              <p className="mt-0.5 text-2xs text-muted-foreground">
+                Draft lands {formatDay(draftDay)} · 4:00 PM
+              </p>
+            </div>
+            <Link
+              href="/orders"
+              className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors hover:bg-muted"
+            >
+              Review <ChevronRight className="size-4 text-muted-foreground" />
+            </Link>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Meal pool */}
+      <div className="rounded-3xl border border-border bg-card p-5 shadow-card">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <p className="text-overline">Your meal pool</p>
+            <span className="text-2xs font-semibold text-muted-foreground nums">
+              {pool.length} {pool.length === 1 ? "meal" : "meals"}
+            </span>
+          </div>
+          <Button variant="brand" size="sm" onClick={onEditSetup}>
+            <Settings2 className="size-4" /> Edit Auto Order
+          </Button>
+        </div>
+        {pool.length ? (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {pool.map((id) => {
+              const item = getItem(id);
+              if (!item) return null;
+              return (
+                <div
+                  key={id}
+                  className="flex items-center gap-3 rounded-2xl border border-border bg-card p-2.5"
+                >
+                  <FoodPhoto src={item.image} alt={item.name} className="size-11 rounded-xl" iconClassName="size-4" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-semibold">{item.name}</p>
+                    <p className="truncate text-2xs text-muted-foreground">{item.cuisine}</p>
+                  </div>
+                  {program.showPrices ? (
+                    <span className="shrink-0 text-[13px] font-semibold nums">{formatCurrency(item.price)}</span>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         ) : (
-          <>
-            {multi ? (
-              <div className="flex shrink-0 -space-x-3">
-                {mealIds.slice(0, 3).map((id, idx) => (
-                  <FoodPhoto
-                    key={idx}
-                    src={getItem(id)?.image}
-                    alt={getItem(id)?.name ?? ""}
-                    className={cn(
-                      "size-12 rounded-full ring-2 ring-card",
-                      day.status === "skipped" && "opacity-70 grayscale",
-                    )}
-                    iconClassName="size-4"
-                  />
-                ))}
-              </div>
-            ) : (
-              <FoodPhoto
-                src={item?.image}
-                alt={item?.name ?? ""}
-                className={cn("size-12 rounded-full", soldOut && "opacity-50 grayscale")}
-                iconClassName="size-4"
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <p
-                className={cn(
-                  "truncate text-sm font-semibold",
-                  (day.status === "skipped" || soldOut) && "text-muted-foreground line-through",
-                )}
-              >
-                {multi ? `${mealIds.length} meal orders` : item?.name ?? "—"}
-              </p>
-              <div className="mt-0.5 flex items-center gap-1.5">
-                <span className={cn("rounded-full border px-1.5 py-0.5 text-[10px] font-semibold", badge.cls)}>
-                  {badge.label}
-                </span>
-                {day.status === "review" ? (
-                  <span className="text-2xs text-muted-foreground">{cutoffLabel}</span>
-                ) : null}
-                {day.originalItemId ? (
-                  <span className="text-2xs text-muted-foreground">· swapped</span>
-                ) : null}
-              </div>
-            </div>
-            {mealIds.length > 0 && program.showPrices ? (
-              <span className="shrink-0 text-sm font-semibold nums">{formatCurrency(mealTotal)}</span>
-            ) : null}
-            {day.status === "review" ? <DayActionsMenu onSwap={onSwap} onSkip={onSkip} /> : null}
-          </>
+          <p className="text-[13px] text-muted-foreground">
+            No meals in your rotation yet.{" "}
+            <button type="button" onClick={onEditSetup} className="font-semibold text-primary hover:underline">
+              Add some
+            </button>
+            .
+          </p>
         )}
       </div>
 
-      {/* Per-status actions */}
-      {soldOut ? (
-        suggestedItem ? (
-          <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-muted/60 px-2.5 py-2">
-            <RefreshCw className="size-3.5 shrink-0 text-primary" />
-            <FoodPhoto
-              src={suggestedItem.image}
-              alt={suggestedItem.name}
-              className="size-9 rounded-lg"
-              iconClassName="size-3.5"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-2xs font-medium text-muted-foreground">We&apos;ll swap in</p>
-              <p className="truncate text-[13px] font-semibold leading-tight">{suggestedItem.name}</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <MiniBtn onClick={onAcceptSwap} icon={Check} label="Accept" primary />
-              <MiniBtn onClick={onSwap} icon={RefreshCw} label="Pick other" />
-            </div>
-            {program.showPrices ? (
-              <span className="shrink-0 text-[13px] font-semibold nums">{formatCurrency(suggestedItem.price)}</span>
-            ) : null}
-          </div>
-        ) : (
-          <div className="mt-3 flex items-center justify-end gap-1.5">
-            <MiniBtn onClick={onAcceptSwap} icon={Check} label="Accept" primary />
-            <MiniBtn onClick={onSwap} icon={RefreshCw} label="Pick other" />
-          </div>
-        )
-      ) : null}
-      {day.status === "skipped" ? (
-        <div className="mt-3">
-          <ActionBtn onClick={onUndoSkip} icon={Play} label="Undo skip — order again" full />
-        </div>
-      ) : null}
-      {day.status === "confirmed" ? (
-        <p className="mt-2 flex items-center gap-1 text-2xs text-muted-foreground">
-          <Lock className="size-3" /> Locked in — cutoff passed
-        </p>
-      ) : null}
+      {howItWorksOpen ? <HowItWorksModal onClose={() => setHowItWorksOpen(false)} /> : null}
     </div>
   );
 }
 
-function ActionBtn({
-  onClick,
-  icon: Icon,
-  label,
-  primary,
-  full,
-}: {
-  onClick: () => void;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  primary?: boolean;
-  full?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center justify-center gap-1 rounded-full border px-2.5 py-2.5 text-2xs font-semibold transition-colors",
-        full && "w-full",
-        primary
-          ? "border-primary bg-primary text-primary-foreground hover:bg-teal-deep"
-          : "border-border bg-card text-foreground hover:bg-muted",
-      )}
-    >
-      <Icon className="size-3" /> {label}
-    </button>
-  );
-}
-
-/** Compact pill button — used inline in the sold-out swap row. */
-function MiniBtn({
-  onClick,
-  icon: Icon,
-  label,
-  primary,
-}: {
-  onClick: () => void;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  primary?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-2xs font-semibold transition-colors",
-        primary
-          ? "border-primary bg-primary text-primary-foreground hover:bg-teal-deep"
-          : "border-border bg-card text-foreground hover:bg-muted",
-      )}
-    >
-      <Icon className="size-3" /> {label}
-    </button>
-  );
-}
-
-/** Kebab menu for a review day — Swap / Skip in a dropdown instead of inline buttons. */
-function DayActionsMenu({ onSwap, onSkip }: { onSwap: () => void; onSkip: () => void }) {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
+/** "How auto-order works" — opened from the topbar's How it works button. */
+function HowItWorksModal({ onClose }: { onClose: () => void }) {
+  const [shown, setShown] = React.useState(false);
 
   React.useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") onClose();
     }
-    document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label="How auto-order works">
       <button
         type="button"
-        aria-label="Day options"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        aria-label="Close"
+        onClick={onClose}
+        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+      />
+      <div
         className={cn(
-          "flex size-8 items-center justify-center rounded-full border transition-colors",
-          open
-            ? "border-primary bg-teal-wash text-teal-deep"
-            : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+          "relative w-full max-w-md rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
+          shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",
         )}
       >
-        <MoreVertical className="size-4" />
-      </button>
-      {open ? (
-        <div
-          role="menu"
-          className="absolute right-0 top-full z-30 mt-1 w-36 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg"
-        >
-          <DayMenuItem
-            icon={RefreshCw}
-            label="Swap"
-            onClick={() => {
-              setOpen(false);
-              onSwap();
-            }}
-          />
-          <DayMenuItem
-            icon={X}
-            label="Skip"
-            onClick={() => {
-              setOpen(false);
-              onSkip();
-            }}
-          />
+        <div className="flex items-start justify-between gap-3 px-5 pt-4">
+          <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+            <Repeat className="size-5 text-primary" /> How auto-order works
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
         </div>
-      ) : null}
+        <ol className="space-y-3 p-5">
+          <Step
+            n={1}
+            icon={Repeat}
+            title="Auto-Order stays active in the background"
+            desc="No per-day schedule to manage. We pick from your meal pool automatically."
+          />
+          <Step
+            n={2}
+            icon={BellRing}
+            title="24 hours before each cutoff, a draft is created"
+            desc="You get an email: “Your order is ready. Tap to review or change.”"
+          />
+          <Step
+            n={3}
+            icon={Mail}
+            title="Review it in My Orders"
+            desc="Keep it, swap the meal, add sides or beverages, or cancel — your call."
+          />
+          <Step
+            n={4}
+            icon={CheckCircle2}
+            title="At the cutoff, the draft confirms itself"
+            desc="Do nothing and it's locked in. Already ordered yourself? We skip it — no duplicate."
+            last
+          />
+        </ol>
+      </div>
     </div>
   );
 }
 
-function DayMenuItem({
+function Step({
+  n,
   icon: Icon,
-  label,
-  onClick,
+  title,
+  desc,
+  last,
 }: {
+  n: number;
   icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick: () => void;
+  title: string;
+  desc: string;
+  last?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-semibold text-foreground hover:bg-muted"
-    >
-      <Icon className="size-3.5 text-muted-foreground" /> {label}
-    </button>
-  );
-}
-
-function SettingRow({
-  icon: Icon,
-  label,
-  value,
-  actionLabel,
-  onAction,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  actionLabel: string;
-  onAction: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-2.5">
-      <span className="flex min-w-0 items-center gap-2.5">
-        <Icon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0">
-          <span className="block text-[13px] font-semibold">{label}</span>
-          <span className="block truncate text-2xs text-muted-foreground">{value}</span>
+    <li className="flex gap-3">
+      <div className="flex flex-col items-center">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-teal-wash text-primary">
+          <Icon className="size-4" />
         </span>
-      </span>
-      <button type="button" onClick={onAction} className="shrink-0 text-[13px] font-semibold text-primary hover:underline">
-        {actionLabel}
-      </button>
-    </div>
+        {!last ? <span className="mt-1 w-px flex-1 bg-border" /> : null}
+      </div>
+      <div className="min-w-0 pb-1">
+        <p className="text-[13px] font-semibold">
+          <span className="mr-1.5 text-muted-foreground nums">{n}.</span>
+          {title}
+        </p>
+        <p className="mt-0.5 text-2xs text-muted-foreground">{desc}</p>
+      </div>
+    </li>
   );
 }

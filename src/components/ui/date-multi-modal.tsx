@@ -14,6 +14,10 @@ interface DateMultiModalProps {
   serviceDayNums?: number[];
   title?: string;
   subtitle?: string;
+  /** Allow applying an empty selection (e.g. to clear an existing set of dates). */
+  allowClear?: boolean;
+  /** Apply-button label when nothing is selected (only reachable with allowClear). */
+  emptyApplyLabel?: string;
   onClose: () => void;
   onApply: (datesISO: string[]) => void;
 }
@@ -37,6 +41,8 @@ export function DateMultiModal({
   serviceDayNums = [1, 2, 3, 4, 5],
   title = "Select dates",
   subtitle = "Tap the days you'll be away.",
+  allowClear = false,
+  emptyApplyLabel = "Select days",
   onClose,
   onApply,
 }: DateMultiModalProps) {
@@ -177,8 +183,13 @@ export function DateMultiModal({
           <Button variant="ghost" block onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="teal" block disabled={!selected.length} onClick={() => onApply([...selected].sort())}>
-            {selected.length ? `Set ${selected.length} day${selected.length > 1 ? "s" : ""}` : "Select days"}
+          <Button
+            variant="teal"
+            block
+            disabled={!selected.length && !allowClear}
+            onClick={() => onApply([...selected].sort())}
+          >
+            {selected.length ? `Set ${selected.length} day${selected.length > 1 ? "s" : ""}` : emptyApplyLabel}
           </Button>
         </div>
       </div>

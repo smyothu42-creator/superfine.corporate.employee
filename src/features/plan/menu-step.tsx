@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FoodPhoto } from "@/components/menu/food-photo";
-import { menuForWeekday, hasRequiredAddOns, hasOptionalAddOns } from "@/data/menu";
+import { menuFor, hasRequiredAddOns, hasOptionalAddOns } from "@/data/menu";
 import { program } from "@/data/program";
 import { cn, formatCurrency } from "@/lib/utils";
 import { fromISODate, isoWeekday, formatDayLong, WEEKDAY_SHORT } from "@/lib/dates";
@@ -54,7 +54,7 @@ export function MenuStep({
   }, [activeDate]);
 
   const dayDate = fromISODate(activeDate);
-  const dayItems = menuForWeekday(isoWeekday(dayDate)).filter((i) => i.type === "individual");
+  const dayItems = menuFor("individual", isoWeekday(dayDate));
   const lines = selections[activeDate] ?? [];
   const daySpent = lines.reduce((s, l) => s + l.price, 0);
   const remaining = Math.max(0, program.subsidyPerDay - daySpent);

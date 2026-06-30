@@ -12,6 +12,9 @@ import {
   MapPin,
   MessageSquare,
   X,
+  Repeat,
+  Check,
+  Clock,
 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -105,6 +108,8 @@ function OrderCard({ order }: { order: Order }) {
   const items = order.days.flatMap((d) => d.items);
   const active = ["draft", "confirmed", "out_for_delivery"].includes(order.status);
   const editable = active && !order.locked;
+  // An Auto-Order draft awaiting review (created 24h before cutoff).
+  const autoDraft = order.source === "auto" && order.status === "draft";
   // Change flow: multi-item orders pick which item first; single-item jumps straight to swap.
   const [picking, setPicking] = React.useState(false);
   const [swapItem, setSwapItem] = React.useState<OrderLineItem | null>(null);
@@ -124,6 +129,10 @@ function OrderCard({ order }: { order: Order }) {
       tone: "danger",
     });
     if (ok) toast.success("Order cancelled", `${order.id} has been cancelled.`);
+  }
+
+  function keep() {
+    toast.success("Order kept", `We'll confirm ${order.id} for you at the cutoff.`);
   }
 
   // Stops a button/link inside the card from also triggering the card navigation.
@@ -146,9 +155,14 @@ function OrderCard({ order }: { order: Order }) {
     >
       <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-display text-base font-semibold tracking-tight">{order.id}</span>
             <OrderStatusBadge status={order.status} />
+            {order.source === "auto" ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-teal/30 bg-teal-wash px-2 py-0.5 text-2xs font-semibold text-teal-deep">
+                <Repeat className="size-3" /> Auto-order
+              </span>
+            ) : null}
           </div>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
             {order.days.length > 1
@@ -158,6 +172,18 @@ function OrderCard({ order }: { order: Order }) {
         </div>
         {editable ? (
           <div className="flex shrink-0 items-center gap-2">
+            {autoDraft ? (
+              <Button
+                size="sm"
+                variant="teal"
+                onClick={(e) => {
+                  stop(e);
+                  keep();
+                }}
+              >
+                <Check className="size-3.5" /> Keep
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="ghost"
@@ -166,7 +192,7 @@ function OrderCard({ order }: { order: Order }) {
                 startChange();
               }}
             >
-              <Pencil className="size-3.5" /> Change
+              <Pencil className="size-3.5" /> {autoDraft ? "Swap" : "Change"}
             </Button>
             <Button
               size="sm"
@@ -189,6 +215,17 @@ function OrderCard({ order }: { order: Order }) {
         {active ? (
           <div className="pb-2">
             <OrderTimeline status={order.status} />
+          </div>
+        ) : null}
+
+        {autoDraft ? (
+          <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px] text-coral-deep">
+            <Clock className="mt-0.5 size-4 shrink-0" />
+            <span>
+              <strong className="font-semibold">Auto-Order draft.</strong>{" "}
+              {order.reviewBy ? <>Review by {order.reviewBy} — </> : null}
+              keep it, swap a meal, add sides, or cancel. If you do nothing, it confirms at the cutoff.
+            </span>
           </div>
         ) : null}
 
