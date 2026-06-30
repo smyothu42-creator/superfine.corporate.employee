@@ -28,6 +28,7 @@ import { DateRangeModal } from "@/features/menu/date-range-modal";
 import {
   menuForWeekday,
   cuisines,
+  proteinTypes,
   dietaryFilters,
   hasRequiredAddOns,
   hasOptionalAddOns,
@@ -82,6 +83,7 @@ export function MenuView() {
   // Filters
   const [query, setQuery] = React.useState("");
   const [cuisine, setCuisine] = React.useState("");
+  const [protein, setProtein] = React.useState("");
   const [priceMax, setPriceMax] = React.useState("");
   const [diet, setDiet] = React.useState<string | null>(null);
 
@@ -169,10 +171,11 @@ export function MenuView() {
       );
     }
     if (cuisine) items = items.filter((i) => i.cuisine === cuisine);
+    if (protein) items = items.filter((i) => i.proteinType === protein);
     if (priceMax) items = items.filter((i) => i.price <= Number(priceMax));
     if (diet) items = items.filter((i) => i.tags.includes(diet as MenuItem["tags"][number]));
     return items;
-  }, [day, query, cuisine, priceMax, diet]);
+  }, [day, query, cuisine, protein, priceMax, diet]);
 
   function inCartFor(itemId: string) {
     return cart
@@ -286,6 +289,18 @@ export function MenuView() {
             options={[
               { value: "", label: "All cuisines" },
               ...cuisines.map((c) => ({ value: c, label: c })),
+            ]}
+          />
+          <div className="h-6 w-px shrink-0 bg-border" />
+          <ThemeSelect
+            value={protein}
+            onValueChange={setProtein}
+            aria-label="Filter by protein"
+            variant="pill"
+            align="right"
+            options={[
+              { value: "", label: "Any protein" },
+              ...proteinTypes.map((p) => ({ value: p, label: p })),
             ]}
           />
           <div className="h-6 w-px shrink-0 bg-border" />

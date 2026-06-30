@@ -1,4 +1,4 @@
-import type { MenuItem } from "./types";
+import type { MenuItem, ProteinType } from "./types";
 
 /**
  * The company's curated menu. Menus rotate by weekday (the User Flow notes the
@@ -15,6 +15,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "American",
     description: "Slow-smoked brisket, pickled slaw, chimichurri rice",
+    proteinType: "Beef",
     allergens: "none",
     tags: ["Gluten-Free"],
     price: 16.5,
@@ -56,6 +57,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Mexican",
     description: "Pulled jackfruit, salsa verde, corn tortillas",
+    proteinType: "Plant-based",
     allergens: "none",
     tags: ["Vegan", "Gluten-Free"],
     price: 13.0,
@@ -84,6 +86,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Middle Eastern",
     description: "Marinated chicken, garlic toum, flatbread",
+    proteinType: "Chicken",
     allergens: "gluten, sesame",
     tags: ["Halal"],
     price: 15.0,
@@ -123,6 +126,7 @@ export const menu: MenuItem[] = [
     category: "Salads",
     cuisine: "Californian",
     description: "Roasted squash, kale, pomegranate, lemon-tahini",
+    proteinType: "Plant-based",
     allergens: "sesame",
     tags: ["Vegan", "Gluten-Free"],
     price: 13.5,
@@ -152,6 +156,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Indian",
     description: "Tandoori paneer, turmeric rice, mint chutney",
+    proteinType: "Vegetarian",
     allergens: "dairy",
     tags: ["Vegetarian", "Gluten-Free"],
     price: 14.5,
@@ -182,6 +187,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Korean",
     description: "Rice, seasoned vegetables, gochujang — choose a protein",
+    proteinType: "Vegetarian",
     allergens: "soy, sesame",
     tags: ["Vegetarian"],
     price: 14.0,
@@ -211,6 +217,7 @@ export const menu: MenuItem[] = [
     category: "Salads",
     cuisine: "Mediterranean",
     description: "Falafel, hummus, tabbouleh, pita, olives",
+    proteinType: "Plant-based",
     allergens: "gluten, sesame",
     tags: ["Vegan"],
     price: 13.0,
@@ -226,6 +233,7 @@ export const menu: MenuItem[] = [
     category: "Sides",
     cuisine: "Japanese",
     description: "Warm miso broth with a side of sea-salt edamame",
+    proteinType: "Plant-based",
     allergens: "soy",
     tags: ["Vegan", "Gluten-Free"],
     price: 5.5,
@@ -254,6 +262,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Japanese",
     description: "Glazed salmon, steamed rice, sesame greens, edamame",
+    proteinType: "Seafood",
     allergens: "fish, soy, sesame",
     tags: ["Gluten-Free", "Dairy-Free"],
     price: 16.0,
@@ -270,6 +279,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Italian",
     description: "Stone-baked flatbread, San Marzano tomato, fresh mozzarella, basil",
+    proteinType: "Vegetarian",
     allergens: "gluten, dairy",
     tags: ["Vegetarian"],
     price: 12.5,
@@ -285,6 +295,7 @@ export const menu: MenuItem[] = [
     category: "Salads",
     cuisine: "American",
     description: "Grilled chicken, egg, avocado, bacon, blue cheese, ranch",
+    proteinType: "Chicken",
     allergens: "egg, dairy",
     tags: ["Gluten-Free", "Nut-Free"],
     price: 14.0,
@@ -300,6 +311,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Thai",
     description: "Rice noodles, tofu, bean sprouts, peanuts, tamarind sauce",
+    proteinType: "Vegetarian",
     allergens: "peanuts, soy",
     tags: ["Vegetarian", "Dairy-Free"],
     price: 13.5,
@@ -330,6 +342,7 @@ export const menu: MenuItem[] = [
     category: "Salads",
     cuisine: "Californian",
     description: "Brown rice, roasted chickpeas, avocado, greens, tahini drizzle",
+    proteinType: "Plant-based",
     allergens: "sesame",
     tags: ["Vegan", "Gluten-Free", "Dairy-Free"],
     price: 13.0,
@@ -346,6 +359,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Vietnamese",
     description: "Slow-simmered broth, rice noodles, brisket, herbs, lime",
+    proteinType: "Beef",
     allergens: "soy",
     tags: ["Dairy-Free"],
     price: 14.5,
@@ -362,6 +376,7 @@ export const menu: MenuItem[] = [
     category: "Mains",
     cuisine: "Italian",
     description: "Ciabatta, fresh mozzarella, tomato, basil pesto, balsamic",
+    proteinType: "Vegetarian",
     allergens: "gluten, dairy, nuts",
     tags: ["Vegetarian"],
     price: 11.5,
@@ -376,6 +391,7 @@ export const menu: MenuItem[] = [
     category: "Sides",
     cuisine: "Mediterranean",
     description: "Greek yogurt, granola, honey, seasonal berries",
+    proteinType: "Vegetarian",
     allergens: "dairy, nuts",
     tags: ["Vegetarian"],
     price: 6.0,
@@ -390,6 +406,7 @@ export const menu: MenuItem[] = [
     category: "Family Style",
     cuisine: "American",
     description: "Choose your entrées — sides + sauces included. Serves the team.",
+    proteinType: "Beef",
     allergens: "none",
     tags: ["Gluten-Free"],
     price: 185.0,
@@ -438,6 +455,10 @@ export const dietaryFilters = [
 ] as const;
 
 export const cuisines = Array.from(new Set(menu.map((m) => m.cuisine))).sort();
+
+/** Protein types present on the menu, in a stable display order for the filter. */
+const PROTEIN_ORDER: ProteinType[] = ["Chicken", "Beef", "Seafood", "Vegetarian", "Plant-based"];
+export const proteinTypes = PROTEIN_ORDER.filter((p) => menu.some((m) => m.proteinType === p));
 
 export function getItem(id: string) {
   return menu.find((m) => m.id === id);

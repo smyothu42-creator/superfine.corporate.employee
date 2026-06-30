@@ -1,19 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Hanken_Grotesk } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 
 /**
- * Single typeface for the whole site — Hanken Grotesk across headings, body,
- * and UI. One variable drives every font role.
+ * Single typeface for the whole site — Geist across headings, body,
+ * and UI. One variable (`--font-sans`) drives every font role.
  */
-const hanken = Hanken_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-  weight: ["400", "500", "600", "700"],
-  fallback: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "Arial", "sans-serif"],
-  adjustFontFallback: false,
-});
 
 export const metadata: Metadata = {
   title: "My Meals — Superfine Kitchen",
@@ -29,7 +21,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={hanken.variable}>
+    <html
+      lang="en"
+      className={GeistSans.variable}
+      style={{ ["--font-sans" as string]: "var(--font-geist-sans)" }}
+    >
       <body className="font-sans">{children}</body>
     </html>
   );

@@ -17,6 +17,8 @@ import {
   Smartphone,
   Pencil,
   XCircle,
+  AlertTriangle,
+  Tag,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +35,21 @@ import { fromISODate, formatDay } from "@/lib/dates";
 import { cutoffFor, demoNow } from "@/lib/cutoff";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { PaymentChoice } from "@/data/types";
+
+/** Demo promo codes — flat dollars off or a percentage of the employee balance. */
+const PROMO_CODES: Record<string, { kind: "flat" | "percent"; value: number; label: string }> = {
+  LUNCH5: { kind: "flat", value: 5, label: "$5 off" },
+  SAVE10: { kind: "percent", value: 10, label: "10% off your share" },
+  WELCOME: { kind: "flat", value: 3, label: "$3 off" },
+};
+
+type AppliedPromo = { code: string; kind: "flat" | "percent"; value: number; label: string };
+
+/** Discount a promo yields against the current balance owed (clamped, 2dp). */
+function promoDiscount(promo: AppliedPromo, owed: number) {
+  const raw = promo.kind === "flat" ? promo.value : (owed * promo.value) / 100;
+  return Math.min(owed, Math.round(raw * 100) / 100);
+}
 
 export function CheckoutView() {
   const [mounted, setMounted] = React.useState(false);
@@ -51,6 +68,14 @@ export function CheckoutView() {
   const [timeModalOpen, setTimeModalOpen] = React.useState(false);
   const [addressOpen, setAddressOpen] = React.useState(false);
 
+  // Promo code (applied against the employee-paid balance).
+  const [promoInput, setPromoInput] = React.useState("");
+  const [promo, setPromo] = React.useState<AppliedPromo | null>(null);
+  const [promoError, setPromoError] = React.useState("");
+
+  const discount = promo ? promoDiscount(promo, owed) : 0;
+  const finalOwed = Math.max(0, owed - discount);
+
   if (!mounted) {
     return <Skeleton className="h-96 rounded-2xl" />;
   }
@@ -58,7 +83,7 @@ export function CheckoutView() {
   const dates = cart.dates();
 
   if (placed) {
-    return <Confirmation owed={owed} payment={owed === 0 ? "covered" : payment} />;
+    return <Confirmation owed={finalOwed} payment={finalOwed === 0 ? "covered" : payment} />;
   }
 
   if (dates.length === 0) {
@@ -93,12 +118,32 @@ export function CheckoutView() {
     dates.forEach((d) => cart.setWindow(d, w));
   }
 
+  function applyPromo() {
+    const code = promoInput.trim().toUpperCase();
+    if (!code) return;
+    const def = PROMO_CODES[code];
+    if (!def) {
+      setPromo(null);
+      setPromoError("That code isn't valid or has expired.");
+      return;
+    }
+    setPromo({ code, ...def });
+    setPromoError("");
+    setPromoInput("");
+    toast.success("Promo applied", `${code} — ${def.label}`);
+  }
+
+  function removePromo() {
+    setPromo(null);
+    setPromoError("");
+  }
+
   function placeOrder() {
-    const resolvedPayment: PaymentChoice = owed === 0 ? "covered" : payment;
+    const resolvedPayment: PaymentChoice = finalOwed === 0 ? "covered" : payment;
     cart.setPayment(resolvedPayment);
     toast.success(
       "Order placed",
-      owed === 0 ? "Fully covered — confirmation on its way." : "Confirmation on its way.",
+      finalOwed === 0 ? "Fully covered — confirmation on its way." : "Confirmation on its way.",
     );
     setPlaced(true);
     cart.clear();
@@ -114,10 +159,16 @@ export function CheckoutView() {
         <div className="space-y-5 lg:col-span-2">
           {/* Cutoff check */}
           <Card>
-            <CardHeader>
-              <CardTitle>Cutoff check</CardTitle>
+            <CardHeader className="flex-wrap">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <CardTitle>Cutoff check</CardTitle>
+                <span className="inline-flex items-center gap-1 text-2xs font-medium leading-snug text-warning">
+                  <AlertTriangle className="size-3 shrink-0 -translate-y-px" />
+                  Complete each order before its day-before cutoff or that day is cancelled automatically.
+                </span>
+              </div>
             </CardHeader>
-            <CardBody className="space-y-3">
+            <CardBody>
               <div className="rounded-xl border border-border bg-muted/40 p-3">
                 <div className="flex flex-wrap gap-2">
                   {cutoffs.map((c) => (
@@ -137,9 +188,6 @@ export function CheckoutView() {
                   ))}
                 </div>
               </div>
-              <Notice tone="warning" className="text-xs">
-                Complete each order before its day-before cutoff or that day is cancelled automatically.
-              </Notice>
             </CardBody>
           </Card>
 
@@ -283,9 +331,16 @@ export function CheckoutView() {
                 <div className="space-y-1.5 pt-1">
                   <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
                   <SummaryRow label="Company subsidy" value={`−${formatCurrency(subsidy)}`} tone="success" />
+                  {discount > 0 && promo ? (
+                    <SummaryRow
+                      label={`Promo · ${promo.code}`}
+                      value={`−${formatCurrency(discount)}`}
+                      tone="success"
+                    />
+                  ) : null}
                   <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
                     <span>You pay</span>
-                    <span className="nums">{formatCurrency(owed)}</span>
+                    <span className="nums">{formatCurrency(finalOwed)}</span>
                   </div>
                 </div>
               ) : (
@@ -294,6 +349,20 @@ export function CheckoutView() {
                   <span className="nums text-success">{formatCurrency(0)}</span>
                 </div>
               )}
+
+              {program.showPrices && owed > 0 ? (
+                <PromoField
+                  promo={promo}
+                  value={promoInput}
+                  error={promoError}
+                  onChange={(v) => {
+                    setPromoInput(v);
+                    if (promoError) setPromoError("");
+                  }}
+                  onApply={applyPromo}
+                  onRemove={removePromo}
+                />
+              ) : null}
 
               <Button block size="lg" onClick={placeOrder}>
                 Place order
@@ -882,6 +951,84 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
     <div className="flex items-center justify-between text-[13px]">
       <span className="text-muted-foreground">{label}</span>
       <span className={cn("font-medium nums", tone === "success" && "text-success")}>{value}</span>
+    </div>
+  );
+}
+
+/**
+ * Promo-code entry above "Place order". Shows an input + Apply button while no
+ * code is active; once applied it collapses into a removable success chip.
+ */
+function PromoField({
+  promo,
+  value,
+  error,
+  onChange,
+  onApply,
+  onRemove,
+}: {
+  promo: AppliedPromo | null;
+  value: string;
+  error: string;
+  onChange: (v: string) => void;
+  onApply: () => void;
+  onRemove: () => void;
+}) {
+  if (promo) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-success-border bg-success-bg px-3 py-2.5 text-[13px]">
+        <span className="flex min-w-0 items-center gap-1.5 font-semibold text-success">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span className="truncate">
+            {promo.code} applied · {promo.label}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove promo code ${promo.code}`}
+          className="shrink-0 rounded-full p-1 text-success/80 transition-colors hover:bg-success/10 hover:text-success"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        className={cn(
+          "flex items-center gap-1.5 rounded-xl border bg-card p-1.5 transition-colors focus-within:border-primary",
+          error ? "border-danger-border" : "border-border",
+        )}
+      >
+        <Tag className="ml-1.5 size-4 shrink-0 text-muted-foreground" />
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onApply();
+            }
+          }}
+          placeholder="Promo code"
+          aria-label="Promo code"
+          autoCapitalize="characters"
+          spellCheck={false}
+          className="h-8 min-w-0 flex-1 bg-transparent text-[13px] uppercase tracking-wide text-foreground outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground/70"
+        />
+        <Button size="sm" variant="teal" onClick={onApply} disabled={!value.trim()}>
+          Apply
+        </Button>
+      </div>
+      {error ? (
+        <p className="flex items-center gap-1 px-1 text-2xs font-medium text-danger">
+          <XCircle className="size-3 shrink-0" />
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

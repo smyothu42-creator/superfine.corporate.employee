@@ -10,6 +10,14 @@ export type DietaryTag =
 
 export type OrderType = "individual" | "family_style";
 
+/** The main protein an item is built around — used for the menu protein filter. */
+export type ProteinType =
+  | "Chicken"
+  | "Beef"
+  | "Seafood"
+  | "Vegetarian"
+  | "Plant-based";
+
 /** Customer-facing order lifecycle from the interviews:
  *  Draft → Confirmed → Out for Delivery → Delivered (+ Cancelled). */
 export type OrderStatus =
@@ -62,6 +70,8 @@ export interface MenuItem {
   tags: DietaryTag[];
   price: number;
   type: OrderType;
+  /** Main protein the dish is built around (drives the menu protein filter). */
+  proteinType?: ProteinType;
   serves?: number;
   /** Food photo for the card / detail hero. Falls back to a placeholder. */
   image?: string;
