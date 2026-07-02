@@ -57,13 +57,20 @@ function Topbar() {
   const toggleCart = useUiStore((s) => s.toggleCart);
   const cartOpen = useUiStore((s) => s.cartOpen);
   const activeOrderDate = useUiStore((s) => s.activeOrderDate);
+  const editingOrder = useUiStore((s) => s.editingOrder);
   const cart = useCartStore();
   const cartCount = cart.count();
   const autoHeader = useAutoOrderStore((s) => s.header);
   const autoNavTitle = useAutoOrderStore((s) => s.navTitle);
   const onAutoOrder = pathname.startsWith("/auto-order");
   // Auto-order title is contextual (set per view state); fall back to the route default.
-  const title = onAutoOrder && autoNavTitle ? autoNavTitle : deriveTitle(pathname);
+  // Editing a placed order reframes the menu as "Changing Order".
+  const title =
+    editingOrder && pathname === "/menu"
+      ? "Changing Order"
+      : onAutoOrder && autoNavTitle
+        ? autoNavTitle
+        : deriveTitle(pathname);
   const onOrders = pathname === "/orders";
   const onCheckout = pathname === "/checkout";
   const onNotifications = pathname === "/notifications";
@@ -109,31 +116,34 @@ function Topbar() {
           <NotificationsHeaderControl />
         ) : hideHeaderActions ? null : (
           <>
-            {/* Today's budget — hover/focus for the company-vs-you breakdown. */}
-            {activeOrderDate ? <BudgetIndicator dayTotal={dayTotal} /> : null}
+            {/* Editing a placed order hides the subsidy + cart entirely — the
+                change is shown in the on-page "Changing order" banner. */}
+            {activeOrderDate && !editingOrder ? <BudgetIndicator dayTotal={dayTotal} /> : null}
 
-            <button
-              id="cart-icon"
-              type="button"
-              onClick={toggleCart}
-              aria-expanded={cartOpen}
-              aria-label={`Cart${cartCount ? `, ${cartCount} items` : ""}`}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full border text-sm font-semibold transition-colors",
-                cartOpen
-                  ? "border-primary bg-teal-wash text-teal-deep"
-                  : "border-border bg-card text-foreground hover:bg-muted",
-                cartCount > 0 ? "py-1.5 pl-3 pr-1.5" : "px-3 py-1.5",
-              )}
-            >
-              <ShoppingCart className="size-5" />
-              <span className="hidden sm:inline">Cart</span>
-              {cartCount > 0 ? (
-                <span className="flex min-w-[22px] items-center justify-center rounded-full bg-coral px-1.5 text-[13px] font-bold leading-[22px] text-white">
-                  {cartCount}
-                </span>
-              ) : null}
-            </button>
+            {!editingOrder ? (
+              <button
+                id="cart-icon"
+                type="button"
+                onClick={toggleCart}
+                aria-expanded={cartOpen}
+                aria-label={`Cart${cartCount ? `, ${cartCount} items` : ""}`}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full border text-sm font-semibold transition-colors",
+                  cartOpen
+                    ? "border-primary bg-teal-wash text-teal-deep"
+                    : "border-border bg-card text-foreground hover:bg-muted",
+                  cartCount > 0 ? "py-1.5 pl-3 pr-1.5" : "px-3 py-1.5",
+                )}
+              >
+                <ShoppingCart className="size-5" />
+                <span className="hidden sm:inline">Cart</span>
+                {cartCount > 0 ? (
+                  <span className="flex min-w-[22px] items-center justify-center rounded-full bg-coral px-1.5 text-[13px] font-bold leading-[22px] text-white">
+                    {cartCount}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
           </>
         )}
       </div>

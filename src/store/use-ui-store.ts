@@ -1,6 +1,25 @@
 import { create } from "zustand";
 
 /**
+ * Context for the "edit a placed order from the full menu" flow. Set when the
+ * user picks "Select from full menu" in the change-order popup, then read by the
+ * menu (to focus the edited day + show the editing banner) and the cart (badge).
+ */
+export interface EditingOrderContext {
+  orderId: string;
+  /** ISO day being edited. */
+  date: string;
+  /** The original meal being replaced (fixed — drives the "from → to" summary). */
+  originalItemId: string;
+  originalItemName: string;
+  /** The current selection (starts equal to the original, becomes the new pick). */
+  itemId: string;
+  itemName: string;
+  /** Human label, e.g. "Tuesday, Jul 7". */
+  dateLabel: string;
+}
+
+/**
  * Global UI state (chrome / shell). Kept separate from domain stores so layout
  * concerns don't re-render data views.
  */
@@ -24,6 +43,10 @@ interface UiState {
   openCart: () => void;
   closeCart: () => void;
   toggleCart: () => void;
+  /** Active "edit a placed order from the full menu" context (null = not editing). */
+  editingOrder: EditingOrderContext | null;
+  startEditingOrder: (ctx: EditingOrderContext) => void;
+  clearEditingOrder: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -42,4 +65,7 @@ export const useUiStore = create<UiState>((set) => ({
   openCart: () => set({ cartOpen: true }),
   closeCart: () => set({ cartOpen: false }),
   toggleCart: () => set((s) => ({ cartOpen: !s.cartOpen })),
+  editingOrder: null,
+  startEditingOrder: (editingOrder) => set({ editingOrder }),
+  clearEditingOrder: () => set({ editingOrder: null }),
 }));

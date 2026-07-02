@@ -3,18 +3,60 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Minus, Trash2, CalendarDays, ShoppingBag, ArrowRight, CalendarPlus } from "lucide-react";
+import { Plus, Minus, Trash2, CalendarDays, ShoppingBag, ArrowRight, ArrowDown, CalendarPlus, Pencil, Check, AlarmClock } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FoodPhoto } from "@/components/menu/food-photo";
+import { getItem } from "@/data/menu";
+import type { EditingOrderContext } from "@/store/use-ui-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { confirm } from "@/store/use-confirm-store";
+import { toast } from "@/store/use-toast-store";
 import { program } from "@/data/program";
 import { fromISODate, formatDay } from "@/lib/dates";
+import { cutoffFor, demoNow } from "@/lib/cutoff";
 import { formatCurrency, cn } from "@/lib/utils";
+
+/** Time-left-to-cutoff message for a delivery date, or null if not close/passed. */
+function cutoffCountdown(dateISO: string): { label: string; urgent: boolean } | null {
+  const ms = cutoffFor(dateISO).getTime() - demoNow().getTime();
+  if (ms <= 0) return null; // already passed
+  const hours = ms / 3_600_000;
+  if (hours > 6) return null; // not close enough to flag
+  const mins = Math.max(1, Math.round(ms / 60_000));
+  const label =
+    mins >= 120
+      ? `${Math.round(mins / 60)} hours`
+      : mins >= 60
+        ? mins % 60
+          ? `1 hour ${mins % 60} min`
+          : "1 hour"
+        : `${mins} minutes`;
+  return { label, urgent: hours <= 2 };
+}
+
+/** "⏰ N left to edit this order" urgency flag shown near cutoff. */
+function CutoffCountdown({ dateISO }: { dateISO: string }) {
+  const info = cutoffCountdown(dateISO);
+  if (!info) return null;
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-2xs font-semibold",
+        info.urgent
+          ? "bg-danger-bg text-danger"
+          : "bg-warning-bg text-coral-deep",
+      )}
+    >
+      <AlarmClock className="size-3.5 shrink-0" />
+      {info.urgent ? `${info.label} left to edit this order` : `Order cutoff approaching · ${info.label} left`}
+    </div>
+  );
+}
 
 function useMounted() {
   const [mounted, setMounted] = React.useState(false);
@@ -106,7 +148,12 @@ function CartEmptyState() {
 
 export function CartDayList() {
   const cart = useCartStore();
+  const editingOrder = useUiStore((s) => s.editingOrder);
   const dates = cart.dates();
+
+  // Editing a placed order: show the single meal change (from → to) instead of
+  // the normal per-day cart.
+  if (editingOrder) return <CartEditingSummary editingOrder={editingOrder} />;
 
   return (
     <>
@@ -189,11 +236,86 @@ export function CartDayList() {
                 <span>Subsidy applied</span>
                 <span className="nums text-success">−{formatCurrency(daySub)}</span>
               </div>
+              <CutoffCountdown dateISO={date} />
             </CardBody>
           </Card>
         );
       })}
     </>
+  );
+}
+
+/** The "from → to" meal change shown in the cart while editing a placed order. */
+function CartEditingSummary({ editingOrder }: { editingOrder: EditingOrderContext }) {
+  const changed = editingOrder.itemId !== editingOrder.originalItemId;
+  const fromItem = getItem(editingOrder.originalItemId);
+  const toItem = getItem(editingOrder.itemId);
+
+  return (
+    <>
+      <Notice tone="info">
+        Changing one meal in <strong>{editingOrder.orderId}</strong>. Pick a new meal from the menu, then
+        Save.
+      </Notice>
+      <Card>
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+          <h3 className="flex items-center gap-2 font-display text-base font-semibold tracking-tight">
+            <CalendarDays className="size-4 text-primary" />
+            {editingOrder.dateLabel}
+          </h3>
+          <Badge tone="brand" className="gap-1">
+            <Pencil className="size-3" /> Editing order
+          </Badge>
+        </div>
+        <CardBody className="space-y-2.5">
+          <CutoffCountdown dateISO={editingOrder.date} />
+          <div className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">From</div>
+          <MealTile name={editingOrder.originalItemName} image={fromItem?.image} muted />
+          <div className="flex items-center justify-center">
+            <span className="flex size-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <ArrowDown className="size-4" />
+            </span>
+          </div>
+          <div className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">To</div>
+          {changed ? (
+            <MealTile name={editingOrder.itemName} image={toItem?.image} highlighted />
+          ) : (
+            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-border bg-muted/30 p-3 text-[13px] text-muted-foreground">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted">
+                <Plus className="size-5" />
+              </span>
+              Pick a meal from the menu &rarr;
+            </div>
+          )}
+        </CardBody>
+      </Card>
+    </>
+  );
+}
+
+function MealTile({
+  name,
+  image,
+  muted,
+  highlighted,
+}: {
+  name: string;
+  image?: string;
+  muted?: boolean;
+  highlighted?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-2xl border p-3",
+        highlighted ? "border-primary bg-teal-wash" : "border-border bg-card",
+      )}
+    >
+      <FoodPhoto src={image} alt={name} className="size-12 shrink-0 rounded-xl" iconClassName="size-4" />
+      <p className={cn("min-w-0 flex-1 truncate text-sm font-semibold", muted && "text-muted-foreground line-through")}>
+        {name}
+      </p>
+    </div>
   );
 }
 
@@ -204,6 +326,8 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
   const plannedDays = useUiStore((s) => s.plannedDays);
   const closeCart = useUiStore((s) => s.closeCart);
   const requestRangePicker = useUiStore((s) => s.requestRangePicker);
+  const editingOrder = useUiStore((s) => s.editingOrder);
+  const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
   const subtotal = cart.subtotal();
   const subsidy = cart.totalSubsidy();
   const owed = cart.totalEmployeePaid();
@@ -231,6 +355,16 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
     closeCart();
     requestRangePicker();
     router.push("/menu");
+  }
+
+  // Editing a placed order: "Save" applies the change and leaves editing mode.
+  function handleSave() {
+    const label = editingOrder?.dateLabel ?? "";
+    if (editingOrder) cart.clearDay(editingOrder.date);
+    clearEditingOrder();
+    closeCart();
+    toast.success("Order updated", `Your ${label} order has been updated.`);
+    router.push("/orders");
   }
 
   const body = (
@@ -270,12 +404,21 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
         </div>
       )}
       <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-between">
-        <Button variant="ghost" onClick={handleAddAnotherDay}>
-          <CalendarPlus className="size-4" /> Add another day
-        </Button>
-        <Button size="lg" onClick={handleCheckout}>
-          Checkout <ArrowRight className="size-4" />
-        </Button>
+        {editingOrder ? (
+          // Editing a placed order: save the change; no "add another day".
+          <Button size="lg" block onClick={handleSave}>
+            <Check className="size-4" /> Save
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={handleAddAnotherDay}>
+              <CalendarPlus className="size-4" /> Add another day
+            </Button>
+            <Button size="lg" onClick={handleCheckout}>
+              Checkout <ArrowRight className="size-4" />
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

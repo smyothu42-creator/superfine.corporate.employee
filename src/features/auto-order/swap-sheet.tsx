@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X, Check } from "lucide-react";
+import { X, Check, ArrowRight } from "lucide-react";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { program } from "@/data/program";
@@ -19,10 +19,16 @@ interface SwapSheetProps {
   subtitle?: string;
   onClose: () => void;
   onPick: (itemId: string) => void;
+  /**
+   * When provided, the in-popup "Full menu" tab is replaced by a "Select from
+   * full menu" action that closes the popup and hands off to the main menu page
+   * (with the edited day + cart context preserved by the caller).
+   */
+  onFullMenu?: () => void;
 }
 
 /** Swap a day's meal — bottom sheet on mobile, centered modal on desktop. Favorites first, then the full menu. */
-export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, subtitle, onClose, onPick }: SwapSheetProps) {
+export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, subtitle, onClose, onPick, onFullMenu }: SwapSheetProps) {
   const [shown, setShown] = React.useState(false);
   const [tab, setTab] = React.useState<"favorites" | "menu">("favorites");
 
@@ -39,8 +45,11 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
   }, [onClose]);
 
   const favItems = favorites.map((id) => getItem(id)).filter(Boolean);
+  // When the full menu is handed off to the main page, the in-popup browse tab
+  // is gone, so this sheet only ever lists the quick picks (favorites).
+  const activeTab = onFullMenu ? "favorites" : tab;
   // Items with the employee's saved allergens are never shown (not greyed).
-  const list = (tab === "favorites" ? favItems : mealPool).filter((item) => item && !hasAllergen(item));
+  const list = (activeTab === "favorites" ? favItems : mealPool).filter((item) => item && !hasAllergen(item));
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
@@ -74,21 +83,42 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
               <X className="size-4" />
             </button>
           </div>
-          <div className="mt-3 inline-flex gap-1 rounded-full border border-border bg-card p-1">
-            {(["favorites", "menu"] as const).map((t) => (
+          {onFullMenu ? (
+            <div className="mt-3 space-y-3">
               <button
-                key={t}
                 type="button"
-                onClick={() => setTab(t)}
-                className={cn(
-                  "rounded-full px-4 py-1.5 text-[13px] font-semibold capitalize transition-colors",
-                  tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
+                onClick={onFullMenu}
+                className="flex w-full items-center justify-between gap-2 rounded-2xl bg-primary px-4 py-3 text-left text-primary-foreground transition-colors hover:bg-teal-deep"
               >
-                {t === "menu" ? "Full menu" : "Favorites"}
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold">Select from full menu</span>
+                  <span className="block text-2xs text-primary-foreground/80">
+                    Browse everything for {shortDate(dateISO)}
+                  </span>
+                </span>
+                <ArrowRight className="size-5 shrink-0" />
               </button>
-            ))}
-          </div>
+              <p className="text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                Or pick a favorite
+              </p>
+            </div>
+          ) : (
+            <div className="mt-3 inline-flex gap-1 rounded-full border border-border bg-card p-1">
+              {(["favorites", "menu"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  className={cn(
+                    "rounded-full px-4 py-1.5 text-[13px] font-semibold capitalize transition-colors",
+                    tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t === "menu" ? "Full menu" : "Favorites"}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-6">

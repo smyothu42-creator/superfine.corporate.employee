@@ -17,6 +17,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { OrderStatusBadge, OrderTimeline } from "@/components/orders/order-status";
+import { useChangeOrder } from "./use-change-order";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { program } from "@/data/program";
@@ -34,8 +35,10 @@ const PAYMENT_LABEL: Record<PaymentChoice, string> = {
 
 export function OrderDetailView({ order }: { order: Order }) {
   const router = useRouter();
-  const active = ["draft", "confirmed", "out_for_delivery"].includes(order.status);
+  const active = ["draft", "confirmed"].includes(order.status);
   const editable = active && !order.locked;
+  // Same change-order popup + "Select from full menu" hand-off as the list page.
+  const { startChange, sheets } = useChangeOrder(order);
 
   async function cancel() {
     const ok = await confirm({
@@ -67,7 +70,7 @@ export function OrderDetailView({ order }: { order: Order }) {
       {active ? (
         <Card>
           <CardBody>
-            <OrderTimeline status={order.status} />
+            <OrderTimeline status={order.status} source={order.source} />
           </CardBody>
         </Card>
       ) : null}
@@ -155,10 +158,8 @@ export function OrderDetailView({ order }: { order: Order }) {
           <div className="space-y-2">
             {editable ? (
               <>
-                <Button asChild block variant="outline">
-                  <Link href="/menu">
-                    <Pencil className="size-4" /> Change order
-                  </Link>
+                <Button block variant="outline" onClick={startChange}>
+                  <Pencil className="size-4" /> Change order
                 </Button>
                 <Button block variant="ghost" className="text-danger" onClick={cancel}>
                   <XCircle className="size-4" /> Cancel order
@@ -183,6 +184,7 @@ export function OrderDetailView({ order }: { order: Order }) {
           ) : null}
         </div>
       </div>
+      {sheets}
     </div>
   );
 }

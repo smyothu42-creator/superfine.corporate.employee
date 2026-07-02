@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { NAV_ITEMS, isActive } from "@/lib/nav";
+import { useUiStore } from "@/store/use-ui-store";
 import { Logo } from "@/components/brand/logo";
 import { Avatar } from "@/components/ui/avatar";
 import { me } from "@/data/me";
@@ -19,6 +20,8 @@ interface SidebarProps {
 function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  // While changing a placed order, /menu is a sub-flow — don't light up "Menu".
+  const editing = useUiStore((s) => Boolean(s.editingOrder));
 
   async function handleLogout() {
     const ok = await confirm({
@@ -40,7 +43,7 @@ function Sidebar({ onNavigate }: SidebarProps) {
 
       <nav className="flex-1 space-y-2.5 overflow-y-auto px-3 py-1">
         {NAV_ITEMS.map((item) => {
-          const active = isActive(pathname, item);
+          const active = isActive(pathname, item) && !(editing && item.href === "/menu");
           const Icon = item.icon;
           return (
             <Link

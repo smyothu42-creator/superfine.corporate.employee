@@ -3,19 +3,19 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle, Replace, Check } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
-import { Skeleton } from "@/components/ui/skeleton";
-import { AddOnModal } from "@/components/menu/add-on-modal";
-import { hasRequiredAddOns, hasOptionalAddOns, menuCategory } from "@/data/menu";
+import { hasRequiredAddOns, hasOptionalAddOns, menuCategory, buildCombos } from "@/data/menu";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
-import { useCartStore } from "@/store/use-cart-store";
+import { useCartStore, type CartAddOn } from "@/store/use-cart-store";
+import { useUiStore } from "@/store/use-ui-store";
 import { toast } from "@/store/use-toast-store";
+import { confirm } from "@/store/use-confirm-store";
 import { nextServiceDays, startOfToday, toISODate, fromISODate, formatDay, WEEKDAY_SHORT } from "@/lib/dates";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
@@ -30,14 +30,40 @@ const TAG_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 export function ItemDetailView({ item }: { item: MenuItem }) {
   const router = useRouter();
   const cart = useCartStore();
+  const editingOrder = useUiStore((s) => s.editingOrder);
+  const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
+  const editing = Boolean(editingOrder);
   const [mounted, setMounted] = React.useState(false);
-  const [days, setDays] = React.useState<string[]>([]);
   const [date, setDate] = React.useState("");
-  const [customizing, setCustomizing] = React.useState(false);
+  // Meal options (combos) shown inline on the detail page.
+  const combos = React.useMemo(() => buildCombos(item), [item]);
+  const [comboId, setComboId] = React.useState<string>(() => combos[0]?.id ?? "");
+  const combo = combos.find((c) => c.id === comboId) ?? combos[0];
+  const resolved: CartAddOn[] = combo?.selections ?? [];
+  const unitPrice = item.price + (combo?.upcharge ?? 0);
+
+  // While changing a placed order, the day is fixed to the order's day.
+  const activeDate = editingOrder ? editingOrder.date : date;
+
+  // Changing a placed order: confirm the swap, then return to My Orders.
+  async function requestChange() {
+    if (!editingOrder) return;
+    const ok = await confirm({
+      title: "Change your meal?",
+      description: `Change from ${editingOrder.originalItemName} to ${item.name} for ${editingOrder.dateLabel}?`,
+      confirmLabel: "Confirm change",
+    });
+    if (!ok) return;
+    clearEditingOrder();
+    toast.success(
+      "Order updated",
+      `${editingOrder.originalItemName} → ${item.name} for ${editingOrder.dateLabel}.`,
+    );
+    router.push("/orders");
+  }
 
   React.useEffect(() => {
     const upcoming = nextServiceDays(startOfToday(), program.serviceDayNums, 8).map(toISODate);
-    setDays(upcoming);
     setDate(upcoming[0] ?? "");
     setMounted(true);
   }, []);
@@ -49,14 +75,19 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
       `${item.allergens} ${item.ingredients ?? ""}`.toLowerCase().includes(a.toLowerCase()),
     );
 
-  function quickAdd() {
+  function addToOrder() {
+    if (editingOrder) {
+      requestChange();
+      return;
+    }
     cart.add({
       date,
       itemId: item.id,
       name: item.name,
       basePrice: item.price,
       qty: 1,
-      addOns: [],
+      addOns: resolved,
+      unitPrice,
       type: item.type,
     });
     toast.success(`${item.name} added`, `For ${formatDay(fromISODate(date))}`);
@@ -132,72 +163,83 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
             </Card>
           ) : null}
 
-          {/* Choose a day + add */}
+          {/* Options + add */}
           <Card>
             <CardBody className="space-y-3">
-              <div className="text-overline">Add to which day?</div>
-              {!mounted ? (
-                <Skeleton className="h-16 rounded-xl" />
-              ) : (
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {days.map((iso) => {
-                    const d = fromISODate(iso);
-                    const active = iso === date;
-                    return (
-                      <button
-                        key={iso}
-                        type="button"
-                        onClick={() => setDate(iso)}
-                        className={cn(
-                          "flex min-w-[60px] flex-col items-center rounded-xl border px-3 py-2 transition-colors",
-                          active
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-card hover:bg-muted",
-                        )}
-                      >
-                        <span className="text-2xs font-semibold uppercase">{WEEKDAY_SHORT[d.getDay()]}</span>
-                        <span className="font-display text-lg font-semibold leading-none">{d.getDate()}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {customizable ? (
-                <Button block size="lg" disabled={!date} onClick={() => setCustomizing(true)}>
-                  {hasRequiredAddOns(item) ? "Choose options" : "Customize & add"}
-                </Button>
-              ) : (
-                <Button block size="lg" disabled={!date} onClick={quickAdd}>
-                  <Plus className="size-4" /> Add to order
-                </Button>
-              )}
+              {editing ? (
+                <p className="text-[13px] text-muted-foreground">
+                  Changing your meal for{" "}
+                  <strong className="text-foreground">{editingOrder!.dateLabel}</strong>.
+                </p>
+              ) : null}
+
+              {customizable && combos.length > 0 ? (
+                <>
+                  <div className="text-overline">
+                    {hasRequiredAddOns(item) ? "Choose an option" : "Options"}
+                  </div>
+                  <div className="space-y-2">
+                    {combos.map((c) => {
+                      const checked = c.id === comboId;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setComboId(c.id)}
+                          className={cn(
+                            "flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
+                            checked ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+                          )}
+                        >
+                          <span className="flex min-w-0 items-start gap-2.5">
+                            <span
+                              className={cn(
+                                "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+                                checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
+                              )}
+                            >
+                              {checked ? <Check className="size-3.5" /> : null}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="font-medium">{c.name}</span>
+                              <span className="mt-1 block space-y-0.5">
+                                {c.includes.map((inc) => (
+                                  <span key={inc.group} className="block text-2xs text-muted-foreground">
+                                    <span className="font-semibold text-foreground/70">{inc.group}:</span>{" "}
+                                    {inc.item}
+                                  </span>
+                                ))}
+                              </span>
+                            </span>
+                          </span>
+                          {c.upcharge > 0 ? (
+                            <span className="shrink-0 font-semibold nums">+{formatCurrency(c.upcharge)}</span>
+                          ) : (
+                            <span className="shrink-0 text-2xs text-muted-foreground">included</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : null}
+
+              <Button block size="lg" disabled={!activeDate} onClick={addToOrder}>
+                {editing ? (
+                  <>
+                    <Replace className="size-4" /> Change to this meal
+                  </>
+                ) : (
+                  <>
+                    <Plus className="size-4" /> Add to order
+                  </>
+                )}
+                {program.showPrices ? ` · ${formatCurrency(unitPrice)}` : ""}
+              </Button>
             </CardBody>
           </Card>
         </div>
       </div>
-
-      {customizing && date ? (
-        <AddOnModal
-          item={item}
-          dateLabel={formatDay(fromISODate(date))}
-          onClose={() => setCustomizing(false)}
-          onConfirm={(addOns, qty, unitPrice) => {
-            cart.add({
-              date,
-              itemId: item.id,
-              name: item.name,
-              basePrice: item.price,
-              qty,
-              addOns,
-              unitPrice,
-              type: item.type,
-            });
-            toast.success(`${item.name} added`, `For ${formatDay(fromISODate(date))}`);
-            setCustomizing(false);
-            router.push("/menu");
-          }}
-        />
-      ) : null}
     </div>
   );
 }

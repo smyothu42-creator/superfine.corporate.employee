@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Check,
@@ -12,6 +13,9 @@ import {
   CalendarRange,
   CalendarDays,
   AlarmClock,
+  Replace,
+  X,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -19,6 +23,7 @@ import { ThemeSelect } from "@/components/ui/theme-select";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
+import { FoodPhoto } from "@/components/menu/food-photo";
 import { AddOnModal } from "@/components/menu/add-on-modal";
 import { DateRangeModal } from "@/features/menu/date-range-modal";
 import {
@@ -61,6 +66,8 @@ import {
 } from "@/lib/cutoff";
 import { formatCurrency, cn } from "@/lib/utils";
 import { bumpCart } from "@/lib/fly-to-cart";
+import { toast } from "@/store/use-toast-store";
+import { confirm } from "@/store/use-confirm-store";
 import type { MenuItem, OrderType } from "@/data/types";
 
 type Mode = "single" | "multi";
@@ -118,17 +125,22 @@ export function MenuView() {
   const boxCollapsedRef = React.useRef(false);
 
   const cart = useCartStore();
+  const router = useRouter();
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
   const setPlannedDays = useUiStore((s) => s.setPlannedDays);
   const openCart = useUiStore((s) => s.openCart);
+  const cartOpen = useUiStore((s) => s.cartOpen);
   const rangePickerRequested = useUiStore((s) => s.rangePickerRequested);
   const clearRangePicker = useUiStore((s) => s.clearRangePicker);
-  // When the desktop cart panel pushes the content narrower, drop a column at
-  // each breakpoint (4→3, 3→2) so cards keep their size instead of shrinking.
-  const cartOpen = useUiStore((s) => s.cartOpen);
+  // "Edit a placed order from the full menu" context (set by the change-order popup).
+  const editingOrder = useUiStore((s) => s.editingOrder);
+  const startEditingOrder = useUiStore((s) => s.startEditingOrder);
+  const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
+  // DoorDash-style horizontal rows — capped at 2 per row so each card keeps its
+  // width; drop to a single column earlier while the cart side panel is open.
   const gridCols = cn(
-    "grid grid-cols-1 gap-4 sm:grid-cols-2",
-    cartOpen ? "lg:grid-cols-2 xl:grid-cols-3" : "lg:grid-cols-3 xl:grid-cols-4",
+    "grid grid-cols-1 gap-4",
+    cartOpen ? "xl:grid-cols-2" : "lg:grid-cols-2",
   );
 
   React.useEffect(() => {
@@ -143,6 +155,27 @@ export function MenuView() {
     const week = nextServiceDays(today, MULTI_DAY_NUMS, 3).map(toISODate);
     setRangeStart(week[0] ?? "");
     setRangeEnd(week[week.length - 1] ?? "");
+
+    // Editing a placed order takes precedence: focus one-day mode on the edited
+    // day so the "Select from full menu" hand-off lands on the right menu.
+    const editing = useUiStore.getState().editingOrder;
+    if (editing) {
+      setMode("single");
+      setSelectedDate(editing.date);
+      setActiveDate(editing.date);
+    } else {
+      // Keep multi-day mode active if the cart already holds a multi-day order:
+      // resume the day-by-day plan (and its "days remaining" prompt) spanning the
+      // cart's days, instead of resetting to one-day mode on every return to /menu.
+      const cartDates = useCartStore.getState().dates();
+      if (cartDates.length > 1) {
+        setMode("multi");
+        setRangeChosen(true);
+        setRangeStart(cartDates[0]);
+        setRangeEnd(cartDates[cartDates.length - 1]);
+        setActiveDate(cartDates[0]);
+      }
+    }
     setMounted(true);
   }, []);
 
@@ -216,9 +249,16 @@ export function MenuView() {
   }, [day, setActiveOrderDate]);
 
   // Publish the planned multi-day range so the cart can show days remaining.
+  // The plan is the union of the chosen range and any day that already has cart
+  // items — so deleting the last item from a day keeps that day selected, and
+  // the cart still prompts the user to fill it before checkout.
   React.useEffect(() => {
-    setPlannedDays(mode === "multi" && rangeChosen ? rangeDays : []);
-  }, [mode, rangeChosen, rangeDays, setPlannedDays]);
+    const planned =
+      mode === "multi" && rangeChosen
+        ? Array.from(new Set([...rangeDays, ...cart.dates()])).sort()
+        : [];
+    setPlannedDays(planned);
+  }, [mode, rangeChosen, rangeDays, cart, setPlannedDays]);
 
   // "Add another day" (from the cart) asks us to reopen the date-range picker.
   React.useEffect(() => {
@@ -296,6 +336,22 @@ export function MenuView() {
     }
   }
 
+  // Editing a placed order: picking a meal opens a confirm dialog ("change from
+  // X to this item?"). On confirm we drop edit mode and return to My Orders with
+  // a success toast — no cart, no banner.
+  async function requestChange(item: MenuItem) {
+    if (!editingOrder) return;
+    const ok = await confirm({
+      title: "Change your meal?",
+      description: `Change from ${editingOrder.originalItemName} to ${item.name} for ${editingOrder.dateLabel}?`,
+      confirmLabel: "Confirm change",
+    });
+    if (!ok) return;
+    clearEditingOrder();
+    toast.success("Order updated", `${editingOrder.originalItemName} → ${item.name} for ${editingOrder.dateLabel}.`);
+    router.push("/orders");
+  }
+
   if (!mounted) {
     return (
       <div className="space-y-4">
@@ -303,7 +359,7 @@ export function MenuView() {
         <Skeleton className="h-16 rounded-2xl" />
         <div className={gridCols}>
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-64 rounded-2xl" />
+            <Skeleton key={i} className="h-36 rounded-2xl" />
           ))}
         </div>
       </div>
@@ -338,7 +394,10 @@ export function MenuView() {
   const selDateObj = selectedDate ? fromISODate(selectedDate) : null;
   const cutoff = selectedDate ? cutoffFor(selectedDate) : null;
   const msToCutoff = cutoff ? cutoff.getTime() - demoNow().getTime() : 0;
-  const cutoffUrgent = msToCutoff > 0 && msToCutoff < 3 * 60 * 60 * 1000; // < 3h
+  // Cutoff urgency for the selected single day. "Soon" (≤ 6h left) surfaces a
+  // live "N to cutoff" countdown flag; the final 2h escalate it to a red alarm.
+  const cutoffSoon = msToCutoff > 0 && msToCutoff <= 6 * 60 * 60 * 1000;
+  const cutoffUrgent = msToCutoff > 0 && msToCutoff < 2 * 60 * 60 * 1000;
   const cutoffTimeLabel = cutoff
     ? cutoff.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
     : "";
@@ -347,8 +406,46 @@ export function MenuView() {
   const isFamily = menuType === "family_style";
   // An attached box hangs off the bottom of the header card: the "Ordering for"
   // row in one-day mode, or the day strip in multi-day mode.
-  const oneDayBoxOpen = mode === "single" && Boolean(selectedDate);
-  const attachedOpen = oneDayBoxOpen || daysBoxOpen;
+  // While editing a placed order the date is fixed, so the whole date box (and
+  // its "Change date" control) is hidden — the editing header shows the day.
+  const oneDayBoxOpen = !editingOrder && mode === "single" && Boolean(selectedDate);
+  const attachedOpen = !editingOrder && (oneDayBoxOpen || daysBoxOpen);
+
+  // One-day / Multi-day mode segments — bare buttons that live INSIDE the unified
+  // control bar (alongside the date picker), so the whole thing reads as one
+  // connected pill rather than separate controls.
+  const modeSegments = (
+    <>
+      {[
+        { id: "single", label: "One day" },
+        { id: "multi", label: "Multiple days" },
+      ].map((t) => {
+        const active = mode === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => {
+              const m = t.id as Mode;
+              setMode(m);
+              // Switching to multi-day opens the date picker straight away.
+              if (m === "multi" && !rangeChosen) setRangePickerOpen(true);
+            }}
+            className={cn(
+              "rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
+              active
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </>
+  );
 
   return (
     <div className="space-y-5 pb-4">
@@ -365,29 +462,37 @@ export function MenuView() {
           attachedOpen && !boxCollapsed && "rounded-b-none",
         )}
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {editingOrder ? (
+          // Editing a placed order: a plain heading (the topbar reads "Changing
+          // Order" and the cards show the change icon; picking one confirms).
           <div>
-            <h2 className="font-display text-xl font-semibold tracking-tight">
-              Hi {me.firstName}, what would you like to eat?
-            </h2>
+            <h2 className="font-display text-xl font-semibold tracking-tight">Choose a replacement meal</h2>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              {program.company} covers {formatCurrency(program.subsidyPerDay)} a day.
+              Pick a new meal for <strong className="text-foreground">{editingOrder.dateLabel}</strong> —
+              you&apos;ll confirm the change.
             </p>
           </div>
-          <Tabs
-            tabs={[
-              { id: "single", label: "One day" },
-              { id: "multi", label: "Multiple days" },
-            ]}
-            value={mode}
-            onValueChange={(v) => {
-              const m = v as Mode;
-              setMode(m);
-              // Switching to multi-day opens the date picker straight away.
-              if (m === "multi" && !rangeChosen) setRangePickerOpen(true);
-            }}
-          />
-        </div>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-display text-xl font-semibold tracking-tight">
+                Hi {me.firstName}, what would you like to eat?
+              </h2>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">
+                {program.company} covers {formatCurrency(program.subsidyPerDay)} a day.
+              </p>
+            </div>
+            {/* Prominent meal-style toggle (was a dropdown in the filter bar). */}
+            <Tabs
+              tabs={[
+                { id: "individual", label: "Individual" },
+                { id: "family_style", label: "Family Style" },
+              ]}
+              value={menuType}
+              onValueChange={(v) => setMenuType(v as OrderType)}
+            />
+          </div>
+        )}
 
         {/* Filter bar — search + Meal Style / Allergens / Dietary / Cuisine /
             Price, separated by vertical dividers. */}
@@ -402,18 +507,6 @@ export function MenuView() {
               className="h-9 w-full rounded-full bg-transparent pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
             />
           </div>
-          <div className="h-6 w-px shrink-0 bg-border" />
-          <ThemeSelect
-            value={menuType}
-            onValueChange={(v) => setMenuType(v as OrderType)}
-            aria-label="Filter by meal style"
-            variant="pill"
-            align="right"
-            options={[
-              { value: "individual", label: "Individual Meal" },
-              { value: "family_style", label: "Family Style Meal" },
-            ]}
-          />
           <div className="h-6 w-px shrink-0 bg-border" />
           <MultiSelectFilter
             label="Allergens"
@@ -452,6 +545,7 @@ export function MenuView() {
             options={PRICE_OPTIONS}
           />
         </div>
+
       </section>
 
       {/* Attached box under the header card — one-day "Ordering for" row, or the
@@ -468,63 +562,94 @@ export function MenuView() {
           }}
         >
           <div className={cn("min-h-0", boxOverflowVisible ? "overflow-visible" : "overflow-hidden")}>
-            {oneDayBoxOpen ? (
-              <div className="rounded-b-2xl border border-t-0 border-border bg-card px-4 py-2.5 sm:px-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <span className="flex items-center gap-1.5 text-[13px] font-semibold text-teal-deep">
-                      {!isFamily && cutoffUrgent ? (
-                        <AlarmClock className="size-4 shrink-0 text-danger" />
-                      ) : (
-                        <CalendarDays className="size-4 shrink-0 text-primary" />
+            <div className="rounded-b-2xl border border-t-0 border-border bg-card px-4 py-3 sm:px-5">
+              {oneDayBoxOpen ? (
+                // Unified control bar: [ One day | Multiple days | 📅 date ▾ ] all
+                // in one connected pill, with the cutoff as a quiet helper beside it.
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
+                  <div
+                    className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm"
+                    role="tablist"
+                    aria-label="Order length"
+                  >
+                    {modeSegments}
+                    <span className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+                    <DatePickerDropdown
+                      days={datePickerDays}
+                      selected={selectedDate}
+                      onSelect={(iso) => {
+                        setSelectedDate(iso);
+                        setActiveDate(iso);
+                      }}
+                      renderTrigger={({ open, toggle }) => (
+                        <button
+                          type="button"
+                          aria-haspopup="listbox"
+                          aria-expanded={open}
+                          onClick={toggle}
+                          className={cn(
+                            "flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors",
+                            open ? "bg-teal-wash" : "hover:bg-teal-wash",
+                          )}
+                        >
+                          <CalendarDays className="size-4 shrink-0 text-primary" />
+                          <span className="truncate">{formatDayLong(fromISODate(selectedDate))}</span>
+                          <ChevronDown
+                            className={cn("size-4 shrink-0 text-primary transition-transform", open && "rotate-180")}
+                          />
+                        </button>
                       )}
-                      Ordering for {formatDayLong(fromISODate(selectedDate))}
-                    </span>
-                    <span
-                      className={cn(
-                        "text-2xs",
-                        !isFamily && cutoffUrgent ? "font-semibold text-danger" : "text-muted-foreground",
-                      )}
-                    >
+                    />
+                  </div>
+                  <span
+                    className={cn(
+                      "flex min-w-0 items-center gap-1.5 text-2xs",
+                      !isFamily && cutoffUrgent
+                        ? "font-semibold text-danger"
+                        : !isFamily && cutoffSoon
+                          ? "font-semibold text-coral-deep"
+                          : "text-muted-foreground",
+                    )}
+                  >
+                    {!isFamily && cutoffSoon ? <AlarmClock className="size-3.5 shrink-0" /> : null}
+                    <span className="truncate">
                       {isFamily
-                        ? "· Order 72 hours ahead"
-                        : cutoffUrgent
-                          ? `· Order within ${remainingLabel(msToCutoff)}`
-                          : `· Order by ${cutoffTimeLabel} ${cutoffWeekday}`}
+                        ? "Order 72 hours ahead"
+                        : cutoffSoon
+                          ? `${remainingLabel(msToCutoff)} left to order`
+                          : `Order by ${cutoffTimeLabel} ${cutoffWeekday}`}
                     </span>
-                  </div>
-                  <DatePickerDropdown
-                    days={datePickerDays}
-                    selected={selectedDate}
-                    onSelect={(iso) => {
-                      setSelectedDate(iso);
-                      setActiveDate(iso);
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-b-2xl border border-t-0 border-border bg-card p-3 sm:p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-2 text-sm font-semibold">
-                    <CalendarRange className="size-4 text-primary" />
-                    {formatDay(fromISODate(rangeStart))} – {formatDay(fromISODate(rangeEnd))}
                   </span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xs font-semibold text-muted-foreground">
-                      {daysAdded}/{rangeDays.length} done
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setRangePickerOpen(true)}
-                      className="text-[13px] font-semibold text-primary hover:underline"
-                    >
-                      Change
-                    </button>
-                  </div>
                 </div>
+              ) : (
+                <div>
+                  {/* Same unified bar for multi-day; the day strip sits below. */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
+                    <div
+                      className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm"
+                      role="tablist"
+                      aria-label="Order length"
+                    >
+                      {modeSegments}
+                      <span className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+                      <button
+                        type="button"
+                        onClick={() => setRangePickerOpen(true)}
+                        className="flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors hover:bg-teal-wash"
+                      >
+                        <CalendarRange className="size-4 shrink-0 text-primary" />
+                        <span className="truncate">
+                          {formatDay(fromISODate(rangeStart))} – {formatDay(fromISODate(rangeEnd))}
+                        </span>
+                        <ChevronDown className="size-4 shrink-0 text-primary" />
+                      </button>
+                    </div>
+                    <span className="min-w-0 truncate text-2xs font-semibold text-muted-foreground">
+                      {daysAdded}/{rangeDays.length} days added
+                    </span>
+                  </div>
 
-                <div className="mt-2.5">
+                <div className="mt-3">
                   <DayStrip
                     cells={rangeDays.map((iso) => {
                       const d = fromISODate(iso);
@@ -556,7 +681,8 @@ export function MenuView() {
                   </div>
                 ) : null}
               </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       ) : null}
@@ -578,6 +704,10 @@ export function MenuView() {
 
       </div>
 
+      {/* Promo push — sits under the category tags, above the grid. Hidden while
+          changing a placed order. */}
+      {!editingOrder ? <PromoBanner /> : null}
+
       {/* Menu grid */}
       {dayMenu.length ? (
         <div className={gridCols}>
@@ -587,8 +717,9 @@ export function MenuView() {
               item={item}
               inCart={inCartFor(item.id)}
               showPrice={program.showPrices}
-              onAdd={() => quickAdd(item)}
-              onCustomize={() => handleAdd(item)}
+              editing={Boolean(editingOrder)}
+              onAdd={() => (editingOrder ? requestChange(item) : quickAdd(item))}
+              onCustomize={() => (editingOrder ? requestChange(item) : handleAdd(item))}
             />
           ))}
         </div>
@@ -599,7 +730,7 @@ export function MenuView() {
       )}
 
       {/* Sticky review-cart bar — mobile only (desktop uses the topbar cart) */}
-      {cartCount > 0 ? (
+      {cartCount > 0 && !editingOrder ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-[68px] z-30 px-4 lg:hidden">
           <div className="pointer-events-auto mx-auto flex max-w-[1100px] items-center justify-between gap-3 rounded-full border border-teal-deep bg-sidebar px-4 py-2.5 text-sidebar-foreground shadow-raised">
             <span className="flex items-center gap-2 text-[13px] font-semibold">
@@ -888,6 +1019,169 @@ function DayStrip({
   );
 }
 
+interface Promo {
+  id: string;
+  title: string;
+  body: React.ReactNode;
+  href: string;
+  cta: string;
+  image: string;
+  alt: string;
+}
+
+/** Campaigns shown in the promo carousel; paged two-at-a-time. */
+const PROMOS: Promo[] = [
+  {
+    id: "save10",
+    title: "Get 10% off your first order",
+    body: (
+      <>
+        Up to $10 off your share. Code{" "}
+        <span className="font-semibold text-teal-deep">SAVE10</span>. Valid this week.
+      </>
+    ),
+    href: "/account",
+    cta: "Learn more",
+    image: "https://www.themealdb.com/images/media/meals/bqx8mc1782684286.jpg",
+    alt: "Fresh harvest salad",
+  },
+  {
+    id: "freedelivery",
+    title: "Free delivery on team orders",
+    body: (
+      <>
+        Order for 5+ and delivery is on us. Code{" "}
+        <span className="font-semibold text-teal-deep">TEAM5</span>. All month.
+      </>
+    ),
+    href: "/account",
+    cta: "Learn more",
+    image: "https://www.themealdb.com/images/media/meals/1548772327.jpg",
+    alt: "Shared family-style spread",
+  },
+  {
+    id: "newmenu",
+    title: "New summer menu is live",
+    body: (
+      <>
+        Fresh seasonal bowls and grills, added this week. Explore what&apos;s new.
+      </>
+    ),
+    href: "/menu",
+    cta: "See the menu",
+    image: "https://www.themealdb.com/images/media/meals/uttupv1511797099.jpg",
+    alt: "Summer grain bowl",
+  },
+  {
+    id: "refer",
+    title: "Refer a coworker, get $15",
+    body: (
+      <>
+        You both earn $15 in credit on their first order. Share your link.
+      </>
+    ),
+    href: "/account",
+    cta: "Get your link",
+    image: "https://www.themealdb.com/images/media/meals/1550441882.jpg",
+    alt: "Chef plating a dish",
+  },
+];
+
+/** One promo card — copy + CTA on the left, food photo on the right. */
+function PromoCard({ promo }: { promo: Promo }) {
+  return (
+    <div className="relative flex items-stretch overflow-hidden rounded-2xl border border-teal-soft bg-teal-wash shadow-card">
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 py-5 pl-5 pr-3 sm:pl-6">
+        <h3 className="font-display text-lg font-bold leading-tight tracking-tight text-teal-deep sm:text-xl">
+          {promo.title}
+        </h3>
+        <p className="text-[13px] leading-snug text-teal-deep/75">{promo.body}</p>
+        <Link
+          href={promo.href}
+          className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-deep px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-primary"
+        >
+          {promo.cta} <ArrowRight className="size-3.5" />
+        </Link>
+      </div>
+
+      {/* Full-bleed real food photo on the right (DoorDash-style promo image). */}
+      <FoodPhoto
+        src={promo.image}
+        alt={promo.alt}
+        className="hidden w-[38%] max-w-[220px] shrink-0 self-stretch sm:flex"
+        iconClassName="size-10"
+      />
+    </div>
+  );
+}
+
+/**
+ * Top promo carousel — seasonal / campaign menu pushes shown two cards at a
+ * time. Left/right arrows page through {@link PROMOS}; edit that list to run
+ * different promotions.
+ */
+function PromoBanner() {
+  const perPage = 2;
+  const pageCount = Math.ceil(PROMOS.length / perPage);
+  const [page, setPage] = React.useState(0);
+
+  const canLeft = page > 0;
+  const canRight = page < pageCount - 1;
+  const visible = PROMOS.slice(page * perPage, page * perPage + perPage);
+
+  return (
+    <div className="relative">
+      {/* Two-card row (one per column on mobile, two on sm+). */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {visible.map((promo) => (
+          <PromoCard key={promo.id} promo={promo} />
+        ))}
+      </div>
+
+      {/* Move arrows — page left/right through the promos. */}
+      {pageCount > 1 ? (
+        <>
+          <button
+            type="button"
+            aria-label="Previous promotions"
+            disabled={!canLeft}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            className="absolute -left-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-0"
+          >
+            <ChevronLeft className="size-5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Next promotions"
+            disabled={!canRight}
+            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            className="absolute -right-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-0"
+          >
+            <ChevronRight className="size-5" />
+          </button>
+
+          {/* Page dots. */}
+          <div className="mt-3 flex items-center justify-center gap-1.5">
+            {Array.from({ length: pageCount }).map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`Go to promotions page ${i + 1}`}
+                aria-current={i === page}
+                onClick={() => setPage(i)}
+                className={cn(
+                  "h-1.5 rounded-full transition-all",
+                  i === page ? "w-4 bg-teal-deep" : "w-1.5 bg-teal-deep/30 hover:bg-teal-deep/50",
+                )}
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 /** Human "time left until cutoff" — e.g. "2 hours", "1 hour 20 min", "15 minutes". */
 function remainingLabel(ms: number) {
   const mins = Math.max(1, Math.round(ms / 60000));
@@ -941,10 +1235,13 @@ function DatePickerDropdown({
   days,
   selected,
   onSelect,
+  renderTrigger,
 }: {
   days: DateOption[];
   selected: string;
   onSelect: (iso: string) => void;
+  /** Custom trigger; falls back to the default "Change date" pill when absent. */
+  renderTrigger?: (o: { open: boolean; toggle: () => void }) => React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -967,19 +1264,23 @@ function DatePickerDropdown({
 
   return (
     <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "flex items-center gap-1.5 rounded-full border bg-card px-3.5 py-2 text-[13px] font-semibold text-teal-deep shadow-sm transition-colors",
-          open ? "border-primary ring-2 ring-ring/30" : "border-border hover:border-primary/40 hover:bg-teal-wash",
-        )}
-      >
-        <CalendarDays className="size-4 text-primary" /> Change date
-        <ChevronDown className={cn("size-4 text-primary transition-transform", open && "rotate-180")} />
-      </button>
+      {renderTrigger ? (
+        renderTrigger({ open, toggle: () => setOpen((o) => !o) })
+      ) : (
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-full border bg-card px-3.5 py-2 text-[13px] font-semibold text-teal-deep shadow-sm transition-colors",
+            open ? "border-primary ring-2 ring-ring/30" : "border-border hover:border-primary/40 hover:bg-teal-wash",
+          )}
+        >
+          <CalendarDays className="size-4 text-primary" /> Change date
+          <ChevronDown className={cn("size-4 text-primary transition-transform", open && "rotate-180")} />
+        </button>
+      )}
 
       {open ? (
         <MiniCalendar

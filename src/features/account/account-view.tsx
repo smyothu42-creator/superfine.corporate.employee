@@ -159,7 +159,8 @@ export function AccountView() {
           <PolicyRow label="Company" value={program.company} />
           <PolicyRow label="Subsidy model" value={program.subsidyModel} />
           <PolicyRow label="Service days" value={program.serviceDays} />
-          <PolicyRow label="Order cutoff" value={program.individualSoftCutoff} />
+          <PolicyRow label="Individual order cutoff" value={program.individualSoftCutoff} />
+          <PolicyRow label="Family-style cutoff" value={program.familyCutoff} />
           <PolicyRow label="Hard cutoff" value={program.individualHardCutoff} />
           <PolicyRow label="Change / cancel window" value={program.changeWindow} />
           <PolicyRow label="Delivery windows" value={program.deliveryWindows.join(" · ")} />

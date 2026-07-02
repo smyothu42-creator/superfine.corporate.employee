@@ -21,13 +21,15 @@ export const HOLIDAYS: Record<string, string> = {
 };
 
 /**
- * Demo "now" — pinned to today at 5:00 PM so the cutoff-passed scenario is
- * always demonstrable regardless of the wall clock. In a real app this is just
- * `new Date()`. Call only on the client (after mount) to avoid SSR drift.
+ * Demo "now" — pinned to today at 1:00 PM. This sits a few hours before the next
+ * individual cutoff (4:00 PM today, for tomorrow's delivery), so the "N hours to
+ * cutoff" urgency flag is demonstrable, while holidays and past days still
+ * exercise the cutoff-passed states. In a real app this is just `new Date()`.
+ * Call only on the client (after mount) to avoid SSR drift.
  */
 export function demoNow() {
   const d = new Date();
-  d.setHours(17, 0, 0, 0);
+  d.setHours(13, 0, 0, 0);
   return d;
 }
 

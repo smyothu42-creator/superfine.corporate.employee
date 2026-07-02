@@ -5,39 +5,66 @@ import { cn } from "@/lib/utils";
 import type { OrderStatus } from "@/data/types";
 
 const META: Record<OrderStatus, { label: string; tone: React.ComponentProps<typeof Badge>["tone"] }> = {
-  draft: { label: "Draft", tone: "neutral" },
+  draft: { label: "Placed", tone: "neutral" },
   confirmed: { label: "Confirmed", tone: "info" },
-  out_for_delivery: { label: "Out for delivery", tone: "warning" },
   delivered: { label: "Delivered", tone: "success" },
   cancelled: { label: "Cancelled", tone: "danger" },
 };
 
+/**
+ * Terminal-status badge shown beside the order number. Active orders
+ * (Placed / Confirmed) are intentionally NOT badged here — their state lives in
+ * the progress bar — and a locked order surfaces via a disabled edit control,
+ * not a tag. So this only renders for the two states with no timeline:
+ * Delivered and Cancelled.
+ */
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+  if (status !== "delivered" && status !== "cancelled") return null;
   const m = META[status];
   return <Badge tone={m.tone}>{m.label}</Badge>;
 }
 
-const TIMELINE: { key: OrderStatus; label: string }[] = [
-  { key: "draft", label: "Placed" },
-  { key: "confirmed", label: "Confirmed" },
-  { key: "out_for_delivery", label: "Out for delivery" },
-  { key: "delivered", label: "Delivered" },
+const MANUAL_TIMELINE: { label: string }[] = [
+  { label: "Placed" },
+  { label: "Confirmed" },
+  { label: "Delivered" },
 ];
 
-const ORDER_INDEX: Record<OrderStatus, number> = {
+const MANUAL_INDEX: Record<OrderStatus, number> = {
   draft: 0,
   confirmed: 1,
-  out_for_delivery: 2,
-  delivered: 3,
+  delivered: 2,
+  cancelled: -1,
+};
+
+// Auto-Orders start life as an editable Draft (created ~24h before cutoff),
+// then move through Placed → Confirmed. No "Delivered" step: once delivered the
+// timeline is hidden entirely.
+const AUTO_TIMELINE: { label: string }[] = [
+  { label: "Draft" },
+  { label: "Placed" },
+  { label: "Confirmed" },
+];
+
+const AUTO_INDEX: Record<OrderStatus, number> = {
+  draft: 0,
+  confirmed: 2,
+  delivered: 2,
   cancelled: -1,
 };
 
 /**
- * The simple, customer-facing status track the interviews asked for —
- * Draft → Confirmed → Out for Delivery → Delivered — so employees always know
- * whether their food is actually coming.
+ * The customer-facing status track. Manual orders run Placed → Confirmed →
+ * Delivered; Auto-Orders run Draft → Placed → Confirmed. "Out for delivery" is
+ * deliberately omitted from the customer view.
  */
-export function OrderTimeline({ status }: { status: OrderStatus }) {
+export function OrderTimeline({
+  status,
+  source,
+}: {
+  status: OrderStatus;
+  source?: "manual" | "auto";
+}) {
   if (status === "cancelled") {
     return (
       <div className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-[13px] font-medium text-danger">
@@ -45,14 +72,16 @@ export function OrderTimeline({ status }: { status: OrderStatus }) {
       </div>
     );
   }
-  const current = ORDER_INDEX[status];
+  const auto = source === "auto";
+  const TIMELINE = auto ? AUTO_TIMELINE : MANUAL_TIMELINE;
+  const current = auto ? AUTO_INDEX[status] : MANUAL_INDEX[status];
   return (
     <div className="flex items-center gap-3">
       {TIMELINE.map((step, i) => {
         const done = i < current;
         const active = i === current;
         return (
-          <React.Fragment key={step.key}>
+          <React.Fragment key={step.label}>
             <div className="flex items-center gap-2">
               <span
                 className={cn(

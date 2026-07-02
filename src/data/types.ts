@@ -18,12 +18,13 @@ export type ProteinType =
   | "Vegetarian"
   | "Plant-based";
 
-/** Customer-facing order lifecycle from the interviews:
- *  Draft → Confirmed → Out for Delivery → Delivered (+ Cancelled). */
+/** Customer-facing order lifecycle:
+ *  Placed → Confirmed → Delivered. A confirmed order that is past its change
+ *  cutoff surfaces as "Locked for changes" (driven by `Order.locked`).
+ *  "Out for delivery" is intentionally NOT shown to customers. */
 export type OrderStatus =
   | "draft"
   | "confirmed"
-  | "out_for_delivery"
   | "delivered"
   | "cancelled";
 

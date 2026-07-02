@@ -1,9 +1,9 @@
 import type { Order } from "./types";
 
 /**
- * The employee's own orders. Statuses use the simple, customer-facing lifecycle
- * the interviews asked for: Draft → Confirmed → Out for Delivery → Delivered.
- * Dates are anchored around late June 2026 (the demo "today" is Sun Jun 28).
+ * The employee's own orders. Statuses use the simple, customer-facing lifecycle:
+ * Placed → Confirmed → Delivered (a locked, past-cutoff order shows as "Locked
+ * for changes"). Dates are anchored around late June 2026 (demo "today" is Sun Jun 28).
  */
 export const orders: Order[] = [
   {
@@ -55,7 +55,8 @@ export const orders: Order[] = [
     subsidy: 15.0,
     employeePaid: 0,
     payment: "covered",
-    status: "out_for_delivery",
+    // Past its change cutoff — surfaces to the customer as "Locked for changes".
+    status: "confirmed",
     locked: true,
     placedAt: "2026-06-27 8:30 AM",
   },
@@ -260,7 +261,7 @@ export function getOrder(id: string) {
 }
 
 export const upcomingOrders = orders.filter(
-  (o) => o.status === "draft" || o.status === "confirmed" || o.status === "out_for_delivery",
+  (o) => o.status === "draft" || o.status === "confirmed",
 );
 export const pastOrders = orders.filter(
   (o) => o.status === "delivered" || o.status === "cancelled",

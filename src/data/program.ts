@@ -15,7 +15,7 @@ export const program: MealProgram = {
   mealsPerDay: 1,
   serviceDays: "Mon–Wed",
   serviceDayNums: [1, 2, 3],
-  individualSoftCutoff: "9:00 PM the day before",
+  individualSoftCutoff: "4:00 PM the day before",
   individualHardCutoff: "24 hours before delivery",
   familyCutoff: "72 hours before delivery",
   familyMinPeople: 8,
