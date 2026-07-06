@@ -18,10 +18,10 @@ const META: Record<OrderStatus, { label: string; tone: React.ComponentProps<type
  * control, not a tag. So this only renders for the two states with no timeline:
  * Delivered and Cancelled.
  */
-export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+export function OrderStatusBadge({ status, className }: { status: OrderStatus; className?: string }) {
   if (status !== "delivered" && status !== "cancelled") return null;
   const m = META[status];
-  return <Badge tone={m.tone}>{m.label}</Badge>;
+  return <Badge tone={m.tone} className={className}>{m.label}</Badge>;
 }
 
 // Every order runs the same customer-facing track: Draft → Placed → Confirmed.

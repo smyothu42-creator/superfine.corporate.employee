@@ -6,7 +6,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
   PartyPopper,
   Repeat,
   Search,
@@ -161,11 +160,6 @@ function TourModal({ onExit }: { onExit: () => void }) {
           {/* Explanation — same style as the site's other guided surfaces. */}
           <div className="px-6 py-5">
             <span className="flex w-fit items-center gap-1.5 rounded-full bg-teal-wash px-2.5 py-0.5 text-2xs font-semibold text-teal-deep">
-              {isLast ? (
-                <PartyPopper className="size-3.5 text-primary" />
-              ) : (
-                <Sparkles className="size-3.5 text-primary" />
-              )}
               Step {index + 1} of {STEPS.length}
             </span>
             <h3 className="mt-2.5 font-display text-lg font-semibold tracking-tight">{step.title}</h3>
@@ -188,7 +182,7 @@ function TourModal({ onExit }: { onExit: () => void }) {
             </Button>
           ) : (
             <Button variant="ghost" size="sm" onClick={onExit}>
-              Skip tour
+              Skip Tutorial
             </Button>
           )}
           <Button variant="teal" size="sm" onClick={isLast ? onExit : next}>

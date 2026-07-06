@@ -170,8 +170,7 @@ export function CheckoutView() {
               </div>
             </CardHeader>
             <CardBody>
-              <div className="rounded-xl border border-border bg-muted/40 p-3">
-                <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                   {cutoffs.map((c) => (
                     <div key={c.date} className="flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center gap-1 text-2xs font-semibold text-muted-foreground">
@@ -181,7 +180,6 @@ export function CheckoutView() {
                       <CutoffIndicator deliveryISO={c.date} type={c.type} variant="inline" />
                     </div>
                   ))}
-                </div>
               </div>
             </CardBody>
           </Card>
@@ -192,7 +190,7 @@ export function CheckoutView() {
               <CardTitle>Delivery address</CardTitle>
             </CardHeader>
             <CardBody>
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-muted/40 p-3">
+              <div className="flex items-start gap-3">
                 <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1 text-[13px]">
                   <div className="font-semibold">{address.name}</div>

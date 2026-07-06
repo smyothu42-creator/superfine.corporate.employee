@@ -33,6 +33,7 @@ export function AllergenCombobox({
 }: AllergenComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [activeIndex, setActiveIndex] = React.useState(0);
   const ref = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -57,6 +58,19 @@ export function AllergenCombobox({
   const hasExactMatch = options.some((o) => o.toLowerCase() === q);
   const canAddCustom = allowCustom && q.length > 0 && !hasExactMatch;
 
+  // Flat list of keyboard-navigable rows (suggestions + the optional "Add …" row)
+  // so ArrowUp/Down highlight and Enter commits whatever is highlighted.
+  const rows: Array<{ kind: "option"; value: string } | { kind: "custom" }> = [
+    ...filtered.map((o) => ({ kind: "option" as const, value: o })),
+    ...(canAddCustom ? [{ kind: "custom" as const }] : []),
+  ];
+
+  // Keep the highlight in range as the query filters the list down.
+  React.useEffect(() => {
+    setActiveIndex((i) => (rows.length === 0 ? 0 : Math.min(i, rows.length - 1)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, value.length]);
+
   function toggle(allergen: string) {
     const exists = value.some((v) => v.toLowerCase() === allergen.toLowerCase());
     onValueChange(
@@ -64,6 +78,10 @@ export function AllergenCombobox({
         ? value.filter((v) => v.toLowerCase() !== allergen.toLowerCase())
         : [...value, allergen],
     );
+    // Clear the search so the next allergen can be typed straight away, and keep
+    // focus in the field for rapid multi-add.
+    setQuery("");
+    inputRef.current?.focus();
   }
 
   function addCustom() {
@@ -73,6 +91,14 @@ export function AllergenCombobox({
       onValueChange([...value, v]);
     }
     setQuery("");
+    inputRef.current?.focus();
+  }
+
+  function commitRow(i: number) {
+    const row = rows[i];
+    if (!row) return;
+    if (row.kind === "custom") addCustom();
+    else toggle(row.value);
   }
 
   return (
@@ -119,13 +145,21 @@ export function AllergenCombobox({
           onFocus={() => setOpen(true)}
           onChange={(e) => {
             setQuery(e.target.value);
+            setActiveIndex(0);
             setOpen(true);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "ArrowDown") {
               e.preventDefault();
-              if (filtered.length === 1) toggle(filtered[0]);
-              else if (canAddCustom) addCustom();
+              setOpen(true);
+              setActiveIndex((i) => (rows.length ? (i + 1) % rows.length : 0));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setOpen(true);
+              setActiveIndex((i) => (rows.length ? (i - 1 + rows.length) % rows.length : 0));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              commitRow(activeIndex);
             } else if (e.key === "Backspace" && !query && value.length) {
               // Backspace on an empty field removes the last chip.
               toggle(value[value.length - 1]);
@@ -151,8 +185,9 @@ export function AllergenCombobox({
           aria-multiselectable
           className="absolute top-full z-50 mt-2 max-h-72 w-full overflow-auto rounded-2xl border border-border bg-card p-1.5 shadow-raised"
         >
-          {filtered.map((o) => {
+          {filtered.map((o, i) => {
             const active = value.some((v) => v.toLowerCase() === o.toLowerCase());
+            const highlighted = i === activeIndex;
             return (
               <button
                 key={o}
@@ -160,11 +195,14 @@ export function AllergenCombobox({
                 role="option"
                 aria-selected={active}
                 onClick={() => toggle(o)}
+                onMouseMove={() => setActiveIndex(i)}
                 className={cn(
                   "flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors",
                   active
                     ? "bg-teal-wash font-semibold text-teal-deep"
-                    : "font-medium text-foreground hover:bg-muted",
+                    : highlighted
+                      ? "bg-muted font-medium text-foreground"
+                      : "font-medium text-foreground",
                 )}
               >
                 <span className="truncate">{o}</span>
@@ -177,7 +215,11 @@ export function AllergenCombobox({
             <button
               type="button"
               onClick={addCustom}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-medium text-teal-deep transition-colors hover:bg-teal-wash"
+              onMouseMove={() => setActiveIndex(filtered.length)}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-medium text-teal-deep transition-colors",
+                activeIndex === filtered.length && "bg-teal-wash",
+              )}
             >
               <Plus className="size-4 shrink-0 text-primary" />
               Add &ldquo;{query.trim()}&rdquo;

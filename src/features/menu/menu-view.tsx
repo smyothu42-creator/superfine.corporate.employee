@@ -457,15 +457,6 @@ export function MenuView() {
     />
   );
 
-  // Quiet helper under the pill: multi-day progress only (the one-day cutoff
-  // line lives on the cart/checkout now, so it's kept out of the header).
-  const controlHelper =
-    mode === "multi" && rangeChosen ? (
-      <span className="min-w-0 truncate text-2xs font-semibold text-muted-foreground xl:text-right">
-        {daysAdded} of {rangeDays.length} days added
-      </span>
-    ) : null;
-
   return (
     <div className="space-y-5 pb-4">
       {/* Start an order — date selection. The sticky wrapper pins flush to the
@@ -515,7 +506,6 @@ export function MenuView() {
                 />
                 {datePicker}
               </div>
-              {controlHelper}
             </div>
           </div>
         )}

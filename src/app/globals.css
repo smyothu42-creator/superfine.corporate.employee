@@ -41,16 +41,15 @@
     }
   }
 
+  /* Hide scrollbars everywhere (keep scrolling) — no visible track/thumb on any
+     horizontal or vertical scroll container. */
+  * {
+    scrollbar-width: none; /* Firefox */
+  }
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  ::-webkit-scrollbar-thumb {
-    @apply rounded-full;
-    background: #d9d2bd;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #c4bca3;
+    width: 0;
+    height: 0;
+    display: none; /* Chrome / Safari / Edge */
   }
 }
 

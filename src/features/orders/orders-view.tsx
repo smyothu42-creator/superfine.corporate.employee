@@ -17,9 +17,10 @@ import {
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
+import { ThemeSelect } from "@/components/ui/theme-select";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
-import { OrderStatusBadge, OrderTimeline } from "@/components/orders/order-status";
+import { OrderTimeline } from "@/components/orders/order-status";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { orders } from "@/data/orders";
@@ -44,11 +45,67 @@ const EMPTY_COPY: Record<string, string> = {
   cancelled: "No cancelled orders.",
 };
 
+type SortKey = "date-desc" | "date-asc" | "amount-desc" | "amount-asc";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "date-desc", label: "Newest first" },
+  { value: "date-asc", label: "Oldest first" },
+  { value: "amount-desc", label: "Amount: high to low" },
+  { value: "amount-asc", label: "Amount: low to high" },
+];
+
+function sortOrders(list: Order[], sort: SortKey): Order[] {
+  return [...list].sort((a, b) => {
+    switch (sort) {
+      case "date-asc":
+        return a.date.localeCompare(b.date);
+      case "amount-desc":
+        return b.employeePaid - a.employeePaid;
+      case "amount-asc":
+        return a.employeePaid - b.employeePaid;
+      case "date-desc":
+      default:
+        return b.date.localeCompare(a.date);
+    }
+  });
+}
+
 export function OrdersView() {
   const [tab, setTab] = React.useState("upcoming");
+  const [sort, setSort] = React.useState<SortKey>("date-desc");
+  const [dateFilter, setDateFilter] = React.useState("all");
   const ooo = useOOOStore();
   const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
-  const list = tab === "upcoming" ? upcoming : tab === "past" ? past : cancelled;
+  const baseList = tab === "upcoming" ? upcoming : tab === "past" ? past : cancelled;
+
+  // Month options for the date filter, derived from the active tab's orders
+  // (newest month first). Filtering by an order's primary delivery date.
+  const monthOptions = React.useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const o of baseList) {
+      const key = o.date.slice(0, 7); // YYYY-MM
+      if (!seen.has(key)) {
+        seen.set(
+          key,
+          fromISODate(`${key}-01`).toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+        );
+      }
+    }
+    return [...seen.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([value, label]) => ({ value, label }));
+  }, [baseList]);
+
+  const dateOptions = [{ value: "all", label: "All dates" }, ...monthOptions];
+
+  // Reset the month filter when switching tabs (each tab has its own months).
+  React.useEffect(() => setDateFilter("all"), [tab]);
+
+  const list = React.useMemo(() => {
+    const filtered =
+      dateFilter === "all" ? baseList : baseList.filter((o) => o.date.slice(0, 7) === dateFilter);
+    return sortOrders(filtered, sort);
+  }, [baseList, dateFilter, sort]);
 
   // Landing on My Orders always exits any in-progress "change a meal" flow.
   React.useEffect(() => clearEditingOrder(), [clearEditingOrder]);
@@ -67,22 +124,59 @@ export function OrdersView() {
         </Notice>
       ) : null}
 
-      <div className="sticky top-16 z-20 -mx-4 overflow-x-auto bg-background px-4 py-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <Tabs
-          tabs={[
-            { id: "upcoming", label: `Upcoming (${upcoming.length})` },
-            { id: "past", label: `Past (${past.length})` },
-            { id: "cancelled", label: `Cancelled (${cancelled.length})` },
-          ]}
-          value={tab}
-          onValueChange={setTab}
-        />
+      <div className="sticky top-16 z-20 -mx-4 flex items-center justify-between gap-3 bg-background px-4 py-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <Tabs
+            tabs={[
+              { id: "upcoming", label: `Upcoming (${upcoming.length})` },
+              { id: "past", label: `Past (${past.length})` },
+              { id: "cancelled", label: `Cancelled (${cancelled.length})` },
+            ]}
+            value={tab}
+            onValueChange={setTab}
+          />
+        </div>
+        {baseList.length > 0 ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <ThemeSelect
+              value={dateFilter}
+              onValueChange={setDateFilter}
+              options={dateOptions}
+              size="sm"
+              align="right"
+              aria-label="Filter orders by month"
+              className="w-auto"
+              triggerClassName="h-10"
+            />
+            <ThemeSelect
+              value={sort}
+              onValueChange={(v) => setSort(v as SortKey)}
+              options={SORT_OPTIONS}
+              size="sm"
+              align="right"
+              aria-label="Sort orders"
+              className="w-auto"
+              triggerClassName="h-10"
+            />
+          </div>
+        ) : null}
       </div>
 
       {list.length === 0 ? (
         <Card>
           <CardBody className="py-14 text-center text-[13px] text-muted-foreground">
-            {tab === "upcoming" ? (
+            {baseList.length > 0 ? (
+              <>
+                No orders in this month.{" "}
+                <button
+                  type="button"
+                  onClick={() => setDateFilter("all")}
+                  className="font-semibold text-primary underline underline-offset-2"
+                >
+                  Show all dates
+                </button>
+              </>
+            ) : tab === "upcoming" ? (
               <>
                 No upcoming orders.{" "}
                 <Link href="/menu" className="font-semibold text-primary underline underline-offset-2">
@@ -173,11 +267,24 @@ function OrderCard({ order }: { order: Order }) {
       }}
       className="cursor-pointer overflow-hidden transition-transform duration-300 ease-out will-change-transform hover:-translate-y-0.5 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-teal-soft bg-teal-wash px-5 py-3.5">
+      <div
+        className={cn(
+          "flex items-center justify-between gap-3 border-b px-5 py-3.5",
+          order.status === "cancelled"
+            ? "border-danger-border bg-danger-bg"
+            : "border-teal-soft bg-teal-wash",
+        )}
+      >
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-display text-base font-semibold tracking-tight text-teal-deep">{order.id}</span>
-            <OrderStatusBadge status={order.status} />
+            <span
+              className={cn(
+                "font-display text-base font-semibold tracking-tight",
+                order.status === "cancelled" ? "text-danger" : "text-teal-deep",
+              )}
+            >
+              {order.id}
+            </span>
             {order.source === "auto" ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-teal/20 bg-card px-2.5 py-1 text-xs font-semibold text-teal-deep shadow-sm">
                 <Repeat className="size-3.5" /> Auto-order
@@ -194,7 +301,7 @@ function OrderCard({ order }: { order: Order }) {
           <div className="flex shrink-0 items-center gap-2">
             <Button
               size="sm"
-              variant="ghost"
+              variant="outline"
               onClick={(e) => {
                 stop(e);
                 startChange();
@@ -204,8 +311,8 @@ function OrderCard({ order }: { order: Order }) {
             </Button>
             <Button
               size="sm"
-              variant="ghost"
-              className="text-danger"
+              variant="outline"
+              className="border-danger text-danger hover:bg-danger/10"
               onClick={(e) => {
                 stop(e);
                 cancel();
@@ -307,9 +414,13 @@ function OrderCard({ order }: { order: Order }) {
               <Repeat className="size-3.5" /> Re-Order
             </Button>
             <Button asChild size="sm" variant="ghost" onClick={stop}>
-              <Link href={href}>
+              <a
+                href={`https://superfinekitchen.com/feedback?order=${encodeURIComponent(order.id)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 <MessageSquare className="size-3.5" /> Leave feedback
-              </Link>
+              </a>
             </Button>
           </div>
         ) : null}

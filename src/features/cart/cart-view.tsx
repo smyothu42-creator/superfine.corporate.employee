@@ -43,7 +43,11 @@ export function CartView() {
   return (
     <div className="space-y-5">
       <CartDayList />
-      <CartSummaryCard />
+      {/* On large screens the charges summary sticks to the bottom of the
+          viewport so Checkout stays reachable while the day list scrolls. */}
+      <div className="lg:sticky lg:bottom-4 lg:z-10">
+        <CartSummaryCard />
+      </div>
     </div>
   );
 }
@@ -456,7 +460,7 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
           </Button>
         ) : (
           <>
-            <Button variant="ghost" onClick={handleAddAnotherDay}>
+            <Button variant="outline" size="lg" onClick={handleAddAnotherDay}>
               <CalendarPlus className="size-4" /> Add another day
             </Button>
             <Button size="lg" onClick={handleCheckout}>

@@ -32,7 +32,7 @@ import { program, addresses } from "@/data/program";
 import { me } from "@/data/me";
 import { toast } from "@/store/use-toast-store";
 import { useOOOStore } from "@/store/use-ooo-store";
-import { fromISODate, formatDay } from "@/lib/dates";
+import { fromISODate, formatShort } from "@/lib/dates";
 import { formatCurrency, cn } from "@/lib/utils";
 
 const dietaryIcons: Record<string, LucideIcon> = {
@@ -67,9 +67,9 @@ export function AccountView() {
             <p className="text-[13px] text-muted-foreground">
               {me.role} · {me.company}
             </p>
-            <p className="text-2xs text-muted-foreground">{me.email}</p>
+            <p className="text-[13px] text-muted-foreground">{me.email}</p>
           </div>
-          <Badge tone="success">Signed in via company email</Badge>
+          <OOOHeaderButton />
         </CardBody>
       </Card>
 
@@ -108,7 +108,7 @@ export function AccountView() {
           <CardTitle className="text-base">Dietary preferences</CardTitle>
           <span className="text-2xs text-muted-foreground">Used to tag &amp; filter your menu</span>
         </CardHeader>
-        <CardBody className="space-y-4">
+        <CardBody className="space-y-6">
           <div>
             <div className="mb-2 flex items-center justify-between">
               <span className="text-overline">Dietary tags</span>
@@ -154,9 +154,6 @@ export function AccountView() {
         </CardBody>
       </Card>
 
-      {/* Availability — out-of-office (pauses auto-orders) */}
-      <OutOfOfficeSection />
-
       {/* Meal program policy (read-only) */}
       <Card>
         <CardHeader>
@@ -184,9 +181,9 @@ export function AccountView() {
             <ShieldCheck className="size-3.5" /> Granted by SFK
           </span>
         </CardHeader>
-        <CardBody className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <PermissionTile label="Invoice to company" on={me.permissions.payLater} />
-          <PermissionTile label="Flexible delivery window" on={me.permissions.flexibleDelivery} />
+        <CardBody className="space-y-0">
+          <PermissionRow label="Invoice to company" on={me.permissions.payLater} />
+          <PermissionRow label="Flexible delivery window" on={me.permissions.flexibleDelivery} />
         </CardBody>
       </Card>
 
@@ -258,73 +255,76 @@ export function AccountView() {
   );
 }
 
-function OutOfOfficeSection() {
+/** Compact "Set out of office" button for the profile header — reuses the OOO
+ *  store + date picker so it stays in sync with the Availability section. */
+function OOOHeaderButton() {
   const { active, dates, set } = useOOOStore();
   const [picker, setPicker] = React.useState(false);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Availability</CardTitle>
-        <span className="text-2xs text-muted-foreground">Pause auto-orders while you&apos;re away</span>
-      </CardHeader>
-      <CardBody>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <CalendarOff className="mt-0.5 size-4 shrink-0 text-primary" />
-            <span className="min-w-0">
-              <span className="block text-[13px] font-medium">Out of office</span>
-              <span className="block text-2xs text-muted-foreground">
-                {active
-                  ? `Away on ${dates.map((d) => formatDay(fromISODate(d))).join(", ")} — auto-orders paused.`
-                  : "You're marked as in office. Set the days you'll be away to pause auto-orders."}
-              </span>
-            </span>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {active ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-danger hover:text-danger"
-                onClick={() => {
-                  set([]);
-                  toast.success("Out of office cleared", "You're marked as in office again.");
-                }}
-              >
-                Clear
-              </Button>
-            ) : null}
-            <Button variant="outline" size="sm" onClick={() => setPicker(true)}>
-              <CalendarOff className="size-4" /> {active ? "Edit" : "Set out of office"}
-            </Button>
-          </div>
-        </div>
-
-        {picker ? (
-          <DateMultiModal
-            title="Out of office"
-            subtitle="Tap the days you'll be away."
-            initialDates={dates}
-            allowClear={active}
-            emptyApplyLabel="Clear out of office"
-            onClose={() => setPicker(false)}
-            onApply={(picked) => {
-              setPicker(false);
-              set(picked);
-              toast.success(
-                picked.length ? "Out of office set" : "Out of office cleared",
-                picked.length
-                  ? `Auto-orders paused for ${picked.length} day${picked.length > 1 ? "s" : ""}.`
-                  : "You're marked as in office again.",
-              );
-            }}
-          />
-        ) : null}
-      </CardBody>
-    </Card>
+    <>
+      <div className="flex flex-col items-end gap-1.5">
+        <Button variant="outline" size="sm" onClick={() => setPicker(true)}>
+          <CalendarOff className="size-4" /> {active ? "Edit out of office" : "Set out of office"}
+        </Button>
+        {active ? <OutOfOfficeDates dates={dates} /> : null}
+      </div>
+      {picker ? (
+        <DateMultiModal
+          title="Out of office"
+          subtitle="Tap the days you'll be away."
+          initialDates={dates}
+          allowClear={active}
+          emptyApplyLabel="Clear out of office"
+          onClose={() => setPicker(false)}
+          onApply={(picked) => {
+            setPicker(false);
+            set(picked);
+            toast.success(
+              picked.length ? "Out of office set" : "Out of office cleared",
+              picked.length
+                ? `Auto-orders paused for ${picked.length} day${picked.length > 1 ? "s" : ""}.`
+                : "You're marked as in office again.",
+            );
+          }}
+        />
+      ) : null}
+    </>
   );
 }
+
+/** Clean, compact summary of the out-of-office days: a count line plus a row of
+ *  date chips (capped, with a "+N" overflow) so long ranges never wrap messily. */
+function OutOfOfficeDates({ dates }: { dates: string[] }) {
+  const MAX = 4;
+  const sorted = [...dates].sort();
+  const shown = sorted.slice(0, MAX);
+  const extra = sorted.length - shown.length;
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <span className="text-2xs font-semibold uppercase tracking-wide text-danger">
+        Away · {dates.length} day{dates.length > 1 ? "s" : ""}
+      </span>
+      <div className="flex flex-wrap justify-end gap-1">
+        {shown.map((d) => (
+          <span
+            key={d}
+            className="rounded-full border border-danger-border bg-danger-bg px-2 py-0.5 text-2xs font-semibold text-danger"
+          >
+            {formatShort(fromISODate(d))}
+          </span>
+        ))}
+        {extra > 0 ? (
+          <span className="rounded-full border border-border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">
+            +{extra}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 
 function PolicyRow({ label, value }: { label: string; value: string }) {
   return (
@@ -335,18 +335,16 @@ function PolicyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PermissionTile({ label, on }: { label: string; on: boolean }) {
+function PermissionRow({ label, on }: { label: string; on: boolean }) {
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 rounded-xl border p-3 text-[13px] font-medium",
-        on ? "border-success-border bg-success-bg text-success" : "border-border bg-muted text-muted-foreground",
-      )}
-    >
-      <span className={cn("flex size-5 items-center justify-center rounded-full", on ? "bg-success text-white" : "bg-border text-muted-foreground")}>
-        {on ? <Check className="size-3.5" /> : <X className="size-3.5" />}
+    <div className="flex items-center justify-between gap-4 border-b border-border py-2.5 text-[13px] last:border-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("flex items-center gap-1.5 font-medium", on ? "text-success" : "text-muted-foreground")}>
+        <span className={cn("flex size-5 items-center justify-center rounded-full", on ? "bg-success text-white" : "bg-border text-muted-foreground")}>
+          {on ? <Check className="size-3.5" /> : <X className="size-3.5" />}
+        </span>
+        {on ? "Granted" : "Not granted"}
       </span>
-      {label}
     </div>
   );
 }

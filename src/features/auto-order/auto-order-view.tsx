@@ -11,7 +11,6 @@ import { useAutoOrderStore } from "@/store/use-auto-order-store";
 import { SetupWizard } from "./setup-wizard";
 import { ActiveDashboard } from "./active-dashboard";
 import { AutoOrderWalkthrough, TOUR_START_EVENT } from "./walkthrough";
-import { AutoOrderIntroModal } from "./intro-modal";
 import type { AutoConfig } from "./shared";
 
 export function AutoOrderView() {
@@ -53,15 +52,13 @@ export function AutoOrderView() {
   }, [setupOpen, setInSetup]);
 
   // NOTE: every branch below returns a fragment with <AutoOrderWalkthrough />
-  // as the FIRST child and <AutoOrderIntroModal /> as the SECOND. The shared
-  // position/type keeps both mounted (tour alive, first-run modal from
-  // reopening) across state switches — a differing root element would remount
-  // them and end the tour / reflash the intro mid-flow.
+  // as the FIRST child. The shared position/type keeps the tour mounted (alive)
+  // across state switches — a differing root element would remount it and end
+  // the tour mid-flow.
   if (!mounted) {
     return (
       <>
         <AutoOrderWalkthrough />
-        <AutoOrderIntroModal />
         <div className="w-full space-y-4">
           <Skeleton className="h-24 rounded-2xl" />
           <Skeleton className="h-40 rounded-2xl" />
@@ -76,7 +73,6 @@ export function AutoOrderView() {
     return (
       <>
       <AutoOrderWalkthrough />
-      <AutoOrderIntroModal />
       <SetupWizard
         editing={editing}
         initialFavorites={editing ? config.favorites : []}
@@ -102,7 +98,6 @@ export function AutoOrderView() {
     return (
       <>
         <AutoOrderWalkthrough />
-        <AutoOrderIntroModal />
         <ActiveDashboard config={config} setConfig={setConfig} onEditSetup={() => setSetupOpen(true)} />
       </>
     );
@@ -113,7 +108,6 @@ export function AutoOrderView() {
   return (
     <>
     <AutoOrderWalkthrough />
-    <AutoOrderIntroModal />
     <div className="w-full">
       <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-card">
         <div className="bg-hero-yellow px-6 py-8 text-teal-deep">

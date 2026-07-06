@@ -21,6 +21,8 @@ interface ThemeSelectProps {
   /** Which edge the open list aligns to. */
   align?: "left" | "right";
   className?: string;
+  /** Extra classes merged onto the trigger button (e.g. to override height). */
+  triggerClassName?: string;
 }
 
 /**
@@ -36,6 +38,7 @@ export function ThemeSelect({
   size = "md",
   align = "left",
   className,
+  triggerClassName,
   ...props
 }: ThemeSelectProps) {
   const [open, setOpen] = React.useState(false);
@@ -78,6 +81,7 @@ export function ThemeSelect({
                 size === "sm" ? "h-8 pl-3.5 pr-2.5 text-[13px]" : "h-11 pl-4 pr-3 text-sm",
               )
             : "h-9 max-w-[9rem] rounded-full bg-transparent pl-3 pr-2 text-[13px] hover:bg-teal-wash focus-visible:bg-teal-wash",
+          triggerClassName,
         )}
       >
         <span className="truncate">{current?.label}</span>

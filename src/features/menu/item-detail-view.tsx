@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle, Replace, Check } from "lucide-react";
+import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle, ArrowLeftRight, Check } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { Badge } from "@/components/ui/badge";
@@ -100,7 +100,7 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
         <ArrowLeft className="size-4" /> Back to menu
       </Link>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <Card className="overflow-hidden">
           <FoodPhoto src={item.image} alt={item.name} className="h-56" iconClassName="size-16" />
           <CardBody className="space-y-4">
@@ -145,20 +145,6 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
                 <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{item.ingredients}</p>
                 <div className="text-overline mt-3">Allergens</div>
                 <p className="mt-1 text-[13px] text-muted-foreground">{item.allergens}</p>
-              </CardBody>
-            </Card>
-          ) : null}
-
-          {item.nutrition ? (
-            <Card>
-              <CardBody>
-                <div className="text-overline">Nutrition (per serving)</div>
-                <div className="mt-2 grid grid-cols-4 gap-2">
-                  <Macro label="Calories" value={`${item.nutrition.calories}`} />
-                  <Macro label="Protein" value={`${item.nutrition.protein}g`} />
-                  <Macro label="Carbs" value={`${item.nutrition.carbs}g`} />
-                  <Macro label="Fat" value={`${item.nutrition.fat}g`} />
-                </div>
               </CardBody>
             </Card>
           ) : null}
@@ -227,7 +213,7 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
               <Button block size="lg" disabled={!activeDate} onClick={addToOrder}>
                 {editing ? (
                   <>
-                    <Replace className="size-4" /> Change to this meal
+                    <ArrowLeftRight className="size-4" /> Change to this meal
                   </>
                 ) : (
                   <>
@@ -244,11 +230,3 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
   );
 }
 
-function Macro({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-muted/40 p-2 text-center">
-      <div className="font-display text-base font-semibold nums">{value}</div>
-      <div className="text-2xs text-muted-foreground">{label}</div>
-    </div>
-  );
-}
