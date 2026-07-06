@@ -37,6 +37,13 @@ interface UiState {
   rangePickerRequested: boolean;
   requestRangePicker: () => void;
   clearRangePicker: () => void;
+  /**
+   * Cross-view request to focus a specific day on /menu (e.g. the cart's
+   * "Order for this day" on an empty planned day). Null = no pending request.
+   */
+  focusDayRequested: string | null;
+  requestFocusDay: (iso: string) => void;
+  clearFocusDay: () => void;
   /** Slide-in cart side panel. */
   cartOpen: boolean;
   setCartOpen: (open: boolean) => void;
@@ -60,6 +67,9 @@ export const useUiStore = create<UiState>((set) => ({
   rangePickerRequested: false,
   requestRangePicker: () => set({ rangePickerRequested: true }),
   clearRangePicker: () => set({ rangePickerRequested: false }),
+  focusDayRequested: null,
+  requestFocusDay: (iso) => set({ focusDayRequested: iso }),
+  clearFocusDay: () => set({ focusDayRequested: null }),
   cartOpen: false,
   setCartOpen: (cartOpen) => set({ cartOpen }),
   openCart: () => set({ cartOpen: true }),

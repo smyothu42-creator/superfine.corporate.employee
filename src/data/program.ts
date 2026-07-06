@@ -10,6 +10,8 @@ export const program: MealProgram = {
   platform: "Superfine Kitchen",
   subsidyPerDay: 15,
   subsidyModel: "Company covers $15 each service day. You pay any remainder.",
+  // SF prepared-food sales tax, applied to the employee-paid portion only.
+  taxRate: 0.08625,
   // Neptune lets employees see prices so they know what (if anything) they owe.
   showPrices: true,
   mealsPerDay: 1,

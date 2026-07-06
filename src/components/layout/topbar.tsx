@@ -8,23 +8,21 @@ import {
   Wallet,
   AlertTriangle,
   ChevronDown,
-  CalendarOff,
   Clock,
   CheckCircle2,
   XCircle,
   CheckCheck,
   Repeat,
-  Info,
   Ban,
+  BookOpen,
 } from "lucide-react";
 import { NAV_ITEMS, isActive } from "@/lib/nav";
 import { useUiStore } from "@/store/use-ui-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { useAutoOrderStore, type AutoOrderHeader } from "@/store/use-auto-order-store";
-import { useOOOStore } from "@/store/use-ooo-store";
+import { TOUR_START_EVENT } from "@/features/auto-order/walkthrough";
 import { useNotificationsStore } from "@/store/use-notifications-store";
 import { Button } from "@/components/ui/button";
-import { DateMultiModal } from "@/components/ui/date-multi-modal";
 import { program } from "@/data/program";
 import { toast } from "@/store/use-toast-store";
 import { cutoffFor, demoNow } from "@/lib/cutoff";
@@ -62,7 +60,10 @@ function Topbar() {
   const cartCount = cart.count();
   const autoHeader = useAutoOrderStore((s) => s.header);
   const autoNavTitle = useAutoOrderStore((s) => s.navTitle);
+  const autoInSetup = useAutoOrderStore((s) => s.inSetup);
   const onAutoOrder = pathname.startsWith("/auto-order");
+  // While picking meals the header carries the "See how it works" tour trigger.
+  const inAutoSetup = onAutoOrder && autoInSetup;
   // Auto-order title is contextual (set per view state); fall back to the route default.
   // Editing a placed order reframes the menu as "Changing Order".
   const title =
@@ -103,11 +104,22 @@ function Topbar() {
 
       <div className="flex items-center gap-2 sm:gap-3">
         {onAutoOrder ? (
-          /* Auto-Order: Stop ordering + Edit Auto Order in the nav. */
-          autoHeader ? <AutoOrderControls header={autoHeader} /> : null
+          /* Auto-Order: the wizard shows "See how it works"; the live dashboard
+             shows Edit / Turn off auto order. */
+          inAutoSetup ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.dispatchEvent(new Event(TOUR_START_EVENT))}
+            >
+              <BookOpen className="size-4" /> See how it works
+            </Button>
+          ) : autoHeader ? (
+            <AutoOrderControls header={autoHeader} />
+          ) : null
         ) : onOrders ? (
-          /* Orders: out-of-office toggle instead of subsidy + cart. */
-          <OutOfOfficeControl />
+          /* Orders: no header action — out-of-office lives in Account & Profile. */
+          null
         ) : onCheckout ? (
           /* Checkout: per-day cutoff indicator instead of subsidy + cart. */
           <CheckoutCutoffIndicator />
@@ -120,7 +132,8 @@ function Topbar() {
                 change is shown in the on-page "Changing order" banner. */}
             {activeOrderDate && !editingOrder ? <BudgetIndicator dayTotal={dayTotal} /> : null}
 
-            {!editingOrder ? (
+            {/* Hidden while the cart panel is open — it has its own close control. */}
+            {!editingOrder && !cartOpen ? (
               <button
                 id="cart-icon"
                 type="button"
@@ -157,81 +170,13 @@ function Topbar() {
 
 function AutoOrderControls({ header }: { header: AutoOrderHeader }) {
   return (
-    <div className="flex items-center gap-2 sm:gap-3">
-      <Button variant="ghost" size="sm" onClick={header.onHowItWorks}>
-        <Info className="size-4" /> How it works
-      </Button>
+    <div data-tour="dash-controls" className="flex items-center gap-2 sm:gap-3">
       {header.onStop ? (
         <Button variant="ghost" size="sm" onClick={header.onStop} className="text-danger hover:text-danger">
           <Ban className="size-4" /> Turn Off Auto Order
         </Button>
       ) : null}
     </div>
-  );
-}
-
-/* ----------------------------------------------------------------------- */
-/* Out-of-office toggle (Orders page) — opens a date picker, then alerts      */
-/* ----------------------------------------------------------------------- */
-
-/** Compact label for the out-of-office days, e.g. "Sat, Jul 4" or "Sat, Jul 4 +2 more". */
-function oooLabel(dates: string[]) {
-  if (!dates.length) return "";
-  const first = formatDay(fromISODate(dates[0]));
-  if (dates.length === 1) return first;
-  return `${first} +${dates.length - 1} more`;
-}
-
-function OutOfOfficeControl() {
-  const { active, dates, set } = useOOOStore();
-  const [picker, setPicker] = React.useState(false);
-
-  return (
-    <>
-      {active ? (
-        <button
-          type="button"
-          onClick={() => setPicker(true)}
-          aria-label={`Edit out of office (${oooLabel(dates)})`}
-          className="flex items-center gap-2 rounded-full border border-primary bg-teal-wash px-3.5 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors hover:bg-teal-wash/70"
-        >
-          <CalendarOff className="size-4 text-primary" />
-          <span className="hidden sm:inline">Edit Out of Office</span>
-          <span className="rounded-full bg-white/70 px-2 py-0.5 text-2xs font-semibold nums">
-            {oooLabel(dates)}
-          </span>
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setPicker(true)}
-          className="flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-muted"
-        >
-          <CalendarOff className="size-4 text-primary" /> Set Out of Office
-        </button>
-      )}
-
-      {picker ? (
-        <DateMultiModal
-          title="Out of office"
-          subtitle="Tap the days you'll be away."
-          initialDates={dates}
-          allowClear={active}
-          emptyApplyLabel="Clear out of office"
-          onClose={() => setPicker(false)}
-          onApply={(picked) => {
-            setPicker(false);
-            set(picked);
-            toast.success(
-              picked.length ? "Out of office set" : "Out of office cleared",
-              picked.length
-                ? `Auto-orders paused for ${picked.length} day${picked.length > 1 ? "s" : ""}.`
-                : "You're marked as in office again.",
-            );
-          }}
-        />
-      ) : null}
-    </>
   );
 }
 
@@ -383,12 +328,12 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
           <BudgetRow label="Meals this day" value={formatCurrency(dayTotal)} />
           <div className="my-1.5 border-t border-border" />
           <BudgetRow
-            label={`${program.company} covers`}
+            label="Company pays"
             value={`-${formatCurrency(companyCovers)}`}
             tone="success"
           />
           <BudgetRow
-            label="You cover"
+            label="You pay"
             value={formatCurrency(youCover)}
             tone={youCover > 0 ? "danger" : "muted"}
           />

@@ -184,6 +184,28 @@ export const orders: Order[] = [
     placedAt: "2026-06-28 10:22 AM",
   },
   {
+    id: "ORD-2899",
+    date: "2026-07-06",
+    type: "individual",
+    days: [
+      {
+        date: "2026-07-06",
+        deliveryWindow: "12:00 PM – 12:30 PM",
+        items: [
+          { itemId: "buddha-bowl", name: "Green Buddha Bowl", qty: 1, addOns: ["Chicken"], price: 15.5 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 15.5,
+    subsidy: 15.0,
+    employeePaid: 0.5,
+    payment: "pay_later",
+    status: "confirmed",
+    locked: false,
+    placedAt: "2026-07-04 11:10 AM",
+  },
+  {
     id: "ORD-2870",
     date: "2026-06-19",
     type: "individual",
@@ -228,6 +250,103 @@ export const orders: Order[] = [
     status: "cancelled",
     locked: true,
     placedAt: "2026-06-11 9:02 AM",
+  },
+  {
+    // Delivered — single meal, fully covered.
+    id: "ORD-2855",
+    date: "2026-06-23",
+    type: "individual",
+    days: [
+      {
+        date: "2026-06-23",
+        deliveryWindow: "12:00 PM – 12:30 PM",
+        items: [
+          { itemId: "beef-pho", name: "Beef Pho", qty: 1, addOns: [], price: 14.5 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 14.5,
+    subsidy: 14.5,
+    employeePaid: 0,
+    payment: "covered",
+    status: "delivered",
+    locked: true,
+    placedAt: "2026-06-22 3:40 PM",
+    invoiceId: "INV-2855",
+  },
+  {
+    // Delivered — employee paid a small top-up.
+    id: "ORD-2852",
+    date: "2026-06-22",
+    type: "individual",
+    days: [
+      {
+        date: "2026-06-22",
+        deliveryWindow: "11:30 AM – 12:00 PM",
+        items: [
+          { itemId: "teriyaki-salmon-bowl", name: "Teriyaki Salmon Bowl", qty: 1, addOns: [], price: 17.0 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 17.0,
+    subsidy: 15.0,
+    employeePaid: 2.0,
+    payment: "pay_later",
+    status: "delivered",
+    locked: true,
+    placedAt: "2026-06-21 4:05 PM",
+    invoiceId: "INV-2852",
+  },
+  {
+    // Delivered multi-meal order.
+    id: "ORD-2848",
+    date: "2026-06-18",
+    type: "individual",
+    days: [
+      {
+        date: "2026-06-18",
+        deliveryWindow: "12:00 PM – 12:30 PM",
+        items: [
+          { itemId: "mezze-box", name: "Mediterranean Mezze Box", qty: 1, addOns: [], price: 13.0 },
+          { itemId: "greek-yogurt-parfait", name: "Greek Yogurt Parfait", qty: 1, addOns: [], price: 6.0 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 19.0,
+    subsidy: 15.0,
+    employeePaid: 4.0,
+    payment: "pay_later",
+    status: "delivered",
+    locked: true,
+    placedAt: "2026-06-17 9:15 AM",
+    invoiceId: "INV-2848",
+  },
+  {
+    // Delivered — fully covered.
+    id: "ORD-2844",
+    date: "2026-06-17",
+    type: "individual",
+    days: [
+      {
+        date: "2026-06-17",
+        deliveryWindow: "12:30 PM – 1:00 PM",
+        items: [
+          { itemId: "cobb-salad", name: "Chicken Cobb Salad", qty: 1, addOns: [], price: 15.0 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 15.0,
+    subsidy: 15.0,
+    employeePaid: 0,
+    payment: "covered",
+    status: "delivered",
+    locked: true,
+    placedAt: "2026-06-16 2:20 PM",
+    invoiceId: "INV-2844",
   },
   {
     // Delivered Auto-Order from last week — shows auto-order history with an invoice.

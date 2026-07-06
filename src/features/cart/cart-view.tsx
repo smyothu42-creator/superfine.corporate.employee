@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Minus, Trash2, CalendarDays, ShoppingBag, ArrowRight, ArrowDown, CalendarPlus, Pencil, Check, AlarmClock } from "lucide-react";
+import { Plus, Minus, Trash2, CalendarDays, ShoppingBag, ArrowRight, ArrowDown, CalendarPlus, Pencil, Check, UtensilsCrossed, Clock, Lock } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,45 +18,10 @@ import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
 import { program } from "@/data/program";
 import { fromISODate, formatDay } from "@/lib/dates";
-import { cutoffFor, demoNow } from "@/lib/cutoff";
+import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
+import { cutoffInfo } from "@/lib/cutoff-messaging";
+import type { OrderType } from "@/data/types";
 import { formatCurrency, cn } from "@/lib/utils";
-
-/** Time-left-to-cutoff message for a delivery date, or null if not close/passed. */
-function cutoffCountdown(dateISO: string): { label: string; urgent: boolean } | null {
-  const ms = cutoffFor(dateISO).getTime() - demoNow().getTime();
-  if (ms <= 0) return null; // already passed
-  const hours = ms / 3_600_000;
-  if (hours > 6) return null; // not close enough to flag
-  const mins = Math.max(1, Math.round(ms / 60_000));
-  const label =
-    mins >= 120
-      ? `${Math.round(mins / 60)} hours`
-      : mins >= 60
-        ? mins % 60
-          ? `1 hour ${mins % 60} min`
-          : "1 hour"
-        : `${mins} minutes`;
-  return { label, urgent: hours <= 2 };
-}
-
-/** "⏰ N left to edit this order" urgency flag shown near cutoff. */
-function CutoffCountdown({ dateISO }: { dateISO: string }) {
-  const info = cutoffCountdown(dateISO);
-  if (!info) return null;
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-2xs font-semibold",
-        info.urgent
-          ? "bg-danger-bg text-danger"
-          : "bg-warning-bg text-coral-deep",
-      )}
-    >
-      <AlarmClock className="size-3.5 shrink-0" />
-      {info.urgent ? `${info.label} left to edit this order` : `Order cutoff approaching · ${info.label} left`}
-    </div>
-  );
-}
 
 function useMounted() {
   const [mounted, setMounted] = React.useState(false);
@@ -68,9 +33,12 @@ function useMounted() {
 export function CartView() {
   const mounted = useMounted();
   const cart = useCartStore();
+  const plannedDays = useUiStore((s) => s.plannedDays);
 
   if (!mounted) return <CartSkeleton />;
-  if (cart.dates().length === 0) return <CartEmptyState />;
+  // Show the day list once any day is committed — either it already holds a meal
+  // or it was picked as part of a multi-day plan (and is still waiting to be filled).
+  if (cart.dates().length === 0 && plannedDays.length === 0) return <CartEmptyState />;
 
   return (
     <div className="space-y-5">
@@ -87,6 +55,7 @@ export function CartView() {
 export function CartPanelBody() {
   const mounted = useMounted();
   const cart = useCartStore();
+  const plannedDays = useUiStore((s) => s.plannedDays);
 
   if (!mounted) {
     return (
@@ -95,7 +64,7 @@ export function CartPanelBody() {
       </div>
     );
   }
-  if (cart.dates().length === 0) {
+  if (cart.dates().length === 0 && plannedDays.length === 0) {
     return (
       <div className="p-4">
         <CartEmptyState />
@@ -146,14 +115,43 @@ function CartEmptyState() {
   );
 }
 
+/**
+ * Per-item order cutoff — the exact time this line must be ordered/edited by.
+ * Order-type aware (individual = 4 PM day before, family = 72 h ahead) and
+ * colour-escalates as the cutoff nears, then reads "Ordering closed" once past.
+ */
+function ItemCutoffLine({ date, type }: { date: string; type: OrderType }) {
+  const info = cutoffInfo(date, type);
+  return (
+    <p
+      className={cn(
+        "mt-1 flex items-center gap-1 text-2xs font-medium",
+        info.locked || info.urgent
+          ? "text-danger"
+          : info.soon
+            ? "text-coral-deep"
+            : "text-muted-foreground",
+      )}
+    >
+      {info.locked ? <Lock className="size-3 shrink-0" /> : <Clock className="size-3 shrink-0" />}
+      {info.locked ? "Ordering closed for this day" : `Order by ${info.cutoffAbsolute}`}
+    </p>
+  );
+}
+
 export function CartDayList() {
   const cart = useCartStore();
+  const plannedDays = useUiStore((s) => s.plannedDays);
   const editingOrder = useUiStore((s) => s.editingOrder);
-  const dates = cart.dates();
 
   // Editing a placed order: show the single meal change (from → to) instead of
   // the normal per-day cart.
   if (editingOrder) return <CartEditingSummary editingOrder={editingOrder} />;
+
+  // A section for every committed day: days that already hold a meal, plus any
+  // day picked as part of a multi-day plan that's still empty. Empty days render
+  // a prompt so the user knows they can still order for them.
+  const dates = Array.from(new Set([...cart.dates(), ...plannedDays])).sort();
 
   return (
     <>
@@ -164,6 +162,7 @@ export function CartDayList() {
 
       {dates.map((date) => {
         const items = cart.itemsForDate(date);
+        if (items.length === 0) return <EmptyDayCard key={date} date={date} />;
         const dayOwed = cart.dayEmployeePaid(date);
         const daySub = cart.daySubsidy(date);
         return (
@@ -197,6 +196,7 @@ export function CartDayList() {
                         {formatCurrency(line.unitPrice)} each
                       </p>
                     ) : null}
+                    <ItemCutoffLine date={date} type={line.type} />
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
                     {program.showPrices ? (
@@ -233,15 +233,58 @@ export function CartDayList() {
                 </div>
               ))}
               <div className="flex items-center justify-between pt-1 text-[13px] text-muted-foreground">
-                <span>Subsidy applied</span>
+                <span>Company pays</span>
                 <span className="nums text-success">−{formatCurrency(daySub)}</span>
               </div>
-              <CutoffCountdown dateISO={date} />
             </CardBody>
           </Card>
         );
       })}
     </>
+  );
+}
+
+/**
+ * A planned day with no meal yet. Shown in the cart for every selected multi-day
+ * date so the user can see — and act on — the days still waiting to be filled.
+ */
+function EmptyDayCard({ date }: { date: string }) {
+  const router = useRouter();
+  const closeCart = useUiStore((s) => s.closeCart);
+  const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
+  const requestFocusDay = useUiStore((s) => s.requestFocusDay);
+
+  function orderForDay() {
+    setActiveOrderDate(date);
+    // Ask the menu to focus this exact day — covers the case where the menu is
+    // already mounted (cart opened as a side panel), so navigation alone won't
+    // re-run its init effect.
+    requestFocusDay(date);
+    closeCart();
+    router.push("/menu");
+  }
+
+  return (
+    <Card className="border-dashed">
+      <div className="flex items-center justify-between gap-3 border-b border-dashed border-border px-5 py-3.5">
+        <h3 className="flex items-center gap-2 font-display text-base font-semibold tracking-tight">
+          <CalendarDays className="size-4 text-muted-foreground" />
+          {formatDay(fromISODate(date))}
+        </h3>
+        <Badge tone="neutral">No meal yet</Badge>
+      </div>
+      <CardBody className="flex flex-col items-center gap-3 py-6 text-center">
+        <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <UtensilsCrossed className="size-5" />
+        </span>
+        <p className="max-w-xs text-[13px] text-muted-foreground">
+          You haven&apos;t ordered for this day yet. Pick a meal from the menu and it&apos;ll show up here.
+        </p>
+        <Button variant="ghost" size="sm" onClick={orderForDay}>
+          <Plus className="size-4" /> Order for this day
+        </Button>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -268,7 +311,7 @@ function CartEditingSummary({ editingOrder }: { editingOrder: EditingOrderContex
           </Badge>
         </div>
         <CardBody className="space-y-2.5">
-          <CutoffCountdown dateISO={editingOrder.date} />
+          <CutoffIndicator deliveryISO={editingOrder.date} type="individual" context="edit" variant="inline" />
           <div className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">From</div>
           <MealTile name={editingOrder.originalItemName} image={fromItem?.image} muted />
           <div className="flex items-center justify-center">
@@ -330,7 +373,8 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
   const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
   const subtotal = cart.subtotal();
   const subsidy = cart.totalSubsidy();
-  const owed = cart.totalEmployeePaid();
+  const tax = cart.tax();
+  const owed = cart.total();
 
   const daysRemaining = plannedDays.filter((d) => cart.itemsForDate(d).length === 0).length;
 
@@ -390,8 +434,9 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
       ) : null}
       {program.showPrices ? (
         <>
-          <Row label="Subtotal" value={formatCurrency(subtotal)} />
-          <Row label="Company subsidy" value={`−${formatCurrency(subsidy)}`} tone="success" />
+          <Row label="Meals total" value={formatCurrency(subtotal)} />
+          <Row label="Company pays" value={`−${formatCurrency(subsidy)}`} tone="success" />
+          <Row label="Tax" value={formatCurrency(tax)} />
           <div className="flex items-center justify-between border-t-2 border-foreground pt-3 text-base font-bold">
             <span>You pay</span>
             <span className="nums">{formatCurrency(owed)}</span>

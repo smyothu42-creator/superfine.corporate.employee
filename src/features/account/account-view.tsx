@@ -16,6 +16,7 @@ import {
   NutOff,
   MilkOff,
   Pencil,
+  CalendarOff,
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,12 +24,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { AllergenCombobox } from "@/components/ui/allergen-combobox";
+import { DateMultiModal } from "@/components/ui/date-multi-modal";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/ui/stat-card";
 import { dietaryPreferences, allergenOptions } from "@/data/menu";
 import { program, addresses } from "@/data/program";
 import { me } from "@/data/me";
 import { toast } from "@/store/use-toast-store";
+import { useOOOStore } from "@/store/use-ooo-store";
+import { fromISODate, formatDay } from "@/lib/dates";
 import { formatCurrency, cn } from "@/lib/utils";
 
 const dietaryIcons: Record<string, LucideIcon> = {
@@ -43,7 +47,6 @@ const dietaryIcons: Record<string, LucideIcon> = {
 export function AccountView() {
   const [dietary, setDietary] = React.useState<string[]>(me.dietary);
   const [allergens, setAllergens] = React.useState<string[]>(me.allergens);
-  const [utensils, setUtensils] = React.useState(me.utensils);
   const [prefs, setPrefs] = React.useState(me.notifications);
 
   function toggleDiet(d: string) {
@@ -70,10 +73,10 @@ export function AccountView() {
         </CardBody>
       </Card>
 
-      {/* Subsidy snapshot */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Subsidy snapshot — cutoff is split into its own card per meal style. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Daily subsidy"
+          label="Company pays / day"
           value={formatCurrency(program.subsidyPerDay)}
           sub="Resets every service day"
           icon={<Wallet className="size-4" />}
@@ -86,9 +89,15 @@ export function AccountView() {
           icon={<Utensils className="size-4" />}
         />
         <StatCard
-          label="Order cutoff"
+          label="Individual cutoff"
           value={program.individualSoftCutoff.split(" ").slice(0, 2).join(" ")}
           sub="Day before delivery"
+          icon={<CalendarClock className="size-4" />}
+        />
+        <StatCard
+          label="Family-style cutoff"
+          value={program.familyCutoff.split(" ").slice(0, 2).join(" ")}
+          sub="Before delivery"
           icon={<CalendarClock className="size-4" />}
         />
       </div>
@@ -142,12 +151,11 @@ export function AccountView() {
               aria-label="Search and add allergens to avoid"
             />
           </div>
-          <div className="flex items-center gap-2.5 py-1">
-            <ToggleSwitch checked={utensils} onCheckedChange={setUtensils} aria-label="Include utensils" />
-            <span className="text-[13px] font-medium">Include utensils by default</span>
-          </div>
         </CardBody>
       </Card>
+
+      {/* Availability — out-of-office (pauses auto-orders) */}
+      <OutOfOfficeSection />
 
       {/* Meal program policy (read-only) */}
       <Card>
@@ -247,6 +255,74 @@ export function AccountView() {
         </CardBody>
       </Card>
     </div>
+  );
+}
+
+function OutOfOfficeSection() {
+  const { active, dates, set } = useOOOStore();
+  const [picker, setPicker] = React.useState(false);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Availability</CardTitle>
+        <span className="text-2xs text-muted-foreground">Pause auto-orders while you&apos;re away</span>
+      </CardHeader>
+      <CardBody>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <CalendarOff className="mt-0.5 size-4 shrink-0 text-primary" />
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium">Out of office</span>
+              <span className="block text-2xs text-muted-foreground">
+                {active
+                  ? `Away on ${dates.map((d) => formatDay(fromISODate(d))).join(", ")} — auto-orders paused.`
+                  : "You're marked as in office. Set the days you'll be away to pause auto-orders."}
+              </span>
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {active ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-danger hover:text-danger"
+                onClick={() => {
+                  set([]);
+                  toast.success("Out of office cleared", "You're marked as in office again.");
+                }}
+              >
+                Clear
+              </Button>
+            ) : null}
+            <Button variant="outline" size="sm" onClick={() => setPicker(true)}>
+              <CalendarOff className="size-4" /> {active ? "Edit" : "Set out of office"}
+            </Button>
+          </div>
+        </div>
+
+        {picker ? (
+          <DateMultiModal
+            title="Out of office"
+            subtitle="Tap the days you'll be away."
+            initialDates={dates}
+            allowClear={active}
+            emptyApplyLabel="Clear out of office"
+            onClose={() => setPicker(false)}
+            onApply={(picked) => {
+              setPicker(false);
+              set(picked);
+              toast.success(
+                picked.length ? "Out of office set" : "Out of office cleared",
+                picked.length
+                  ? `Auto-orders paused for ${picked.length} day${picked.length > 1 ? "s" : ""}.`
+                  : "You're marked as in office again.",
+              );
+            }}
+          />
+        ) : null}
+      </CardBody>
+    </Card>
   );
 }
 

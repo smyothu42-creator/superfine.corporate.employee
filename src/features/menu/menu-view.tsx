@@ -12,10 +12,13 @@ import {
   ShoppingBag,
   CalendarRange,
   CalendarDays,
-  AlarmClock,
   Replace,
   X,
   ArrowRight,
+  Sparkles,
+  BadgePercent,
+  Truck,
+  Gift,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -53,15 +56,14 @@ import {
   formatDayLong,
   formatShort,
   WEEKDAY_SHORT,
-  WEEKDAY_LONG,
 } from "@/lib/dates";
 import {
   nextOpenDays,
-  cutoffFor,
-  demoNow,
   isCutoffPassed,
   isServiceDay,
   isHoliday,
+  isTooSoon,
+  earliestDeliveryDate,
   HOLIDAYS,
 } from "@/lib/cutoff";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -117,13 +119,6 @@ export function MenuView() {
   // Add-on sheet
   const [customizing, setCustomizing] = React.useState<MenuItem | null>(null);
 
-  // Collapse the attached box (Ordering for / day strip) while scrolling down,
-  // restore it when scrolling back up. `boxOverflowVisible` lets the Change-date
-  // dropdown escape once the box is fully expanded (overflow is clipped mid-slide).
-  const [boxCollapsed, setBoxCollapsed] = React.useState(false);
-  const [boxOverflowVisible, setBoxOverflowVisible] = React.useState(true);
-  const boxCollapsedRef = React.useRef(false);
-
   const cart = useCartStore();
   const router = useRouter();
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
@@ -132,6 +127,8 @@ export function MenuView() {
   const cartOpen = useUiStore((s) => s.cartOpen);
   const rangePickerRequested = useUiStore((s) => s.rangePickerRequested);
   const clearRangePicker = useUiStore((s) => s.clearRangePicker);
+  const focusDayRequested = useUiStore((s) => s.focusDayRequested);
+  const clearFocusDay = useUiStore((s) => s.clearFocusDay);
   // "Edit a placed order from the full menu" context (set by the change-order popup).
   const editingOrder = useUiStore((s) => s.editingOrder);
   const startEditingOrder = useUiStore((s) => s.startEditingOrder);
@@ -152,7 +149,10 @@ export function MenuView() {
     const firstOpen = open[0] ?? nextServiceDays(today, MULTI_DAY_NUMS, 1).map(toISODate)[0] ?? "";
     setSelectedDate(firstOpen);
     setActiveDate(firstOpen);
-    const week = nextServiceDays(today, MULTI_DAY_NUMS, 3).map(toISODate);
+    // Default the multi-day range to the first *orderable* day onward, so the
+    // pre-selected range never starts on a red (past-cutoff) day.
+    const rangeAnchor = firstOpen ? fromISODate(firstOpen) : today;
+    const week = nextServiceDays(rangeAnchor, MULTI_DAY_NUMS, 3).map(toISODate);
     setRangeStart(week[0] ?? "");
     setRangeEnd(week[week.length - 1] ?? "");
 
@@ -164,75 +164,41 @@ export function MenuView() {
       setSelectedDate(editing.date);
       setActiveDate(editing.date);
     } else {
-      // Keep multi-day mode active if the cart already holds a multi-day order:
-      // resume the day-by-day plan (and its "days remaining" prompt) spanning the
-      // cart's days, instead of resetting to one-day mode on every return to /menu.
-      const cartDates = useCartStore.getState().dates();
-      if (cartDates.length > 1) {
+      // Keep multi-day mode active if a multi-day plan is in flight: resume the
+      // day-by-day plan (and its "days remaining" prompt) spanning the planned
+      // days, instead of resetting to one-day mode on every return to /menu. The
+      // plan is the union of any days the cart already holds and the planned days
+      // published by the store — so days picked but not yet filled survive too.
+      const ui = useUiStore.getState();
+      const planDays = Array.from(
+        new Set([...useCartStore.getState().dates(), ...ui.plannedDays]),
+      ).sort();
+      if (planDays.length > 1) {
         setMode("multi");
         setRangeChosen(true);
-        setRangeStart(cartDates[0]);
-        setRangeEnd(cartDates[cartDates.length - 1]);
-        setActiveDate(cartDates[0]);
+        setRangeStart(planDays[0]);
+        setRangeEnd(planDays[planDays.length - 1]);
+        // Focus the day the user asked to order for (e.g. from an empty cart day),
+        // falling back to the first planned day.
+        setActiveDate(planDays.includes(ui.activeOrderDate) ? ui.activeOrderDate : planDays[0]);
       }
     }
     setMounted(true);
   }, []);
 
-  // Hide the attached box on scroll-down, show it on scroll-up (and near the top).
-  React.useEffect(() => {
-    let lastY = window.scrollY;
-    let ticking = false;
-    let locked = false;
-    let lockTimer: ReturnType<typeof setTimeout> | undefined;
-
-    function apply(next: boolean) {
-      if (boxCollapsedRef.current === next) return;
-      boxCollapsedRef.current = next;
-      setBoxCollapsed(next);
-      // Collapsing: clip overflow immediately. Expanding: restore on transition end.
-      if (next) setBoxOverflowVisible(false);
-      // Lock out further toggles while the slide + reflow settle. Collapsing the
-      // header shifts content above the viewport, so the browser's scroll
-      // anchoring nudges scrollY — without this lock that feeds back and the box
-      // oscillates (the glitch). After it settles we re-baseline lastY.
-      locked = true;
-      if (lockTimer) clearTimeout(lockTimer);
-      lockTimer = setTimeout(() => {
-        locked = false;
-        lastY = window.scrollY;
-      }, 380);
-    }
-    function update() {
-      ticking = false;
-      if (locked) return;
-      const y = window.scrollY;
-      if (y <= 8) apply(false);
-      else if (y > lastY + 6 && y > 96) apply(true);
-      else if (y < lastY - 6) apply(false);
-      lastY = y;
-    }
-    function onScroll() {
-      if (!ticking) {
-        ticking = true;
-        requestAnimationFrame(update);
-      }
-    }
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      if (lockTimer) clearTimeout(lockTimer);
-    };
-  }, []);
-
   // Resolve the multi-day range into service days (weekends auto-skipped).
+  // Auto-selection never lands on a red day: holidays, already-passed days and
+  // any weekday whose order cutoff has passed are dropped from the range.
   const rangeDays = React.useMemo(() => {
     if (!rangeStart || !rangeEnd) return [];
     const start = fromISODate(rangeStart);
     const end = fromISODate(rangeEnd);
     if (end < start) return [];
-    return serviceDaysInRange(start, end, MULTI_DAY_NUMS).map(toISODate);
-  }, [rangeStart, rangeEnd]);
+    const todayISO = toISODate(startOfToday());
+    return serviceDaysInRange(start, end, MULTI_DAY_NUMS)
+      .map(toISODate)
+      .filter((iso) => iso >= todayISO && !isHoliday(iso) && !isCutoffPassed(iso, menuType));
+  }, [rangeStart, rangeEnd, menuType]);
 
   // Keep the active multi-day tab valid.
   React.useEffect(() => {
@@ -240,6 +206,25 @@ export function MenuView() {
       setActiveDate(rangeDays[0]);
     }
   }, [mode, rangeDays, activeDate]);
+
+  // Meal style drives the lead window (individual 1 day, family 3 days). When it
+  // changes, if the selected single day is now too soon / closed, jump forward
+  // to the first day that's actually orderable for this style. Editing a placed
+  // order pins the date, so leave that alone.
+  React.useEffect(() => {
+    if (editingOrder || mode !== "single" || !selectedDate) return;
+    const invalid =
+      !isServiceDay(selectedDate) ||
+      isHoliday(selectedDate) ||
+      isTooSoon(selectedDate, menuType) ||
+      isCutoffPassed(selectedDate, menuType);
+    if (!invalid) return;
+    const next = nextOpenDays(toISODate(startOfToday()), 1, menuType)[0];
+    if (next) {
+      setSelectedDate(next);
+      setActiveDate(next);
+    }
+  }, [menuType, selectedDate, mode, editingOrder]);
 
   const day = mode === "single" ? selectedDate : activeDate;
 
@@ -268,6 +253,25 @@ export function MenuView() {
       clearRangePicker();
     }
   }, [rangePickerRequested, clearRangePicker]);
+
+  // "Order for this day" (from an empty cart day) asks us to focus that exact day.
+  // Works even when the menu is already mounted (cart opened as a side panel), so
+  // the day strip's active tab follows the day the user tapped.
+  React.useEffect(() => {
+    if (!focusDayRequested) return;
+    const planDays = Array.from(
+      new Set([...cart.dates(), ...useUiStore.getState().plannedDays, focusDayRequested]),
+    ).sort();
+    if (planDays.length > 1) {
+      setMode("multi");
+      setRangeChosen(true);
+      setRangeStart(planDays[0]);
+      setRangeEnd(planDays[planDays.length - 1]);
+    }
+    setActiveDate(focusDayRequested);
+    setSelectedDate(focusDayRequested);
+    clearFocusDay();
+  }, [focusDayRequested, cart, clearFocusDay]);
 
   // Multi-day progress.
   const daysBoxOpen = mode === "multi" && rangeChosen && rangeDays.length > 0;
@@ -370,82 +374,97 @@ export function MenuView() {
   const cartTotal = cart.subtotal();
   const cartOwed = cart.totalEmployeePaid();
 
-  // Single-day delivery-date framing (next 12 days for the picker; service days
-  // before cutoff are selectable, everything else is greyed with a reason).
-  const datePickerDays = Array.from({ length: 12 }, (_, i) => {
-    const d = addDays(startOfToday(), i + 1); // start tomorrow — never same-day
-    const iso = toISODate(d);
-    let disabled = false;
-    let reason = "";
-    if (isHoliday(iso)) {
-      disabled = true;
-      reason = HOLIDAYS[iso] ?? "Holiday";
-    } else if (!isServiceDay(iso)) {
-      disabled = true;
-      reason = "Weekend";
-    } else if (isCutoffPassed(iso)) {
-      disabled = true;
-      reason = "Cutoff passed";
+  // Real-time day classification shared by both calendar tabs. Weekends and
+  // holidays are *structural* closures (greyed). A weekday whose order cutoff
+  // has already passed is a *time* closure (red) with an explanation — this
+  // covers today (same-day is never orderable) and tomorrow once today's cutoff
+  // passes. Days before today are simply greyed. Individual meals close 4 PM the
+  // day before delivery (~24h); family-style closes 72h before delivery.
+  const todayISO = toISODate(startOfToday());
+  const dayInfo = (
+    iso: string,
+  ): { selectable: boolean; cutoff: boolean; reason: string } => {
+    if (!isServiceDay(iso))
+      return { selectable: false, cutoff: false, reason: "Weekends are closed" };
+    if (isHoliday(iso))
+      return { selectable: false, cutoff: false, reason: HOLIDAYS[iso] ?? "Holiday" };
+    if (iso < todayISO)
+      return { selectable: false, cutoff: false, reason: "This day has passed" };
+    if (isCutoffPassed(iso, menuType)) {
+      const reason =
+        iso === todayISO
+          ? "Same-day ordering is closed"
+          : menuType === "family_style"
+            ? "Order cutoff passed — family-style closes 72 hours before delivery"
+            : "Order cutoff passed — closes 4 PM the day before delivery";
+      return { selectable: false, cutoff: true, reason };
     }
-    return { iso, date: d, disabled, reason };
+    return { selectable: true, cutoff: false, reason: "" };
+  };
+
+  // Service days in a range that are actually orderable — drops red days
+  // (past cutoff / holidays / past) so the range never auto-selects one.
+  const openServiceDays = (startISO: string, endISO: string) =>
+    serviceDaysInRange(fromISODate(startISO), fromISODate(endISO), MULTI_DAY_NUMS)
+      .map(toISODate)
+      .filter((iso) => dayInfo(iso).selectable);
+
+  // Single-day picker window: today plus the next two weeks, each classified by
+  // dayInfo (today & past-cutoff days show red; weekends/holidays grey).
+  const datePickerDays = Array.from({ length: 15 }, (_, i) => {
+    const d = addDays(startOfToday(), i);
+    const iso = toISODate(d);
+    const info = dayInfo(iso);
+    return { iso, date: d, disabled: !info.selectable, cutoff: info.cutoff, reason: info.reason };
   });
 
-  // Cutoff prompt for the selected single day.
-  const selDateObj = selectedDate ? fromISODate(selectedDate) : null;
-  const cutoff = selectedDate ? cutoffFor(selectedDate) : null;
-  const msToCutoff = cutoff ? cutoff.getTime() - demoNow().getTime() : 0;
-  // Cutoff urgency for the selected single day. "Soon" (≤ 6h left) surfaces a
-  // live "N to cutoff" countdown flag; the final 2h escalate it to a red alarm.
-  const cutoffSoon = msToCutoff > 0 && msToCutoff <= 6 * 60 * 60 * 1000;
-  const cutoffUrgent = msToCutoff > 0 && msToCutoff < 2 * 60 * 60 * 1000;
-  const cutoffTimeLabel = cutoff
-    ? cutoff.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-    : "";
-  const cutoffWeekday = cutoff ? WEEKDAY_LONG[cutoff.getDay()] : "";
-  const deliveryWeekday = selDateObj ? WEEKDAY_LONG[selDateObj.getDay()] : "";
-  const isFamily = menuType === "family_style";
-  // An attached box hangs off the bottom of the header card: the "Ordering for"
-  // row in one-day mode, or the day strip in multi-day mode.
-  // While editing a placed order the date is fixed, so the whole date box (and
-  // its "Change date" control) is hidden — the editing header shows the day.
-  const oneDayBoxOpen = !editingOrder && mode === "single" && Boolean(selectedDate);
-  const attachedOpen = !editingOrder && (oneDayBoxOpen || daysBoxOpen);
+  // Earliest orderable delivery date for the current meal style — feeds the
+  // range picker's lead window (individual +1 day, family +3 days).
+  const earliestISO = toISODate(earliestDeliveryDate(menuType));
 
-  // One-day / Multi-day mode segments — bare buttons that live INSIDE the unified
-  // control bar (alongside the date picker), so the whole thing reads as one
-  // connected pill rather than separate controls.
-  const modeSegments = (
-    <>
-      {[
-        { id: "single", label: "One day" },
-        { id: "multi", label: "Multiple days" },
-      ].map((t) => {
-        const active = mode === t.id;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => {
-              const m = t.id as Mode;
-              setMode(m);
-              // Switching to multi-day opens the date picker straight away.
-              if (m === "multi" && !rangeChosen) setRangePickerOpen(true);
-            }}
-            className={cn(
-              "rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
-              active
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t.label}
-          </button>
-        );
-      })}
-    </>
+  // The multi-day day strip hangs off the bottom of the header card. (The mode
+  // toggle and date picker now live up in the header beside the meal-style tabs.)
+  // While editing a placed order the date is fixed, so the strip is hidden.
+  const attachedOpen = !editingOrder && daysBoxOpen;
+
+  // One unified date picker: a single dropdown whose internal "Single day / Date
+  // range" toggle lets the user pick either a single delivery date or a Mon–Fri
+  // range, without any separate mode segments beside it.
+  const datePicker = (
+    <UnifiedDatePicker
+      mode={mode}
+      onModeChange={setMode}
+      selectedDate={selectedDate}
+      singleDays={datePickerDays}
+      onSelectSingle={(iso) => {
+        setSelectedDate(iso);
+        setActiveDate(iso);
+      }}
+      rangeStart={rangeStart}
+      rangeEnd={rangeEnd}
+      rangeDays={rangeDays}
+      serviceDayNums={MULTI_DAY_NUMS}
+      minISO={earliestISO}
+      dayInfo={dayInfo}
+      onApplyRange={(start, end) => {
+        setRangeStart(start);
+        setRangeEnd(end);
+        setRangeChosen(true);
+        setMode("multi");
+        const days = openServiceDays(start, end);
+        if (days[0]) setActiveDate(days[0]);
+      }}
+    />
   );
+
+  // Quiet helper under the pill: multi-day progress only (the one-day cutoff
+  // line lives on the cart/checkout now, so it's kept out of the header).
+  const controlHelper =
+    mode === "multi" && rangeChosen ? (
+      <span className="min-w-0 truncate text-2xs font-semibold text-muted-foreground xl:text-right">
+        {daysAdded} of {rangeDays.length} days added
+      </span>
+    ) : null;
 
   return (
     <div className="space-y-5 pb-4">
@@ -459,7 +478,7 @@ export function MenuView() {
       <section
         className={cn(
           "relative z-10 rounded-2xl border border-border bg-card p-4 sm:p-5",
-          attachedOpen && !boxCollapsed && "rounded-b-none",
+          attachedOpen && "rounded-b-none",
         )}
       >
         {editingOrder ? (
@@ -473,24 +492,31 @@ export function MenuView() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <h2 className="font-display text-xl font-semibold tracking-tight">
                 Hi {me.firstName}, what would you like to eat?
               </h2>
               <p className="mt-0.5 text-[13px] text-muted-foreground">
-                {program.company} covers {formatCurrency(program.subsidyPerDay)} a day.
+                {program.company} pays {formatCurrency(program.subsidyPerDay)} a day.
               </p>
             </div>
-            {/* Prominent meal-style toggle (was a dropdown in the filter bar). */}
-            <Tabs
-              tabs={[
-                { id: "individual", label: "Individual" },
-                { id: "family_style", label: "Family Style" },
-              ]}
-              value={menuType}
-              onValueChange={(v) => setMenuType(v as OrderType)}
-            />
+            {/* Meal-style toggle + the order-length / date controls, grouped so
+                the date picker sits right beside the Individual / Family tabs. */}
+            <div className="flex flex-col gap-2 xl:items-end">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Tabs
+                  tabs={[
+                    { id: "individual", label: "Individual" },
+                    { id: "family_style", label: "Family Style" },
+                  ]}
+                  value={menuType}
+                  onValueChange={(v) => setMenuType(v as OrderType)}
+                />
+                {datePicker}
+              </div>
+              {controlHelper}
+            </div>
           </div>
         )}
 
@@ -548,142 +574,39 @@ export function MenuView() {
 
       </section>
 
-      {/* Attached box under the header card — one-day "Ordering for" row, or the
-          multi-day day strip. Collapses on scroll-down, expands on scroll-up via a
-          grid-rows slide; clips overflow mid-slide so it tucks under the card. */}
+      {/* Attached box under the header card — the multi-day day strip, tucked
+          flush under the header card (always visible, no scroll show/hide). */}
       {attachedOpen ? (
-        <div
-          className={cn(
-            "grid transition-all duration-300 ease-out",
-            boxCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
-          )}
-          onTransitionEnd={() => {
-            if (!boxCollapsedRef.current) setBoxOverflowVisible(true);
-          }}
-        >
-          <div className={cn("min-h-0", boxOverflowVisible ? "overflow-visible" : "overflow-hidden")}>
-            <div className="rounded-b-2xl border border-t-0 border-border bg-card px-4 py-3 sm:px-5">
-              {oneDayBoxOpen ? (
-                // Unified control bar: [ One day | Multiple days | 📅 date ▾ ] all
-                // in one connected pill, with the cutoff as a quiet helper beside it.
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
-                  <div
-                    className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm"
-                    role="tablist"
-                    aria-label="Order length"
-                  >
-                    {modeSegments}
-                    <span className="mx-0.5 h-5 w-px shrink-0 bg-border" />
-                    <DatePickerDropdown
-                      days={datePickerDays}
-                      selected={selectedDate}
-                      onSelect={(iso) => {
-                        setSelectedDate(iso);
-                        setActiveDate(iso);
-                      }}
-                      renderTrigger={({ open, toggle }) => (
-                        <button
-                          type="button"
-                          aria-haspopup="listbox"
-                          aria-expanded={open}
-                          onClick={toggle}
-                          className={cn(
-                            "flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors",
-                            open ? "bg-teal-wash" : "hover:bg-teal-wash",
-                          )}
-                        >
-                          <CalendarDays className="size-4 shrink-0 text-primary" />
-                          <span className="truncate">{formatDayLong(fromISODate(selectedDate))}</span>
-                          <ChevronDown
-                            className={cn("size-4 shrink-0 text-primary transition-transform", open && "rotate-180")}
-                          />
-                        </button>
-                      )}
-                    />
-                  </div>
-                  <span
-                    className={cn(
-                      "flex min-w-0 items-center gap-1.5 text-2xs",
-                      !isFamily && cutoffUrgent
-                        ? "font-semibold text-danger"
-                        : !isFamily && cutoffSoon
-                          ? "font-semibold text-coral-deep"
-                          : "text-muted-foreground",
-                    )}
-                  >
-                    {!isFamily && cutoffSoon ? <AlarmClock className="size-3.5 shrink-0" /> : null}
-                    <span className="truncate">
-                      {isFamily
-                        ? "Order 72 hours ahead"
-                        : cutoffSoon
-                          ? `${remainingLabel(msToCutoff)} left to order`
-                          : `Order by ${cutoffTimeLabel} ${cutoffWeekday}`}
-                    </span>
-                  </span>
-                </div>
-              ) : (
-                <div>
-                  {/* Same unified bar for multi-day; the day strip sits below. */}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
-                    <div
-                      className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm"
-                      role="tablist"
-                      aria-label="Order length"
-                    >
-                      {modeSegments}
-                      <span className="mx-0.5 h-5 w-px shrink-0 bg-border" />
-                      <button
-                        type="button"
-                        onClick={() => setRangePickerOpen(true)}
-                        className="flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors hover:bg-teal-wash"
-                      >
-                        <CalendarRange className="size-4 shrink-0 text-primary" />
-                        <span className="truncate">
-                          {formatDay(fromISODate(rangeStart))} – {formatDay(fromISODate(rangeEnd))}
-                        </span>
-                        <ChevronDown className="size-4 shrink-0 text-primary" />
-                      </button>
-                    </div>
-                    <span className="min-w-0 truncate text-2xs font-semibold text-muted-foreground">
-                      {daysAdded}/{rangeDays.length} days added
-                    </span>
-                  </div>
+        <div className="rounded-b-2xl border border-t-0 border-border bg-card px-4 py-3 sm:px-5">
+          <DayStrip
+            cells={rangeDays.map((iso) => {
+              const d = fromISODate(iso);
+              const items = cart.itemsForDate(iso);
+              const owed = cart.dayEmployeePaid(iso);
+              const has = items.length > 0;
+              return {
+                iso,
+                weekday: WEEKDAY_SHORT[d.getDay()],
+                dayNum: d.getDate(),
+                fullLabel: formatDay(d),
+                has,
+                owed,
+                total: cart.dayTotal(iso),
+                itemCount: items.reduce((s, l) => s + l.qty, 0),
+                subLabel: has ? (owed > 0 ? formatCurrency(owed) : "added") : formatShort(d).split(" ")[0],
+              };
+            })}
+            activeDate={activeDate}
+            onSelect={setActiveDate}
+          />
 
-                <div className="mt-3">
-                  <DayStrip
-                    cells={rangeDays.map((iso) => {
-                      const d = fromISODate(iso);
-                      const items = cart.itemsForDate(iso);
-                      const owed = cart.dayEmployeePaid(iso);
-                      const has = items.length > 0;
-                      return {
-                        iso,
-                        weekday: WEEKDAY_SHORT[d.getDay()],
-                        dayNum: d.getDate(),
-                        fullLabel: formatDay(d),
-                        has,
-                        owed,
-                        total: cart.dayTotal(iso),
-                        itemCount: items.reduce((s, l) => s + l.qty, 0),
-                        subLabel: has ? (owed > 0 ? formatCurrency(owed) : "added") : formatShort(d).split(" ")[0],
-                      };
-                    })}
-                    activeDate={activeDate}
-                    onSelect={setActiveDate}
-                  />
-                </div>
-
-                {daysRemaining === 0 ? (
-                  <div className="mt-2.5">
-                    <Button variant="teal" block onClick={openCart}>
-                      <Check className="size-4" /> All {rangeDays.length} days added · Review cart
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-              )}
+          {daysRemaining === 0 ? (
+            <div className="mt-2.5">
+              <Button variant="teal" block onClick={openCart}>
+                <Check className="size-4" /> All {rangeDays.length} days added · Review cart
+              </Button>
             </div>
-          </div>
+          ) : null}
         </div>
       ) : null}
       </div>
@@ -778,6 +701,8 @@ export function MenuView() {
           initialStart={rangeStart}
           initialEnd={rangeEnd}
           serviceDayNums={MULTI_DAY_NUMS}
+          minISO={earliestISO}
+          dayInfo={dayInfo}
           onClose={() => {
             setRangePickerOpen(false);
             // Cancelled before ever choosing a range → fall back to one-day mode.
@@ -788,11 +713,7 @@ export function MenuView() {
             setRangeEnd(end);
             setRangeChosen(true);
             setRangePickerOpen(false);
-            const days = serviceDaysInRange(
-              fromISODate(start),
-              fromISODate(end),
-              MULTI_DAY_NUMS,
-            ).map(toISODate);
+            const days = openServiceDays(start, end);
             if (days[0]) setActiveDate(days[0]);
           }}
         />
@@ -1021,6 +942,10 @@ function DayStrip({
 
 interface Promo {
   id: string;
+  /** Short eyebrow badge, e.g. "10% OFF" / "NEW". */
+  tag: string;
+  /** Icon shown in the eyebrow badge. */
+  icon: React.ComponentType<{ className?: string }>;
   title: string;
   body: React.ReactNode;
   href: string;
@@ -1033,6 +958,8 @@ interface Promo {
 const PROMOS: Promo[] = [
   {
     id: "save10",
+    tag: "10% off",
+    icon: BadgePercent,
     title: "Get 10% off your first order",
     body: (
       <>
@@ -1047,6 +974,8 @@ const PROMOS: Promo[] = [
   },
   {
     id: "freedelivery",
+    tag: "Free delivery",
+    icon: Truck,
     title: "Free delivery on team orders",
     body: (
       <>
@@ -1061,6 +990,8 @@ const PROMOS: Promo[] = [
   },
   {
     id: "newmenu",
+    tag: "New",
+    icon: Sparkles,
     title: "New summer menu is live",
     body: (
       <>
@@ -1069,11 +1000,13 @@ const PROMOS: Promo[] = [
     ),
     href: "/menu",
     cta: "See the menu",
-    image: "https://www.themealdb.com/images/media/meals/uttupv1511797099.jpg",
+    image: "https://www.themealdb.com/images/media/meals/rqtxvr1511792990.jpg",
     alt: "Summer grain bowl",
   },
   {
     id: "refer",
+    tag: "$15 credit",
+    icon: Gift,
     title: "Refer a coworker, get $15",
     body: (
       <>
@@ -1089,28 +1022,33 @@ const PROMOS: Promo[] = [
 
 /** One promo card — copy + CTA on the left, food photo on the right. */
 function PromoCard({ promo }: { promo: Promo }) {
+  const TagIcon = promo.icon;
   return (
-    <div className="relative flex items-stretch overflow-hidden rounded-2xl border border-teal-soft bg-teal-wash shadow-card">
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 py-5 pl-5 pr-3 sm:pl-6">
-        <h3 className="font-display text-lg font-bold leading-tight tracking-tight text-teal-deep sm:text-xl">
+    <div className="group relative flex items-stretch overflow-hidden rounded-2xl border border-teal-soft bg-gradient-to-br from-teal-wash via-teal-wash to-teal-soft/70 shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-raised">
+      {/* Soft decorative glow behind the copy for depth. */}
+      <div className="pointer-events-none absolute -left-10 -top-12 size-40 rounded-full bg-primary/10 blur-2xl" />
+
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-center gap-1.5 py-5 pl-5 pr-3 sm:pl-6">
+        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-coral px-2.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-white shadow-sm">
+          <TagIcon className="size-3" /> {promo.tag}
+        </span>
+        <h3 className="mt-0.5 font-display text-lg font-bold leading-tight tracking-tight text-teal-deep sm:text-xl">
           {promo.title}
         </h3>
         <p className="text-[13px] leading-snug text-teal-deep/75">{promo.body}</p>
         <Link
           href={promo.href}
-          className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-deep px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-primary"
+          className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-deep px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-primary"
         >
-          {promo.cta} <ArrowRight className="size-3.5" />
+          {promo.cta} <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
 
-      {/* Full-bleed real food photo on the right (DoorDash-style promo image). */}
-      <FoodPhoto
-        src={promo.image}
-        alt={promo.alt}
-        className="hidden w-[38%] max-w-[220px] shrink-0 self-stretch sm:flex"
-        iconClassName="size-10"
-      />
+      {/* Full-bleed real food photo on the right, fading into the card gradient. */}
+      <div className="relative hidden w-[40%] max-w-[220px] shrink-0 self-stretch sm:block">
+        <FoodPhoto src={promo.image} alt={promo.alt} className="size-full" iconClassName="size-10" />
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-14 bg-gradient-to-r from-teal-wash to-transparent" />
+      </div>
     </div>
   );
 }
@@ -1182,17 +1120,6 @@ function PromoBanner() {
   );
 }
 
-/** Human "time left until cutoff" — e.g. "2 hours", "1 hour 20 min", "15 minutes". */
-function remainingLabel(ms: number) {
-  const mins = Math.max(1, Math.round(ms / 60000));
-  if (mins >= 120) return `${Math.round(mins / 60)} hours`;
-  if (mins >= 60) {
-    const rem = mins % 60;
-    return rem ? `1 hour ${rem} min` : "1 hour";
-  }
-  return `${mins} minutes`;
-}
-
 /** A branded category tag chip (single-select, with an "All" reset). */
 function CategoryChip({
   active,
@@ -1223,28 +1150,115 @@ interface DateOption {
   iso: string;
   date: Date;
   disabled: boolean;
+  /** Closed specifically because its order cutoff has passed → shown in red. */
+  cutoff: boolean;
   reason: string;
 }
 
+/** Monday-first weekday header for the unified calendar. */
+const CAL_COLS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+
+/** Monday-first month grid (leading/trailing blanks padded to full weeks). */
+function calMatrix(year: number, month: number): (Date | null)[] {
+  const first = new Date(year, month, 1);
+  const lead = (first.getDay() + 6) % 7; // 0 = Monday
+  const days = new Date(year, month + 1, 0).getDate();
+  const cells: (Date | null)[] = Array.from({ length: lead }, () => null);
+  for (let d = 1; d <= days; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
 /**
- * Themed single-day picker. Shows upcoming calendar days; service days before
- * cutoff are selectable, weekends/holidays/past-cutoff days are greyed with a
- * reason. Matches the site dropdown style (cream surface, teal highlight).
+ * Hover bubble explaining why a calendar day is closed (e.g. "Order cutoff
+ * passed…"). Rendered inside a `group` cell wrapper so it reveals on hover even
+ * though the day button itself is disabled (disabled buttons don't fire hover).
  */
-function DatePickerDropdown({
-  days,
-  selected,
-  onSelect,
-  renderTrigger,
+function DayTooltip({ reason }: { reason: string }) {
+  return (
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-40 -translate-x-1/2 rounded-lg bg-foreground px-2.5 py-1.5 text-center text-2xs font-medium leading-snug text-background shadow-raised group-hover:block"
+    >
+      {reason}
+      <span className="absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-foreground" />
+    </span>
+  );
+}
+
+/**
+ * Unified delivery-date picker — a single dropdown that handles BOTH modes.
+ *
+ * An in-menu "Single day / Date range" toggle switches the calendar between:
+ *  - Single day: tap a service day (before its cutoff) to order for that day;
+ *    weekends/holidays/past-cutoff days are greyed with a reason. Commits and
+ *    closes on tap.
+ *  - Date range: shadcn-style two-tap range (start → end) with a hover preview
+ *    and a continuous teal band; "Apply" commits the Mon–Fri range.
+ *
+ * The trigger label reflects the currently *committed* selection; switching the
+ * in-menu toggle only previews — nothing changes until you tap a day (single)
+ * or press Apply (range).
+ */
+function UnifiedDatePicker({
+  mode,
+  onModeChange,
+  selectedDate,
+  singleDays,
+  onSelectSingle,
+  rangeStart,
+  rangeEnd,
+  rangeDays,
+  serviceDayNums,
+  minISO,
+  dayInfo,
+  onApplyRange,
 }: {
-  days: DateOption[];
-  selected: string;
-  onSelect: (iso: string) => void;
-  /** Custom trigger; falls back to the default "Change date" pill when absent. */
-  renderTrigger?: (o: { open: boolean; toggle: () => void }) => React.ReactNode;
+  mode: Mode;
+  onModeChange: (m: Mode) => void;
+  selectedDate: string;
+  singleDays: DateOption[];
+  onSelectSingle: (iso: string) => void;
+  rangeStart: string;
+  rangeEnd: string;
+  rangeDays: string[];
+  serviceDayNums: number[];
+  /** Earliest selectable delivery date (ISO) for the range tab's lead window. */
+  minISO: string;
+  /** Per-day classification (open / weekend-holiday-past / past-cutoff) for the
+   *  range tab — closed days grey out, cutoff days show red with a reason. */
+  dayInfo: (iso: string) => { selectable: boolean; cutoff: boolean; reason: string };
+  onApplyRange: (startISO: string, endISO: string) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  // Which sub-mode the open dropdown is previewing (defaults to the committed mode).
+  const [tab, setTab] = React.useState<Mode>(mode);
+  // Draft range endpoints — committed to the parent only on Apply.
+  const [dStart, setDStart] = React.useState(rangeStart);
+  const [dEnd, setDEnd] = React.useState(rangeEnd);
+  const [hovered, setHovered] = React.useState("");
+  const [cursor, setCursor] = React.useState(() => {
+    const a = fromISODate(selectedDate || rangeStart || toISODate(startOfToday()));
+    return { y: a.getFullYear(), m: a.getMonth() };
+  });
   const ref = React.useRef<HTMLDivElement>(null);
+
+  const singleByIso = React.useMemo(() => {
+    const m = new Map<string, DateOption>();
+    for (const d of singleDays) m.set(d.iso, d);
+    return m;
+  }, [singleDays]);
+
+  // Opening resets the preview to the committed state (tab, drafts, month).
+  function openMenu() {
+    setTab(mode);
+    setDStart(rangeStart);
+    setDEnd(rangeEnd);
+    setHovered("");
+    const a = fromISODate((mode === "single" ? selectedDate : rangeStart) || toISODate(startOfToday()));
+    setCursor({ y: a.getFullYear(), m: a.getMonth() });
+    setOpen(true);
+  }
 
   React.useEffect(() => {
     if (!open) return;
@@ -1262,154 +1276,283 @@ function DatePickerDropdown({
     };
   }, [open]);
 
+  const today = startOfToday();
+  const todayISO = toISODate(today);
+  const cells = calMatrix(cursor.y, cursor.m);
+  const monthLabel = new Date(cursor.y, cursor.m, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  // Range highlight bounds: committed end, else hover preview past the start.
+  const lo = dStart;
+  const hi = dEnd || (dStart && hovered && hovered > dStart ? hovered : dStart);
+  const hasRange = !!lo && !!hi && hi !== lo;
+  const draftEnd = dEnd || dStart;
+  const draftCount = React.useMemo(() => {
+    if (!dStart) return 0;
+    // Preview count mirrors the committed range: red days are never counted.
+    return serviceDaysInRange(fromISODate(dStart), fromISODate(draftEnd), serviceDayNums)
+      .map(toISODate)
+      .filter((iso) => dayInfo(iso).selectable).length;
+  }, [dStart, draftEnd, serviceDayNums, dayInfo]);
+
+  function pickRange(iso: string) {
+    if (!dStart || (dStart && dEnd)) {
+      setDStart(iso);
+      setDEnd("");
+    } else if (iso < dStart) {
+      setDStart(iso);
+    } else {
+      setDEnd(iso);
+    }
+  }
+
+  function shiftMonth(delta: number) {
+    setCursor((c) => {
+      const d = new Date(c.y, c.m + delta, 1);
+      return { y: d.getFullYear(), m: d.getMonth() };
+    });
+  }
+
   return (
     <div ref={ref} className="relative shrink-0">
-      {renderTrigger ? (
-        renderTrigger({ open, toggle: () => setOpen((o) => !o) })
-      ) : (
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-          className={cn(
-            "flex items-center gap-1.5 rounded-full border bg-card px-3.5 py-2 text-[13px] font-semibold text-teal-deep shadow-sm transition-colors",
-            open ? "border-primary ring-2 ring-ring/30" : "border-border hover:border-primary/40 hover:bg-teal-wash",
-          )}
-        >
-          <CalendarDays className="size-4 text-primary" /> Change date
-          <ChevronDown className={cn("size-4 text-primary transition-transform", open && "rotate-180")} />
-        </button>
-      )}
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={
+          mode === "single"
+            ? `Delivery date: ${formatDayLong(fromISODate(selectedDate))}. Change date`
+            : `Delivery dates: ${formatDay(fromISODate(rangeStart))} to ${formatDay(fromISODate(rangeEnd))}, ${rangeDays.length} days. Change dates`
+        }
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        className={cn(
+          // py matches the Individual/Family toggle height (its p-1 + border add
+          // ~10px around an identically-padded button), keeping the same pill style.
+          "flex max-w-full items-center gap-1.5 rounded-full px-3 py-[11px] text-[13px] font-semibold text-teal-deep transition-colors",
+          open ? "bg-teal-soft" : "bg-teal-wash hover:bg-teal-soft",
+        )}
+      >
+        {mode === "single" ? (
+          <>
+            <CalendarDays className="size-4 shrink-0 text-primary" />
+            <span className="truncate">{formatDayLong(fromISODate(selectedDate))}</span>
+          </>
+        ) : (
+          <>
+            <CalendarRange className="size-4 shrink-0 text-primary" />
+            <span className="truncate">{formatDay(fromISODate(rangeStart))}</span>
+            <ArrowRight className="size-3.5 shrink-0 text-primary/60" />
+            <span className="truncate">{formatDay(fromISODate(rangeEnd))}</span>
+            <span className="ml-0.5 shrink-0 rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-teal-deep shadow-sm">
+              {rangeDays.length} {rangeDays.length === 1 ? "day" : "days"}
+            </span>
+          </>
+        )}
+        <ChevronDown className={cn("size-4 shrink-0 text-primary transition-transform", open && "rotate-180")} />
+      </button>
 
       {open ? (
-        <MiniCalendar
-          days={days}
-          selected={selected}
-          onSelect={(iso) => {
-            onSelect(iso);
-            setOpen(false);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * Small month-calendar popover for the single-day picker. Only the upcoming
- * service days before cutoff are pickable; weekends, holidays and past-cutoff
- * days are greyed (with their reason on hover). You can pick exactly one day.
- */
-function MiniCalendar({
-  days,
-  selected,
-  onSelect,
-}: {
-  days: DateOption[];
-  selected: string;
-  onSelect: (iso: string) => void;
-}) {
-  const byIso = React.useMemo(() => {
-    const m = new Map<string, DateOption>();
-    for (const d of days) m.set(d.iso, d);
-    return m;
-  }, [days]);
-
-  // First and last day the window covers — bounds month navigation.
-  const firstIso = days[0]?.iso ?? "";
-  const lastIso = days[days.length - 1]?.iso ?? "";
-
-  // Open on the selected date's month, else the first selectable day's month.
-  const anchor = selected
-    ? fromISODate(selected)
-    : days.find((d) => !d.disabled)?.date ?? days[0]?.date ?? startOfToday();
-  const [view, setView] = React.useState(() => new Date(anchor.getFullYear(), anchor.getMonth(), 1));
-
-  const year = view.getFullYear();
-  const month = view.getMonth();
-  const monthStartIso = toISODate(new Date(year, month, 1));
-  const monthEndIso = toISODate(new Date(year, month + 1, 0));
-  const canPrev = Boolean(firstIso) && firstIso < monthStartIso;
-  const canNext = Boolean(lastIso) && lastIso > monthEndIso;
-
-  // Calendar cells: leading blanks to align the 1st, then each day of the month.
-  const leading = new Date(year, month, 1).getDay(); // 0 = Sun
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: (Date | null)[] = [
-    ...Array.from({ length: leading }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1)),
-  ];
-
-  return (
-    <div
-      role="dialog"
-      aria-label="Choose a delivery date"
-      className="absolute right-0 top-full z-50 mt-2 w-64 rounded-2xl border border-border bg-card p-3 shadow-raised"
-    >
-      <div className="mb-2 flex items-center justify-between">
-        <button
-          type="button"
-          aria-label="Previous month"
-          disabled={!canPrev}
-          onClick={() => setView(new Date(year, month - 1, 1))}
-          className="rounded-lg p-1 text-primary transition-colors hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
+        <div
+          role="dialog"
+          aria-label="Choose a delivery date"
+          className="absolute right-0 top-full z-50 mt-2 w-[19.5rem] rounded-2xl border border-border bg-card p-3 shadow-raised"
         >
-          <ChevronLeft className="size-4" />
-        </button>
-        <span className="text-[13px] font-semibold text-foreground">
-          {view.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-        </span>
-        <button
-          type="button"
-          aria-label="Next month"
-          disabled={!canNext}
-          onClick={() => setView(new Date(year, month + 1, 1))}
-          className="rounded-lg p-1 text-primary transition-colors hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
-        >
-          <ChevronRight className="size-4" />
-        </button>
-      </div>
-
-      <div className="grid grid-cols-7 gap-0.5">
-        {WEEKDAY_SHORT.map((w) => (
-          <span key={w} className="py-1 text-center text-2xs font-semibold text-muted-foreground">
-            {w[0]}
-          </span>
-        ))}
-        {cells.map((d, i) =>
-          d === null ? (
-            <span key={`blank-${i}`} />
-          ) : (
-            (() => {
-              const iso = toISODate(d);
-              const opt = byIso.get(iso);
-              const selectable = Boolean(opt) && !opt!.disabled;
-              const active = iso === selected;
+          {/* Single day / Date range toggle — the only mode control now. */}
+          <div className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-border bg-muted/40 p-1" role="tablist">
+            {[
+              { id: "single", label: "Single day" },
+              { id: "multi", label: "Multi Days" },
+            ].map((t) => {
+              const active = tab === t.id;
               return (
                 <button
-                  key={iso}
+                  key={t.id}
                   type="button"
-                  disabled={!selectable}
-                  title={opt?.disabled ? opt.reason : undefined}
-                  aria-pressed={active}
-                  onClick={() => selectable && onSelect(iso)}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setTab(t.id as Mode)}
                   className={cn(
-                    "flex aspect-square items-center justify-center rounded-lg text-[13px] font-medium transition-colors",
+                    "rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors",
                     active
-                      ? "bg-primary text-primary-foreground"
-                      : selectable
-                        ? "text-foreground hover:bg-teal-wash"
-                        : "cursor-not-allowed text-muted-foreground/40",
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {d.getDate()}
+                  {t.label}
                 </button>
               );
-            })()
-          ),
-        )}
-      </div>
+            })}
+          </div>
+
+          <div className="mb-2 flex items-center justify-between">
+            <button
+              type="button"
+              aria-label="Previous month"
+              onClick={() => shiftMonth(-1)}
+              className="rounded-lg p-1 text-primary transition-colors hover:bg-muted"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <span className="text-[13px] font-semibold text-foreground">{monthLabel}</span>
+            <button
+              type="button"
+              aria-label="Next month"
+              onClick={() => shiftMonth(1)}
+              className="rounded-lg p-1 text-primary transition-colors hover:bg-muted"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 text-center text-2xs font-semibold uppercase text-muted-foreground">
+            {CAL_COLS.map((d, i) => (
+              <div key={d} className={cn("pb-1", i >= 5 && "text-muted-foreground/40")}>
+                {d}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7" onMouseLeave={() => setHovered("")}>
+            {cells.map((date, i) => {
+              if (!date) return <div key={`x${i}`} />;
+              const iso = toISODate(date);
+              const isToday = iso === todayISO;
+
+              if (tab === "single") {
+                // Selectability keyed off the same cutoff-aware window as before;
+                // days outside the upcoming window simply aren't pickable.
+                const opt = singleByIso.get(iso);
+                const selectable = Boolean(opt) && !opt!.disabled;
+                const active = iso === selectedDate;
+                // A day closed because its order cutoff has passed — shown in a
+                // muted red (distinct from the plain grey of weekends/holidays).
+                const cutoffClosed = Boolean(opt?.cutoff);
+                return (
+                  <div
+                    key={iso}
+                    className={cn(
+                      "relative flex items-center justify-center py-0.5",
+                      // Disabled buttons don't fire hover, so the reason tooltip
+                      // lives on the (enabled) wrapper and reveals on group-hover.
+                      opt?.disabled && opt.reason && "group",
+                    )}
+                  >
+                    {opt?.disabled && opt.reason ? <DayTooltip reason={opt.reason} /> : null}
+                    <button
+                      type="button"
+                      disabled={!selectable}
+                      aria-pressed={active}
+                      aria-label={
+                        opt?.disabled
+                          ? `${date.getDate()}, ${opt.reason}`
+                          : undefined
+                      }
+                      onClick={() => {
+                        if (!selectable) return;
+                        onSelectSingle(iso);
+                        onModeChange("single");
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "flex size-9 items-center justify-center rounded-full text-sm transition-colors",
+                        active
+                          ? "bg-primary font-semibold text-primary-foreground"
+                          : selectable
+                            ? "text-foreground hover:bg-teal-wash"
+                            : cutoffClosed
+                              ? "cursor-not-allowed bg-danger/10 font-semibold text-danger group-hover:bg-danger/20"
+                              : "cursor-not-allowed text-muted-foreground/40",
+                        isToday && !active && selectable && "ring-1 ring-inset ring-primary/60",
+                      )}
+                    >
+                      {date.getDate()}
+                    </button>
+                  </div>
+                );
+              }
+
+              // Date-range tab: weekends/holidays/past grey out; a weekday past
+              // its cutoff shows red with a reason; the rest are selectable.
+              const info = dayInfo(iso);
+              const disabled = !info.selectable;
+              const cutoffClosed = info.cutoff;
+              const isStart = !!lo && iso === lo;
+              const isEnd = hasRange && iso === hi;
+              const inMiddle = hasRange && iso > lo && iso < hi;
+              const isEndpoint = isStart || isEnd;
+              return (
+                <div
+                  key={iso}
+                  className={cn(
+                    "relative flex items-center justify-center py-0.5",
+                    disabled && info.reason && "group",
+                  )}
+                >
+                  {disabled && info.reason ? <DayTooltip reason={info.reason} /> : null}
+                  {/* Continuous band — skipped on weekends so a range visibly hops them. */}
+                  {inMiddle && !disabled ? <span className="absolute inset-y-0.5 inset-x-0 bg-teal-wash" /> : null}
+                  {isStart && hasRange ? <span className="absolute inset-y-0.5 left-1/2 right-0 bg-teal-wash" /> : null}
+                  {isEnd ? <span className="absolute inset-y-0.5 left-0 right-1/2 bg-teal-wash" /> : null}
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => pickRange(iso)}
+                    onMouseEnter={() => !disabled && dStart && !dEnd && setHovered(iso)}
+                    aria-label={
+                      disabled ? `${date.toDateString()}, ${info.reason}` : date.toDateString()
+                    }
+                    className={cn(
+                      "relative z-10 flex size-9 items-center justify-center rounded-full text-sm transition-colors",
+                      isEndpoint
+                        ? "bg-primary font-semibold text-primary-foreground"
+                        : cutoffClosed
+                          ? "cursor-not-allowed bg-danger/10 font-semibold text-danger group-hover:bg-danger/20"
+                          : disabled
+                            ? "cursor-not-allowed text-muted-foreground/40"
+                            : inMiddle
+                              ? "text-teal-deep"
+                              : "text-foreground hover:bg-muted",
+                      isToday && !isEndpoint && !inMiddle && !disabled && "ring-1 ring-inset ring-primary/60",
+                    )}
+                  >
+                    {date.getDate()}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {tab === "single" ? (
+            <p className="mt-2 text-2xs text-muted-foreground">
+              Grey = closed.{" "}
+              <span className="rounded bg-danger/10 px-1 font-semibold text-danger">Red</span> = cutoff passed
+              (hover to see why).
+            </p>
+          ) : (
+            <>
+              <p className="mt-2 text-2xs text-muted-foreground">
+                {dStart
+                  ? `${formatDay(fromISODate(dStart))} → ${formatDay(fromISODate(draftEnd))} · ${draftCount} ${draftCount === 1 ? "day" : "days"}`
+                  : "Tap a start and end day — weekends are skipped."}
+              </p>
+              <Button
+                variant="teal"
+                block
+                className="mt-2"
+                disabled={!dStart}
+                onClick={() => {
+                  onApplyRange(dStart, draftEnd);
+                  setOpen(false);
+                }}
+              >
+                Apply dates
+              </Button>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

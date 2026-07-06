@@ -17,6 +17,15 @@ const logoHeights = {
   xl: "h-16",
 };
 
+/** Pixel heights matching `logoHeights`, applied inline so the mark is sized
+ *  even before/without the stylesheet (a missing `h-16` would otherwise render
+ *  the image at its intrinsic 2220px and blow up the layout). */
+const logoHeightPx = {
+  md: 32,
+  lg: 48,
+  xl: 64,
+};
+
 /**
  * Superfine Kitchen wordmark — the official logo image. On dark backgrounds
  * (the "light" variant) the navy mark is rendered white so it stays legible.
@@ -32,6 +41,13 @@ function Logo({ variant = "dark", size = "md", showPlatform = false, className }
         height={905}
         priority
         className={cn(logoHeights[size], "w-auto", isLight && "brightness-0 invert")}
+        // Inline fallbacks so a slow/failed CSS load can't render the mark at its
+        // intrinsic size or (for the light variant) in the wrong colour.
+        style={{
+          height: logoHeightPx[size],
+          width: "auto",
+          ...(isLight ? { filter: "brightness(0) invert(1)" } : null),
+        }}
       />
       {showPlatform ? (
         <span

@@ -190,6 +190,8 @@ export interface MealProgram {
   subsidyPerDay: number;
   /** Human description of the subsidy model. */
   subsidyModel: string;
+  /** Sales-tax rate applied to the employee-paid portion (e.g. 0.08625 = 8.625%). */
+  taxRate: number;
   /** When false, the employee never sees retail prices — only the budget. */
   showPrices: boolean;
   mealsPerDay: number;

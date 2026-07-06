@@ -55,8 +55,8 @@ export default function LoginPage() {
             Fresh, globally inspired lunches on your company&apos;s tab.
           </h1>
           <p className="mt-4 text-base leading-relaxed text-teal-deep/80">
-            Order in a couple of taps for one day or the whole week. Your subsidy is applied
-            automatically. No math, no surprises.
+            Order in a couple of taps for one day or the whole week. Your company&apos;s share is
+            applied automatically. No math, no surprises.
           </p>
         </div>
         <div className="relative flex items-center gap-2 text-[13px] font-medium text-teal-deep/80">

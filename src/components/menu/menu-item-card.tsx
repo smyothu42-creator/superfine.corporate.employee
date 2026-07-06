@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, Check, Leaf, Wheat, ShieldCheck, SunSnow, Flame, Nut, Milk, Replace } from "lucide-react";
+import { Plus, Check, Leaf, Wheat, ShieldCheck, SunSnow, Flame, Nut, Milk, ArrowLeftRight } from "lucide-react";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { flyCardToCart } from "@/lib/fly-to-cart";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -43,9 +43,10 @@ interface MenuItemCardProps {
 
 /**
  * The reusable menu card for the employee menu — a DoorDash-style horizontal
- * row: a left text column (name + price, an inline Popular/Seasonal badge, a
- * one-line description, serves, dietary tags, and allergens pinned at the
- * bottom) sits beside a square food photo on the right that carries a floating
+ * row: a left text column with a tight primary cluster (a Popular/Seasonal
+ * eyebrow, the name + price, and a one-line description) above a lighter meta
+ * section pinned to the bottom (serves, dietary tags, and allergens) sits
+ * beside a square food photo on the right that carries a floating
  * coral "+" button in its bottom corner. Items with no add-ons add straight to
  * the cart; items with add-ons route through Customize. In `selectable` mode the
  * whole card toggles selection (Auto-Order favorites) and the "+" becomes a
@@ -67,10 +68,11 @@ export function MenuItemCard({
   const customizable = required || hasOptionalAddOns(item);
   const cardRef = React.useRef<HTMLDivElement>(null);
   // In "change a placed order" mode the action reads as a swap.
-  const ActionIcon = editing ? Replace : Plus;
+  const ActionIcon = editing ? ArrowLeftRight : Plus;
 
-  const tagsRow = (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs font-medium text-muted-foreground">
+  // Dietary tags (Vegan, Gluten-Free, …) — part of the secondary meta section.
+  const dietaryTags = item.tags.length ? (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs font-medium text-muted-foreground">
       {item.tags.map((tag) => {
         const Icon = TAG_ICON[tag] ?? Leaf;
         return (
@@ -81,46 +83,58 @@ export function MenuItemCard({
         );
       })}
     </div>
-  );
+  ) : null;
 
-  // The text content block — name/price header, inline promo badge, description,
-  // serves and tags. (Allergens are pinned separately at the column's bottom.)
-  const info = (
+  // Promo pills (Popular / Seasonal) — filled tags that sit inline beside the
+  // meal name rather than as a separate eyebrow above it.
+  const promoBadges =
+    item.popular || item.seasonal ? (
+      <span className="flex shrink-0 items-center gap-1.5">
+        {item.popular ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-coral/10 px-2 py-0.5 text-2xs font-semibold text-coral-deep">
+            <Flame className="size-3" /> Popular
+          </span>
+        ) : null}
+        {item.seasonal ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-teal-wash px-2 py-0.5 text-2xs font-semibold text-primary">
+            <SunSnow className="size-3" /> Seasonal
+          </span>
+        ) : null}
+      </span>
+    ) : null;
+
+  // Primary group — the name/price header (with the promo pills beside the name)
+  // and the description sit tightly together as the card's focal cluster.
+  const primary = (
     <>
-      <div className="flex items-baseline justify-between gap-2">
-        <h3 className="truncate font-display text-base font-semibold leading-tight">{item.name}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="truncate font-display text-base font-semibold leading-tight">{item.name}</h3>
+          {promoBadges}
+        </div>
         {showPrice ? (
           <span className="shrink-0 font-display text-base font-semibold nums">
             {formatCurrency(item.price)}
           </span>
         ) : null}
       </div>
-      {item.popular || item.seasonal ? (
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {item.popular ? (
-            <span className="inline-flex items-center gap-1 text-2xs font-semibold text-coral-deep">
-              <Flame className="size-3" /> Popular
-            </span>
-          ) : null}
-          {item.seasonal ? (
-            <span className="inline-flex items-center gap-1 text-2xs font-semibold text-primary">
-              <SunSnow className="size-3" /> Seasonal
-            </span>
-          ) : null}
-        </div>
-      ) : null}
       <p className="mt-1 line-clamp-1 text-[13px] leading-snug text-muted-foreground">
         {item.description}
       </p>
-      {item.serves ? (
-        <p className="mt-1.5 text-2xs text-muted-foreground">Serves {item.serves}</p>
-      ) : null}
-      {tagsRow}
     </>
   );
 
-  const allergens = (
-    <p className="mt-auto pt-2 text-2xs text-muted-foreground">Allergens: {item.allergens}</p>
+  // Secondary group — serves, dietary tags, and allergens grouped as one
+  // lighter meta section, pinned to the bottom of the column and set apart
+  // from the primary cluster by the auto margin above it.
+  const meta = (
+    <div className="mt-auto space-y-1.5 pt-3">
+      {item.serves ? (
+        <p className="text-2xs text-muted-foreground">Serves {item.serves}</p>
+      ) : null}
+      {dietaryTags}
+      <p className="text-2xs text-muted-foreground">Allergens: {item.allergens}</p>
+    </div>
   );
 
   // Square photo (right column). The "N in cart" pill sits top-left so it never
@@ -158,17 +172,17 @@ export function MenuItemCard({
         )}
       >
         <div className="flex min-w-0 flex-1 flex-col">
-          {info}
-          {allergens}
+          {primary}
+          {meta}
         </div>
         <div className="relative size-28 shrink-0 self-center">
           {photoInner}
           <span
             className={cn(
-              "absolute bottom-1.5 right-1.5 flex size-8 items-center justify-center rounded-full ring-2 ring-card transition-colors",
+              "absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full ring-2 transition-colors",
               selected
-                ? "bg-primary text-primary-foreground"
-                : "bg-card text-teal-deep group-hover:bg-teal-wash",
+                ? "bg-primary text-primary-foreground ring-card"
+                : "bg-card text-primary ring-primary group-hover:bg-teal-wash",
             )}
           >
             {selected ? <Check className="size-4" /> : <Plus className="size-4" />}
@@ -188,9 +202,9 @@ export function MenuItemCard({
     >
       <div className="flex min-w-0 flex-1 flex-col">
         <Link href={`/menu/${item.id}`} className="block">
-          {info}
+          {primary}
         </Link>
-        {allergens}
+        {meta}
       </div>
 
       <div className="relative size-28 shrink-0 self-center">
@@ -204,7 +218,7 @@ export function MenuItemCard({
             type="button"
             onClick={onCustomize}
             aria-label={editing ? `Change to ${item.name}` : `Choose options for ${item.name}`}
-            className="absolute bottom-1.5 right-1.5 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
+            className="absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
           >
             <ActionIcon className="size-4" />
           </button>
@@ -216,7 +230,7 @@ export function MenuItemCard({
               onAdd?.();
             }}
             aria-label={editing ? `Change to ${item.name}` : `Add ${item.name}`}
-            className="absolute bottom-1.5 right-1.5 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
+            className="absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
           >
             <ActionIcon className="size-4" />
           </button>

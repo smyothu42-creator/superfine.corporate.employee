@@ -29,7 +29,7 @@ import { toast } from "@/store/use-toast-store";
 import { program, addresses, getAddress } from "@/data/program";
 import { me } from "@/data/me";
 import { fromISODate, formatDay } from "@/lib/dates";
-import { cutoffFor, demoNow } from "@/lib/cutoff";
+import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { PaymentChoice } from "@/data/types";
 
@@ -71,7 +71,10 @@ export function CheckoutView() {
   const [promoError, setPromoError] = React.useState("");
 
   const discount = promo ? promoDiscount(promo, owed) : 0;
-  const finalOwed = Math.max(0, owed - discount);
+  // Tax applies to the employee-paid portion after any promo (0 when covered).
+  const taxable = Math.max(0, owed - discount);
+  const tax = Math.round(taxable * program.taxRate * 100) / 100;
+  const finalOwed = taxable + tax;
 
   if (!mounted) {
     return <Skeleton className="h-96 rounded-2xl" />;
@@ -103,12 +106,13 @@ export function CheckoutView() {
   const subtotal = cart.subtotal();
   const subsidy = cart.totalSubsidy();
 
-  // Per-day cutoff status (against the demo "now").
-  const now = demoNow().getTime();
-  const cutoffs = dates.map((date) => ({
-    date,
-    passed: cutoffFor(date).getTime() - now <= 0,
-  }));
+  // Per-day cutoff status — order type drives which rule applies (individual =
+  // 4 PM day before, family = 72 h ahead), resolved inside CutoffIndicator.
+  const cutoffs = dates.map((date) => {
+    const dayItems = cart.itemsForDate(date);
+    const type = dayItems.some((i) => i.type === "family_style") ? "family_style" : "individual";
+    return { date, type } as const;
+  });
 
   function applyCommonWindow(w: string) {
     setCommonWindow(w);
@@ -161,27 +165,21 @@ export function CheckoutView() {
                 <CardTitle>Cutoff check</CardTitle>
                 <span className="inline-flex items-center gap-1 text-2xs font-medium leading-snug text-warning">
                   <AlertTriangle className="size-3 shrink-0 -translate-y-px" />
-                  Complete each order before its day-before cutoff or that day is cancelled automatically.
+                  Order by each day&apos;s cutoff — individual meals 4 PM the day before, family style 72 h ahead — or that day is cancelled automatically.
                 </span>
               </div>
             </CardHeader>
             <CardBody>
               <div className="rounded-xl border border-border bg-muted/40 p-3">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2">
                   {cutoffs.map((c) => (
-                    <span
-                      key={c.date}
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-2xs font-semibold",
-                        c.passed
-                          ? "border-danger-border bg-danger-bg text-danger"
-                          : "border-success-border bg-success-bg text-success",
-                      )}
-                    >
-                      {c.passed ? <XCircle className="size-3" /> : <Check className="size-3" />}
-                      {formatDay(fromISODate(c.date))}
-                      {c.passed ? " · cutoff passed" : null}
-                    </span>
+                    <div key={c.date} className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-2xs font-semibold text-muted-foreground">
+                        <CalendarDays className="size-3.5 text-primary" />
+                        {formatDay(fromISODate(c.date))}
+                      </span>
+                      <CutoffIndicator deliveryISO={c.date} type={c.type} variant="inline" />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -267,8 +265,9 @@ export function CheckoutView() {
               ) : (
                 <>
                   <p className="text-[13px] text-muted-foreground">
-                    {program.company} covers {formatCurrency(subsidy)}. You owe{" "}
-                    <strong className="text-foreground">{formatCurrency(owed)}</strong> for the extras.
+                    {program.company} pays {formatCurrency(subsidy)}. You pay{" "}
+                    <strong className="text-foreground">{formatCurrency(finalOwed)}</strong> for the
+                    extras, tax included.
                   </p>
                   <div className="space-y-2">
                     {me.permissions.payLater ? (
@@ -327,8 +326,8 @@ export function CheckoutView() {
 
               {program.showPrices ? (
                 <div className="space-y-1.5 pt-1">
-                  <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
-                  <SummaryRow label="Company subsidy" value={`−${formatCurrency(subsidy)}`} tone="success" />
+                  <SummaryRow label="Meals total" value={formatCurrency(subtotal)} />
+                  <SummaryRow label="Company pays" value={`−${formatCurrency(subsidy)}`} tone="success" />
                   {discount > 0 && promo ? (
                     <SummaryRow
                       label={`Promo · ${promo.code}`}
@@ -336,6 +335,7 @@ export function CheckoutView() {
                       tone="success"
                     />
                   ) : null}
+                  <SummaryRow label="Tax" value={formatCurrency(tax)} />
                   <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
                     <span>You pay</span>
                     <span className="nums">{formatCurrency(finalOwed)}</span>
@@ -495,7 +495,8 @@ function EditOrderModal({ onClose }: { onClose: () => void }) {
   const cart = useCartStore();
   const subtotal = cart.subtotal();
   const subsidy = cart.totalSubsidy();
-  const owed = cart.totalEmployeePaid();
+  const tax = cart.tax();
+  const owed = cart.total();
 
   React.useEffect(() => {
     const id = requestAnimationFrame(() => setShown(true));
@@ -542,8 +543,9 @@ function EditOrderModal({ onClose }: { onClose: () => void }) {
         <div className="shrink-0 space-y-3 border-t border-border bg-card p-5">
           {program.showPrices ? (
             <>
-              <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
-              <SummaryRow label="Company subsidy" value={`−${formatCurrency(subsidy)}`} tone="success" />
+              <SummaryRow label="Meals total" value={formatCurrency(subtotal)} />
+              <SummaryRow label="Company pays" value={`−${formatCurrency(subsidy)}`} tone="success" />
+              <SummaryRow label="Tax" value={formatCurrency(tax)} />
               <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
                 <span>You pay</span>
                 <span className="nums">{formatCurrency(owed)}</span>

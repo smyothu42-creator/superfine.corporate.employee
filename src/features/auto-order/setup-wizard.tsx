@@ -7,6 +7,7 @@ import {
   X,
   ChevronRight,
   ChevronLeft,
+  ArrowLeft,
   Search,
   SlidersHorizontal,
   type LucideIcon,
@@ -15,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { ThemeSelect } from "@/components/ui/theme-select";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
-import { AddOnModal } from "@/components/menu/add-on-modal";
 import {
   cuisines,
   menuCategory,
@@ -23,14 +23,14 @@ import {
   allergenOptions,
   dietaryPreferences,
   itemHasAnyAllergen,
-  hasRequiredAddOns,
-  hasOptionalAddOns,
 } from "@/data/menu";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
 import { cn } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
-import { mealPool, type AutoConfig, type SoldOutBehavior } from "./shared";
+import type { CartAddOn } from "@/store/use-cart-store";
+import { setupMealPool, type AutoConfig, type SoldOutBehavior } from "./shared";
+import { TOUR_PICK_EVENT } from "./walkthrough";
 
 const SOLD_OUT: { id: SoldOutBehavior; label: string; desc: string; recommended?: boolean }[] = [
   {
@@ -42,7 +42,7 @@ const SOLD_OUT: { id: SoldOutBehavior; label: string; desc: string; recommended?
   {
     id: "skip",
     label: "Skip the day",
-    desc: "No order is created — you just won't get lunch that day.",
+    desc: "No order is created. You just won't get lunch that day.",
   },
 ];
 
@@ -63,6 +63,7 @@ const PRICE_OPTIONS = [
 export function SetupWizard({
   editing = false,
   initialFavorites = [],
+  initialCustomizations = {},
   initialSoldOut = "notify",
   onActivate,
   onCancel,
@@ -71,6 +72,8 @@ export function SetupWizard({
   editing?: boolean;
   /** Meal ids already in the rotation, pre-selected on open. */
   initialFavorites?: string[];
+  /** Add-ons already saved per favorite, pre-selected on open. */
+  initialCustomizations?: Record<string, CartAddOn[]>;
   /** The current unavailable-day rule, pre-selected on open. */
   initialSoldOut?: SoldOutBehavior;
   onActivate: (config: AutoConfig) => void;
@@ -79,6 +82,10 @@ export function SetupWizard({
   // The rule step ("One quick rule") is now a modal opened from Continue.
   const [rulesOpen, setRulesOpen] = React.useState(false);
   const [favorites, setFavorites] = React.useState<string[]>(initialFavorites);
+  // Add-ons chosen per favorite during setup — persisted so future drafts keep
+  // them. Sides/beverages are excluded from the picker, so they never land here.
+  const [customizations, setCustomizations] =
+    React.useState<Record<string, CartAddOn[]>>(initialCustomizations);
   const [soldOut, setSoldOut] = React.useState<SoldOutBehavior>(initialSoldOut);
   // Favorites filters — mirror the Menu page (search + allergens + dietary +
   // cuisine + price + category tags).
@@ -88,20 +95,20 @@ export function SetupWizard({
   const [allergens, setAllergens] = React.useState<string[]>([]);
   const [diets, setDiets] = React.useState<string[]>([]);
   const [category, setCategory] = React.useState("");
-  // Item being customized before it joins the favorites (reuses the Menu modal).
-  const [customizing, setCustomizing] = React.useState<MenuItem | null>(null);
 
-  const config: AutoConfig = { status: "active", favorites, soldOut };
+  const config: AutoConfig = { status: "active", favorites, customizations, soldOut };
 
-  function addFav(id: string) {
+  function addFav(id: string, addOns: CartAddOn[] = []) {
     setFavorites((prev) =>
       prev.includes(id) || prev.length >= MAX_FAVORITES ? prev : [...prev, id],
     );
+    if (addOns.length) setCustomizations((prev) => ({ ...prev, [id]: addOns }));
   }
 
   /**
-   * Picking a meal: deselect if already chosen; otherwise open the customize
-   * modal (same as the Menu) when it has add-ons, or add it straight away.
+   * Picking a meal is a straight toggle — no add-on step. Add-ons (sides,
+   * drinks, options) are chosen later when you review each day's draft, so
+   * tapping a card just adds or removes the meal from the rotation.
    */
   function pickFav(item: MenuItem) {
     if (favorites.includes(item.id)) {
@@ -109,10 +116,6 @@ export function SetupWizard({
       return;
     }
     if (favorites.length >= MAX_FAVORITES) return;
-    if (hasRequiredAddOns(item) || hasOptionalAddOns(item)) {
-      setCustomizing(item);
-      return;
-    }
     addFav(item.id);
   }
 
@@ -122,7 +125,7 @@ export function SetupWizard({
 
   // Same filtering as the Menu page; saved allergens are always hidden. Selected
   // favorites stay visible so a filter change never hides what you've picked.
-  const filteredPool = mealPool.filter((item) => {
+  const filteredPool = setupMealPool.filter((item) => {
     if (favorites.includes(item.id)) return true;
     // Saved allergens always hidden, plus any extra chosen in the filter.
     const avoid = [...me.allergens, ...allergens];
@@ -147,8 +150,29 @@ export function SetupWizard({
   // No minimum count — but you need at least one meal to rotate through.
   const canContinue = favorites.length >= 1;
 
+  // Guided walkthrough: "Pick one for me" — adds the first visible meal. No-op
+  // once anything is selected. Re-subscribed every render so closures stay fresh.
+  React.useEffect(() => {
+    function onTourPick() {
+      if (favorites.length) return;
+      const pick = filteredPool[0];
+      if (pick) addFav(pick.id);
+    }
+    window.addEventListener(TOUR_PICK_EVENT, onTourPick);
+    return () => window.removeEventListener(TOUR_PICK_EVENT, onTourPick);
+  });
+
   return (
     <div className="w-full space-y-4 pb-2">
+      {/* Back to the Auto-Order intro — top-left of the page, same as Order Details. */}
+      <button
+        type="button"
+        onClick={onCancel}
+        className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-primary hover:underline"
+      >
+        <ArrowLeft className="size-4" /> Back
+      </button>
+
       {/* Sticky header — the picker box + category tags stay fixed while the
           grid scrolls underneath (same as the Menu page). */}
       <div className="sticky top-16 z-20 -mx-4 bg-background px-4 pb-1 pt-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -159,13 +183,16 @@ export function SetupWizard({
               {editing ? "Edit the meals you auto-order" : "Pick the meals to auto-order"}
             </h2>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              We&apos;ll rotate through these — add as many or as few as you like.{" "}
-              <span className="font-semibold text-foreground nums">{favorites.length} selected</span>.
+              Pick one meal to repeat every day, or several to rotate through.{" "}
+              <span data-tour="wizard-count" className="font-semibold text-foreground nums">
+                {favorites.length} selected
+              </span>
+              .
             </p>
           </div>
 
           {/* Filter bar — search + Allergens / Dietary / Cuisine / Price, same as the Menu. */}
-          <div className="mt-4 flex items-center gap-1 rounded-full border border-border bg-card p-1.5 shadow-sm">
+          <div data-tour="wizard-filters" className="mt-4 flex items-center gap-1 rounded-full border border-border bg-card p-1.5 shadow-sm">
             <div className="relative flex min-w-0 flex-1 items-center">
               <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
               <input
@@ -237,7 +264,7 @@ export function SetupWizard({
 
       {/* Meal grid — same cards as the Menu, in selector mode (no add button). */}
       {filteredPool.length ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div data-tour="wizard-grid" className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {filteredPool.map((item) => (
             <MenuItemCard
               key={item.id}
@@ -262,7 +289,7 @@ export function SetupWizard({
           <Button variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <Button variant="teal" disabled={!canContinue} onClick={() => setRulesOpen(true)}>
+          <Button variant="teal" data-tour="wizard-confirm" disabled={!canContinue} onClick={() => setRulesOpen(true)}>
             Confirm <ChevronRight className="size-4" />
           </Button>
         </div>
@@ -276,22 +303,6 @@ export function SetupWizard({
           onSelect={setSoldOut}
           onClose={() => setRulesOpen(false)}
           onActivate={() => onActivate(config)}
-        />
-      ) : null}
-
-      {/* Customize modal — same bottom sheet as the Menu. Confirming adds the
-          meal to the favorites rotation. */}
-      {customizing ? (
-        <AddOnModal
-          item={customizing}
-          dateLabel="your Auto-Order rotation"
-          confirmLabel="Add to auto order"
-          showQuantity={false}
-          onClose={() => setCustomizing(null)}
-          onConfirm={() => {
-            addFav(customizing.id);
-            setCustomizing(null);
-          }}
         />
       ) : null}
     </div>
@@ -360,7 +371,7 @@ function RulesModal({
           </p>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-4">
+        <div data-tour="rule-options" className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-4">
           {SOLD_OUT.map((s) => (
             <RadioCard
               key={s.id}
@@ -377,7 +388,7 @@ function RulesModal({
           <Button variant="ghost" onClick={onClose}>
             <ChevronLeft className="size-4" /> Back
           </Button>
-          <Button variant="teal" onClick={onActivate}>
+          <Button variant="teal" data-tour="rule-activate" onClick={onActivate}>
             <Check className="size-4" /> {editing ? "Save changes" : "Turn on Auto-Order"}
           </Button>
         </div>

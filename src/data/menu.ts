@@ -1,4 +1,4 @@
-import type { MenuItem, MenuCombo, OrderType, ProteinType } from "./types";
+import type { MenuItem, MenuCombo, AddOnGroup, OrderType, ProteinType } from "./types";
 
 /**
  * The company's curated menu. Menus rotate by weekday (the User Flow notes the
@@ -453,6 +453,7 @@ export const menu: MenuItem[] = [
     price: 140.0,
     type: "family_style",
     serves: 8,
+    image: "https://www.themealdb.com/images/media/meals/u5e9qq1763795441.jpg",
     ingredients:
       "Hummus, baba ganoush, falafel, chicken shawarma, tabbouleh, fattoush, warm pita, tzatziki, tahini",
     nutrition: { calories: 640, protein: 34, carbs: 58, fat: 28 },
@@ -469,6 +470,7 @@ export const menu: MenuItem[] = [
     price: 165.0,
     type: "family_style",
     serves: 12,
+    image: "https://www.themealdb.com/images/media/meals/ypxvwv1505333929.jpg",
     ingredients:
       "Carne asada, chicken tinga, pinto-bean picadillo, corn & flour tortillas, salsa roja & verde, guacamole, cotija, lime crema",
     nutrition: { calories: 680, protein: 38, carbs: 62, fat: 30 },
@@ -485,6 +487,7 @@ export const menu: MenuItem[] = [
     price: 175.0,
     type: "family_style",
     serves: 10,
+    image: "https://www.themealdb.com/images/media/meals/zry07j1763779321.jpg",
     ingredients:
       "Veg & chicken stir-fries, pork + veggie dumplings, egg fried rice, garlic noodles, bok choy, dipping sauces",
     nutrition: { calories: 700, protein: 33, carbs: 72, fat: 26 },
@@ -500,6 +503,7 @@ export const menu: MenuItem[] = [
     tags: ["Vegan", "Vegetarian", "Gluten-Free"],
     price: 5.5,
     type: "individual",
+    image: "https://www.thecocktaildb.com/images/media/drink/metwgh1606770327.jpg",
     ingredients: "Ceremonial-grade matcha, oat milk, agave, ice",
     nutrition: { calories: 120, protein: 2, carbs: 18, fat: 4 },
   },
@@ -514,6 +518,7 @@ export const menu: MenuItem[] = [
     tags: ["Vegan", "Vegetarian", "Gluten-Free", "Dairy-Free"],
     price: 4.5,
     type: "individual",
+    image: "https://www.thecocktaildb.com/images/media/drink/ytprxy1454513855.jpg",
     ingredients: "Cold-brewed arabica coffee, ice",
     nutrition: { calories: 5, protein: 0, carbs: 0, fat: 0 },
   },
@@ -528,6 +533,7 @@ export const menu: MenuItem[] = [
     tags: ["Vegan", "Vegetarian", "Gluten-Free", "Dairy-Free"],
     price: 4.0,
     type: "individual",
+    image: "https://www.thecocktaildb.com/images/media/drink/b3n0ge1503565473.jpg",
     ingredients: "Fresh lemon juice, cane sugar, sparkling water, mint",
     nutrition: { calories: 110, protein: 0, carbs: 27, fat: 0 },
   },
@@ -715,14 +721,36 @@ function isNoneOption(name: string, price: number) {
   return price === 0 && /^(no\b|none\b|keep it)/i.test(name);
 }
 
+/** Add-on group id/name looks like an extra side or a beverage. */
+export function isSideOrBeverageGroup(g: AddOnGroup): boolean {
+  return /\b(side|beverage|drink|soda|water)\b/i.test(`${g.id} ${g.name}`);
+}
+
+/**
+ * Short, human summary of a set of chosen add-ons — "Mild · Extra brisket".
+ * Drops "no add-on" defaults, mirroring the combo labels. Returns "" if there's
+ * nothing meaningful to show.
+ */
+export function summarizeAddOns(addOns: { name: string; price: number }[]): string {
+  return addOns
+    .filter((a) => !isNoneOption(a.name, a.price))
+    .map((a) => cleanOptionName(a.name))
+    .join(" · ");
+}
+
 /**
  * Build the pre-bundled combos for an item — the cartesian product of one
  * option per add-on group. The picker shows these as a single choice so the
  * user selects a whole combo rather than resolving each group on its own.
- * Returns [] for items with no add-ons.
+ * Returns [] for items with no add-ons. `omitGroup` drops matching groups
+ * before bundling (e.g. Auto-Order setup hides side/beverage add-ons — those
+ * are added later at review, not baked into the rotation).
  */
-export function buildCombos(item: MenuItem): MenuCombo[] {
-  const groups = item.addOns ?? [];
+export function buildCombos(
+  item: MenuItem,
+  omitGroup?: (g: AddOnGroup) => boolean,
+): MenuCombo[] {
+  const groups = (item.addOns ?? []).filter((g) => !omitGroup?.(g));
   if (groups.length === 0) return [];
 
   let combos: MenuCombo[] = [{ id: "", name: "", includes: [], selections: [], upcharge: 0 }];
@@ -754,6 +782,14 @@ export function buildCombos(item: MenuItem): MenuCombo[] {
     const includes = c.selections.map((s) => ({ group: s.groupName, item: cleanOptionName(s.name) }));
     return { ...c, name: parts.length ? parts.join(" · ") : "Classic", includes };
   });
+}
+
+/** Meaningful add-on labels for a combo — the array form of its summary,
+ *  matching the strings stored on an order line item's `addOns`. */
+export function comboAddOnLabels(combo: MenuCombo): string[] {
+  return combo.selections
+    .filter((s) => !isNoneOption(s.name, s.price))
+    .map((s) => cleanOptionName(s.name));
 }
 
 /** Does an item have any required add-on group? (User Flow's mandatory branch) */

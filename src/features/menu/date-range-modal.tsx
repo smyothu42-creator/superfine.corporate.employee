@@ -8,11 +8,31 @@ import { addDays, fromISODate, toISODate, sameDay, startOfToday, isServiceDay, f
 
 const COLS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
+/** Hover bubble explaining why a day is closed. Lives on the (enabled) cell
+ *  wrapper so it reveals on group-hover even over a disabled day button. */
+function DayTooltip({ reason }: { reason: string }) {
+  return (
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-40 -translate-x-1/2 rounded-lg bg-foreground px-2.5 py-1.5 text-center text-2xs font-medium leading-snug text-background shadow-raised group-hover:block"
+    >
+      {reason}
+      <span className="absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-foreground" />
+    </span>
+  );
+}
+
 interface DateRangeModalProps {
   initialStart?: string;
   initialEnd?: string;
   /** Weekday numbers (1=Mon) that can be ordered. Default: Mon–Fri. */
   serviceDayNums?: number[];
+  /** Earliest selectable delivery date (ISO). Days before it are disabled —
+   *  drives the per-meal-style lead window (individual +1 day, family +3 days). */
+  minISO?: string;
+  /** Per-day classification: closed days grey out, past-cutoff days show red
+   *  with a reason (weekends/holidays/past stay grey). */
+  dayInfo?: (iso: string) => { selectable: boolean; cutoff: boolean; reason: string };
   onClose: () => void;
   onApply: (startISO: string, endISO: string) => void;
 }
@@ -37,11 +57,15 @@ export function DateRangeModal({
   initialStart,
   initialEnd,
   serviceDayNums = [1, 2, 3, 4, 5],
+  minISO,
+  dayInfo,
   onClose,
   onApply,
 }: DateRangeModalProps) {
   const today = startOfToday();
   const todayISO = toISODate(today);
+  // Earliest orderable day — anything before this is closed (lead window).
+  const minOrderISO = minISO ?? todayISO;
   const [start, setStart] = React.useState<string>(initialStart ?? "");
   const [end, setEnd] = React.useState<string>(initialEnd ?? "");
   const [hovered, setHovered] = React.useState<string>("");
@@ -158,9 +182,13 @@ export function DateRangeModal({
           {cells.map((date, i) => {
             if (!date) return <div key={`x${i}`} />;
             const iso = toISODate(date);
-            const past = iso < todayISO;
+            const past = iso < minOrderISO;
             const service = isServiceDay(date, serviceDayNums);
-            const disabled = past || !service;
+            // dayInfo (when provided) is the source of truth for closure + red
+            // cutoff styling; fall back to the structural past/weekend checks.
+            const info = dayInfo?.(iso);
+            const disabled = info ? !info.selectable : past || !service;
+            const cutoffClosed = info?.cutoff ?? false;
 
             const isStart = !!lo && iso === lo;
             const isEnd = hasRange && iso === hi;
@@ -169,7 +197,14 @@ export function DateRangeModal({
             const isToday = sameDay(date, today);
 
             return (
-              <div key={iso} className="relative flex items-center justify-center py-0.5">
+              <div
+                key={iso}
+                className={cn(
+                  "relative flex items-center justify-center py-0.5",
+                  disabled && info?.reason && "group",
+                )}
+              >
+                {disabled && info?.reason ? <DayTooltip reason={info.reason} /> : null}
                 {/* Continuous range band — never drawn on weekends, so a range
                     that spans Sat/Sun visibly skips them. */}
                 {inMiddle && !disabled ? <span className="absolute inset-y-0.5 inset-x-0 bg-teal-wash" /> : null}
@@ -183,16 +218,20 @@ export function DateRangeModal({
                   disabled={disabled}
                   onClick={() => pick(iso)}
                   onMouseEnter={() => !disabled && start && !end && setHovered(iso)}
-                  aria-label={date.toDateString()}
+                  aria-label={
+                    disabled && info?.reason ? `${date.toDateString()}, ${info.reason}` : date.toDateString()
+                  }
                   className={cn(
                     "relative z-10 flex size-9 items-center justify-center rounded-full text-sm transition-colors",
                     isEndpoint
                       ? "bg-primary font-semibold text-primary-foreground"
-                      : disabled
-                        ? "cursor-not-allowed text-muted-foreground/40 line-through"
-                        : inMiddle
-                          ? "text-teal-deep"
-                          : "text-foreground hover:bg-muted",
+                      : cutoffClosed
+                        ? "cursor-not-allowed bg-danger/10 font-semibold text-danger group-hover:bg-danger/20"
+                        : disabled
+                          ? "cursor-not-allowed text-muted-foreground/40"
+                          : inMiddle
+                            ? "text-teal-deep"
+                            : "text-foreground hover:bg-muted",
                     isToday && !isEndpoint && !inMiddle && !disabled && "ring-1 ring-inset ring-primary/60",
                   )}
                 >

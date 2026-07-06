@@ -475,7 +475,7 @@ function CheckoutStep({
           </div>
         ) : null}
         <div className="mt-1 flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">{program.company} covers</span>
+          <span className="text-muted-foreground">Company pays</span>
           <span className="font-semibold text-success">-{formatCurrency(subsidy)}</span>
         </div>
       </div>

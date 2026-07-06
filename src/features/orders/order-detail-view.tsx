@@ -12,11 +12,12 @@ import {
   CalendarDays,
   Clock,
   CreditCard,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Notice } from "@/components/ui/notice";
 import { OrderStatusBadge, OrderTimeline } from "@/components/orders/order-status";
+import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
 import { useChangeOrder } from "./use-change-order";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
@@ -73,6 +74,17 @@ export function OrderDetailView({ order }: { order: Order }) {
             <OrderTimeline status={order.status} source={order.source} />
           </CardBody>
         </Card>
+      ) : null}
+
+      {/* When must this be edited by — or is it locked? One prominent, type-aware banner. */}
+      {active ? (
+        <CutoffIndicator
+          deliveryISO={order.date}
+          type={order.type}
+          lockedOverride={order.locked}
+          context="edit"
+          variant="notice"
+        />
       ) : null}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -144,8 +156,8 @@ export function OrderDetailView({ order }: { order: Order }) {
               </div>
               {program.showPrices ? (
                 <div className="space-y-1 pt-1 text-[13px]">
-                  <Row label="Subtotal" value={formatCurrency(order.subtotal)} />
-                  <Row label="Company subsidy" value={`−${formatCurrency(order.subsidy)}`} tone="success" />
+                  <Row label="Meals total" value={formatCurrency(order.subtotal)} />
+                  <Row label="Company pays" value={`−${formatCurrency(order.subsidy)}`} tone="success" />
                   <div className="flex items-center justify-between border-t border-border pt-1.5 font-semibold">
                     <span>You paid</span>
                     <span className="nums">{formatCurrency(order.employeePaid)}</span>
@@ -177,11 +189,6 @@ export function OrderDetailView({ order }: { order: Order }) {
             ) : null}
           </div>
 
-          {order.locked && active ? (
-            <Notice tone="locked" className="text-xs">
-              Past the change window — this order is locked in for delivery.
-            </Notice>
-          ) : null}
         </div>
       </div>
       {sheets}
@@ -190,45 +197,25 @@ export function OrderDetailView({ order }: { order: Order }) {
 }
 
 function FeedbackCard({ orderId }: { orderId: string }) {
-  const [sent, setSent] = React.useState(false);
-  const faces = [
-    { v: "bad", emoji: "😕", label: "Not great" },
-    { v: "ok", emoji: "😐", label: "It was okay" },
-    { v: "good", emoji: "🙂", label: "Good" },
-    { v: "great", emoji: "😍", label: "Loved it" },
-  ];
+  // The feedback form lives outside the app — link out to it, pre-tagged with
+  // this order so the kitchen knows which meal it's about.
+  const feedbackUrl = `https://superfinekitchen.com/feedback?order=${encodeURIComponent(orderId)}`;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">How was it?</CardTitle>
       </CardHeader>
-      <CardBody>
-        {sent ? (
-          <p className="text-[13px] text-success">Thanks! Your feedback helps the kitchen.</p>
-        ) : (
-          <>
-            <p className="mb-3 text-[13px] text-muted-foreground">
-              One tap — no survey. Tied to {orderId}.
-            </p>
-            <div className="flex gap-2">
-              {faces.map((f) => (
-                <button
-                  key={f.v}
-                  type="button"
-                  aria-label={f.label}
-                  onClick={() => {
-                    setSent(true);
-                    toast.success("Thanks for the feedback!");
-                  }}
-                  className="flex flex-1 flex-col items-center gap-1 rounded-xl border border-border bg-card py-3 transition-colors hover:border-primary hover:bg-teal-wash"
-                >
-                  <span className="text-2xl">{f.emoji}</span>
-                  <span className="text-2xs text-muted-foreground">{f.label}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+      <CardBody className="space-y-3">
+        <p className="text-[13px] text-muted-foreground">
+          Tell us how {orderId} was — the meal, portion, freshness or delivery. The kitchen reads
+          every note.
+        </p>
+        <Button asChild size="sm">
+          <a href={feedbackUrl} target="_blank" rel="noopener noreferrer">
+            Share your feedback <ExternalLink className="size-4" />
+          </a>
+        </Button>
       </CardBody>
     </Card>
   );

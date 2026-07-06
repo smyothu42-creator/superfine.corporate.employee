@@ -12,8 +12,6 @@ export interface AutoOrderHeader {
   poolCount: number;
   /** Open the meal-picking / setup flow. */
   onEdit: () => void;
-  /** Open the "How auto-order works" modal. */
-  onHowItWorks: () => void;
   /** Turn off auto-ordering. Absent while paused (nothing to turn off). */
   onStop?: () => void;
 }
@@ -24,6 +22,10 @@ interface AutoOrderHeaderState {
   /** Contextual page title for the auto-order route (null = default). */
   navTitle: string | null;
   setNavTitle: (title: string | null) => void;
+  /** True while the meal-picking wizard is open — lets the Topbar show the
+   *  "See how it works" tour trigger. (The Back button lives on the page.) */
+  inSetup: boolean;
+  setInSetup: (inSetup: boolean) => void;
 }
 
 export const useAutoOrderStore = create<AutoOrderHeaderState>((set) => ({
@@ -31,4 +33,6 @@ export const useAutoOrderStore = create<AutoOrderHeaderState>((set) => ({
   setHeader: (header) => set({ header }),
   navTitle: null,
   setNavTitle: (navTitle) => set({ navTitle }),
+  inSetup: false,
+  setInSetup: (inSetup) => set({ inSetup }),
 }));

@@ -63,6 +63,10 @@ interface CartState {
   subtotal: () => number;
   totalSubsidy: () => number;
   totalEmployeePaid: () => number;
+  /** Sales tax on the employee-paid portion (0 when fully covered). */
+  tax: () => number;
+  /** Final amount the employee pays: out-of-pocket meals + tax. */
+  total: () => number;
   count: () => number;
 }
 
@@ -109,5 +113,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   subtotal: () => get().items.reduce((s, i) => s + i.unitPrice * i.qty, 0),
   totalSubsidy: () => get().dates().reduce((s, d) => s + get().daySubsidy(d), 0),
   totalEmployeePaid: () => get().dates().reduce((s, d) => s + get().dayEmployeePaid(d), 0),
+  tax: () => Math.round(get().totalEmployeePaid() * program.taxRate * 100) / 100,
+  total: () => get().totalEmployeePaid() + get().tax(),
   count: () => get().items.reduce((s, i) => s + i.qty, 0),
 }));

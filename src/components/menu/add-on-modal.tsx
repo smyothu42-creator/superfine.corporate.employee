@@ -5,7 +5,7 @@ import { X, Plus, Minus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, cn } from "@/lib/utils";
 import { buildCombos } from "@/data/menu";
-import type { MenuItem } from "@/data/types";
+import type { MenuItem, AddOnGroup } from "@/data/types";
 import type { CartAddOn } from "@/store/use-cart-store";
 
 interface AddOnModalProps {
@@ -15,6 +15,10 @@ interface AddOnModalProps {
   confirmLabel?: string;
   /** Show the quantity stepper (off for the Auto-Order picker, which is 1 each). */
   showQuantity?: boolean;
+  /** Drop matching add-on groups from the combos (e.g. hide sides/beverages). */
+  omitGroup?: (g: AddOnGroup) => boolean;
+  /** Optional note under the header, e.g. "Add sides & drinks later at review." */
+  footnote?: string;
   onClose: () => void;
   onConfirm: (addOns: CartAddOn[], qty: number, unitPrice: number) => void;
 }
@@ -30,10 +34,12 @@ export function AddOnModal({
   dateLabel,
   confirmLabel = "Add to order",
   showQuantity = true,
+  omitGroup,
+  footnote,
   onClose,
   onConfirm,
 }: AddOnModalProps) {
-  const combos = React.useMemo(() => buildCombos(item), [item]);
+  const combos = React.useMemo(() => buildCombos(item, omitGroup), [item, omitGroup]);
   const [comboId, setComboId] = React.useState(() => combos[0]?.id ?? "");
   const [qty, setQty] = React.useState(1);
 
@@ -51,6 +57,11 @@ export function AddOnModal({
             <h2 className="font-display text-lg font-semibold tracking-tight">{item.name}</h2>
             <p className="mt-0.5 text-[13px] text-muted-foreground">{item.description}</p>
             <p className="mt-1 text-2xs text-muted-foreground">For {dateLabel}</p>
+            {footnote ? (
+              <p className="mt-1.5 rounded-lg bg-teal-wash px-2 py-1 text-2xs font-medium text-teal-deep">
+                {footnote}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"

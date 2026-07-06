@@ -36,11 +36,25 @@ export function useChangeOrder(order: Order) {
     <ChangeOrderDialog
       items={items}
       dateLabel={changeDateLabel}
+      isAuto={order.source === "auto"}
       onClose={() => setOpen(false)}
       onRemove={(it) => {
         setOpen(false);
         toast.success("Meal removed", `${it.name} removed from ${order.id}.`);
         router.push("/orders");
+      }}
+      onCustomize={(it, choice) => {
+        // Apply the chosen combo to the line item in place, then keep the order's
+        // totals in sync so My Orders reflects the new customization + price.
+        const delta = (choice.price - it.price) * it.qty;
+        it.addOns = choice.addOns;
+        it.price = choice.price;
+        order.subtotal += delta;
+        order.employeePaid = Math.max(0, order.subtotal - order.subsidy);
+        toast.success(
+          "Customization saved",
+          `${it.name} is now ${choice.comboLabel}.`,
+        );
       }}
       onPickFromMenu={(it) => {
         // Enter "change this meal" mode and hand off to the menu. Picking a meal
