@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Utensils, Plus, Minus, Leaf, Wheat, ShieldCheck, Sparkles, ChevronDown } from "lucide-react";
+import { Utensils, Plus, Minus, Leaf, Wheat, ShieldCheck, Sparkles, ChevronDown, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
@@ -139,30 +139,20 @@ function MenuItemCard({
                   <p className="mt-0.5 text-[13px] text-muted-foreground">{item.ingredients}</p>
                 </div>
               ) : null}
-              {item.nutrition ? (
-                <div>
-                  <div className="text-overline">Nutrition (per serving)</div>
-                  <div className="mt-1 grid grid-cols-4 gap-2">
-                    <Macro label="Calories" value={`${item.nutrition.calories}`} />
-                    <Macro label="Protein" value={`${item.nutrition.protein}g`} />
-                    <Macro label="Carbs" value={`${item.nutrition.carbs}g`} />
-                    <Macro label="Fat" value={`${item.nutrition.fat}g`} />
-                  </div>
-                </div>
-              ) : null}
+              {/* Full macros are hosted externally — link out instead of an inline breakdown. */}
+              <a
+                href={`https://superfinekitchen.com/nutrition/${item.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[13px] font-semibold text-primary hover:underline"
+              >
+                Nutritional info
+                <ExternalLink className="size-3.5" />
+              </a>
             </div>
           ) : null}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function Macro({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-muted/40 p-2 text-center">
-      <div className="font-display text-base font-semibold nums">{value}</div>
-      <div className="text-2xs text-muted-foreground">{label}</div>
     </div>
   );
 }

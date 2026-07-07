@@ -44,6 +44,12 @@ interface CartState {
   setQty: (uid: string, qty: number) => void;
   remove: (uid: string) => void;
   clearDay: (date: string) => void;
+  /**
+   * Keep only items (and delivery windows) whose date falls within the
+   * inclusive [start, end] range. Used when the multi-day range changes so
+   * meals on now-unselected days are dropped from the cart.
+   */
+  retainRange: (start: string, end: string) => void;
   clear: () => void;
   setPayment: (p: PaymentChoice) => void;
   setWindow: (date: string, window: string) => void;
@@ -96,6 +102,14 @@ export const useCartStore = create<CartState>((set, get) => ({
     })),
   remove: (uid) => set((s) => ({ items: s.items.filter((i) => i.uid !== uid) })),
   clearDay: (date) => set((s) => ({ items: s.items.filter((i) => i.date !== date) })),
+  // ISO yyyy-mm-dd sorts lexically, so string comparison is a valid date range check.
+  retainRange: (start, end) =>
+    set((s) => ({
+      items: s.items.filter((i) => i.date >= start && i.date <= end),
+      windows: Object.fromEntries(
+        Object.entries(s.windows).filter(([d]) => d >= start && d <= end),
+      ),
+    })),
   clear: () => set({ items: [] }),
   setPayment: (payment) => set({ payment }),
   setWindow: (date, window) => set((s) => ({ windows: { ...s.windows, [date]: window } })),

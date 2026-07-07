@@ -75,7 +75,11 @@ const config: Config = {
         "hero-yellow": "linear-gradient(135deg, #F8EC58 0%, #F5E516 55%, #EFD90C 100%)",
       },
       keyframes: {
-        "fade-in": { from: { opacity: "0", transform: "translateY(6px)" }, to: { opacity: "1", transform: "translateY(0)" } },
+        // Opacity-only: a `transform` here would make any element using this
+        // animation (e.g. the app-shell content wrapper) a containing block for
+        // its `position: fixed` descendants, clipping full-screen modal overlays
+        // to the content area instead of the viewport.
+        "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
         "slide-in-down": {
           from: { opacity: "0", transform: "translateY(-10px)", maxHeight: "0" },
           to: { opacity: "1", transform: "translateY(0)", maxHeight: "1000px" },

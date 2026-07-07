@@ -224,6 +224,30 @@ export function MenuView() {
     }
   }, [menuType, selectedDate, mode, editingOrder]);
 
+  // Same guard for the multi-day range start. The start can fall on a red
+  // past-cutoff day (e.g. after switching to family-style, whose 72h cutoff
+  // closes more near-term days than the range was first built for, or when
+  // resuming an older plan). This is NOT gated on the committed mode: the range
+  // is previewed in the picker's "Multi Days" tab even while single day is the
+  // committed mode, and a range endpoint renders as selected (blue) *over* the
+  // red cutoff styling — so a stale start would show a red day pre-selected.
+  // Snap it forward to the first orderable service day for the current style.
+  React.useEffect(() => {
+    if (!rangeStart) return;
+    const invalid =
+      !isServiceDay(rangeStart) ||
+      isHoliday(rangeStart) ||
+      isTooSoon(rangeStart, menuType) ||
+      isCutoffPassed(rangeStart, menuType);
+    if (!invalid) return;
+    const open = nextOpenDays(toISODate(startOfToday()), 3, menuType);
+    if (!open.length) return;
+    setRangeStart(open[0]);
+    // Keep a real multi-day span: only preserve the old end if it's still past
+    // the new start, otherwise extend to the last of the next orderable days.
+    setRangeEnd((prev) => (prev && prev > open[0] ? prev : open[open.length - 1]));
+  }, [menuType, rangeStart]);
+
   const day = mode === "single" ? selectedDate : activeDate;
 
   // Publish the active order day so the topbar can show that day's budget.
@@ -275,6 +299,13 @@ export function MenuView() {
   const daysBoxOpen = mode === "multi" && rangeChosen && rangeDays.length > 0;
   const daysAdded = rangeDays.filter((d) => cart.itemsForDate(d).length > 0).length;
   const daysRemaining = rangeDays.length - daysAdded;
+  // Whole-plan roll-up shown once under the day strip (replaces the per-day
+  // "You pay" / "added" labels that used to sit on each day card).
+  const planTotal = rangeDays.reduce((s, d) => s + cart.dayTotal(d), 0);
+  const planItemCount = rangeDays.reduce(
+    (s, d) => s + cart.itemsForDate(d).reduce((n, l) => n + l.qty, 0),
+    0,
+  );
 
   // Branded category tags for the current menu type (all 9 show for Individual;
   // Family shows the subset that has family items). Day-limited categories still
@@ -434,6 +465,9 @@ export function MenuView() {
       selectedDate={selectedDate}
       singleDays={datePickerDays}
       onSelectSingle={(iso) => {
+        // Switching back to a single day drops every other day's cart items so
+        // the cart instantly reflects just this one day (was a multi-day plan).
+        if (mode === "multi") cart.retainRange(iso, iso);
         setSelectedDate(iso);
         setActiveDate(iso);
       }}
@@ -448,6 +482,8 @@ export function MenuView() {
         setRangeEnd(end);
         setRangeChosen(true);
         setMode("multi");
+        // Drop cart items for days no longer in the range; days still inside it keep theirs.
+        cart.retainRange(start, end);
         const days = openServiceDays(start, end);
         if (days[0]) setActiveDate(days[0]);
       }}
@@ -557,7 +593,7 @@ export function MenuView() {
             cells={rangeDays.map((iso) => {
               const d = fromISODate(iso);
               const items = cart.itemsForDate(iso);
-              const owed = cart.dayEmployeePaid(iso);
+              const count = items.reduce((s, l) => s + l.qty, 0);
               const has = items.length > 0;
               return {
                 iso,
@@ -565,15 +601,32 @@ export function MenuView() {
                 dayNum: d.getDate(),
                 fullLabel: formatDay(d),
                 has,
-                owed,
                 total: cart.dayTotal(iso),
-                itemCount: items.reduce((s, l) => s + l.qty, 0),
-                subLabel: has ? (owed > 0 ? formatCurrency(owed) : "added") : formatShort(d).split(" ")[0],
+                itemCount: count,
+                // No per-day "You pay"/"added" indicator — the whole-plan total
+                // is rolled up under the strip. Filled days show their count.
+                subLabel: has ? `${count} ${count === 1 ? "item" : "items"}` : formatShort(d).split(" ")[0],
               };
             })}
             activeDate={activeDate}
             onSelect={setActiveDate}
           />
+
+          {/* Whole meal-plan roll-up — one total for the entire block. */}
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+            <span className="text-[13px] text-muted-foreground">
+              {daysAdded}/{rangeDays.length} {rangeDays.length === 1 ? "day" : "days"}
+              {planItemCount > 0
+                ? ` · ${planItemCount} ${planItemCount === 1 ? "item" : "items"}`
+                : ""}
+            </span>
+            <span className="flex items-baseline gap-1.5 text-[13px] text-muted-foreground">
+              Meal plan total
+              <span className="font-display text-base font-semibold nums text-foreground">
+                {formatCurrency(planTotal)}
+              </span>
+            </span>
+          </div>
 
           {daysRemaining === 0 ? (
             <div className="mt-2.5">
@@ -688,6 +741,8 @@ export function MenuView() {
             setRangeEnd(end);
             setRangeChosen(true);
             setRangePickerOpen(false);
+            // Drop cart items for days no longer in the range; days still inside it keep theirs.
+            cart.retainRange(start, end);
             const days = openServiceDays(start, end);
             if (days[0]) setActiveDate(days[0]);
           }}
@@ -704,7 +759,6 @@ interface DayCell {
   dayNum: number;
   fullLabel: string;
   has: boolean;
-  owed: number;
   total: number;
   itemCount: number;
   subLabel: string;
@@ -890,23 +944,12 @@ function DayStrip({
           <div className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
             {hover.cell.fullLabel}
           </div>
-          <div className="mt-2 space-y-1 text-[13px]">
+          <div className="mt-2 text-[13px]">
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">
                 {hover.cell.itemCount} {hover.cell.itemCount === 1 ? "item" : "items"}
               </span>
               <span className="font-semibold nums">{formatCurrency(hover.cell.total)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">{hover.cell.owed > 0 ? "You pay" : "Covered"}</span>
-              <span
-                className={cn(
-                  "font-semibold nums",
-                  hover.cell.owed > 0 ? "text-danger" : "text-success",
-                )}
-              >
-                {hover.cell.owed > 0 ? formatCurrency(hover.cell.owed) : formatCurrency(0)}
-              </span>
             </div>
           </div>
         </div>

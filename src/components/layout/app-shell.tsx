@@ -38,7 +38,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
           tabIndex={-1}
           className="flex-1 px-4 py-6 pb-24 outline-none sm:px-6 lg:px-8 lg:pb-6"
         >
-          <div className="w-full animate-fade-in">{children}</div>
+          {/* No transform/animation on this wrapper: a `transform` here (the old
+              `animate-fade-in` used translateY) makes it the containing block for
+              every inline `position: fixed` modal overlay, clipping them to the
+              content area instead of the viewport. */}
+          <div className="w-full">{children}</div>
         </main>
       </div>
 
