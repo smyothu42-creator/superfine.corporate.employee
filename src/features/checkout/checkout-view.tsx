@@ -218,7 +218,7 @@ export function CheckoutView() {
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-2 whitespace-nowrap font-display text-base font-semibold tracking-tight">
-                  <CalendarDays className="size-4 text-primary" /> All delivery days
+                  <CalendarDays className="size-4 text-primary" /> Delivery windows
                 </span>
                 {me.permissions.flexibleDelivery ? (
                   <div className="w-44 shrink-0 sm:w-56">
@@ -239,7 +239,7 @@ export function CheckoutView() {
               </div>
               {me.permissions.flexibleDelivery && dates.length > 1 ? (
                 <Button size="sm" variant="ghost" onClick={() => setTimeModalOpen(true)}>
-                  <CalendarDays className="size-3.5" /> Set time per day
+                  <CalendarDays className="size-3.5" /> Set delivery window per day
                 </Button>
               ) : null}
             </div>

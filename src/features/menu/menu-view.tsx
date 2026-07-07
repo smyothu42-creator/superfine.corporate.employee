@@ -31,7 +31,6 @@ import { AddOnModal } from "@/components/menu/add-on-modal";
 import { DateRangeModal } from "@/features/menu/date-range-modal";
 import {
   menuFor,
-  cuisines,
   categoriesForType,
   menuCategory,
   allergenOptions,
@@ -105,7 +104,6 @@ export function MenuView() {
 
   // Filters
   const [query, setQuery] = React.useState("");
-  const [cuisine, setCuisine] = React.useState("");
   const [priceMax, setPriceMax] = React.useState("");
   // Branded category tag (e.g. "Stack, Wrap & Roll"). "" = All.
   const [category, setCategory] = React.useState("");
@@ -302,7 +300,6 @@ export function MenuView() {
           i.cuisine.toLowerCase().includes(q),
       );
     }
-    if (cuisine) items = items.filter((i) => i.cuisine === cuisine);
     if (priceMax) items = items.filter((i) => i.price <= Number(priceMax));
     // Allergens: the employee's saved allergens are ALWAYS hidden (never shown,
     // not greyed), plus any extra allergens chosen in the filter.
@@ -311,7 +308,7 @@ export function MenuView() {
     // Dietary: show only items matching every selected preference.
     if (diets.length) items = items.filter((i) => diets.every((d) => (i.tags as string[]).includes(d)));
     return items;
-  }, [day, menuType, category, availableCategories, query, cuisine, priceMax, allergens, diets]);
+  }, [day, menuType, category, availableCategories, query, priceMax, allergens, diets]);
 
   function inCartFor(itemId: string) {
     return cart
@@ -510,8 +507,8 @@ export function MenuView() {
           </div>
         )}
 
-        {/* Filter bar — search + Meal Style / Allergens / Dietary / Cuisine /
-            Price, separated by vertical dividers. */}
+        {/* Filter bar — search + Allergens / Dietary / Price, separated by
+            vertical dividers. */}
         <div className="mt-4 flex items-center gap-1 rounded-full border border-border bg-card p-1.5 shadow-sm">
           <div className="relative flex min-w-0 flex-1 items-center">
             <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
@@ -538,18 +535,6 @@ export function MenuView() {
             options={dietaryPreferences}
             selected={diets}
             onChange={setDiets}
-          />
-          <div className="h-6 w-px shrink-0 bg-border" />
-          <ThemeSelect
-            value={cuisine}
-            onValueChange={setCuisine}
-            aria-label="Filter by cuisine"
-            variant="pill"
-            align="right"
-            options={[
-              { value: "", label: "All cuisines" },
-              ...cuisines.map((c) => ({ value: c, label: c })),
-            ]}
           />
           <div className="h-6 w-px shrink-0 bg-border" />
           <ThemeSelect

@@ -17,7 +17,6 @@ import { ThemeSelect } from "@/components/ui/theme-select";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
 import {
-  cuisines,
   menuCategory,
   categoriesForType,
   allergenOptions,
@@ -88,9 +87,8 @@ export function SetupWizard({
     React.useState<Record<string, CartAddOn[]>>(initialCustomizations);
   const [soldOut, setSoldOut] = React.useState<SoldOutBehavior>(initialSoldOut);
   // Favorites filters — mirror the Menu page (search + allergens + dietary +
-  // cuisine + price + category tags).
+  // price + category tags).
   const [query, setQuery] = React.useState("");
-  const [cuisine, setCuisine] = React.useState("");
   const [priceMax, setPriceMax] = React.useState("");
   const [allergens, setAllergens] = React.useState<string[]>([]);
   const [diets, setDiets] = React.useState<string[]>([]);
@@ -141,7 +139,6 @@ export function SetupWizard({
         item.cuisine.toLowerCase().includes(q);
       if (!match) return false;
     }
-    if (cuisine && item.cuisine !== cuisine) return false;
     if (priceMax && item.price > Number(priceMax)) return false;
     if (diets.length && !diets.every((d) => (item.tags as string[]).includes(d))) return false;
     return true;
@@ -191,7 +188,7 @@ export function SetupWizard({
             </p>
           </div>
 
-          {/* Filter bar — search + Allergens / Dietary / Cuisine / Price, same as the Menu. */}
+          {/* Filter bar — search + Allergens / Dietary / Price, same as the Menu. */}
           <div data-tour="wizard-filters" className="mt-4 flex items-center gap-1 rounded-full border border-border bg-card p-1.5 shadow-sm">
             <div className="relative flex min-w-0 flex-1 items-center">
               <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
@@ -218,18 +215,6 @@ export function SetupWizard({
               options={dietaryPreferences}
               selected={diets}
               onChange={setDiets}
-            />
-            <div className="h-6 w-px shrink-0 bg-border" />
-            <ThemeSelect
-              value={cuisine}
-              onValueChange={setCuisine}
-              aria-label="Filter by cuisine"
-              variant="pill"
-              align="right"
-              options={[
-                { value: "", label: "All cuisines" },
-                ...cuisines.map((c) => ({ value: c, label: c })),
-              ]}
             />
             <div className="h-6 w-px shrink-0 bg-border" />
             <ThemeSelect
