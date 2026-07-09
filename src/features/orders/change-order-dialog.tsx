@@ -224,7 +224,7 @@ function CustomizePanel({
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4">
-        <div className="text-overline">Choose a combo</div>
+        <div className="text-overline">Choose your options</div>
         {combos.map((c) => {
           const checked = c.id === comboId;
           return (

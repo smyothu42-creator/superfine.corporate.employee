@@ -17,16 +17,32 @@ import {
   XCircle,
   AlertTriangle,
   Tag,
+  Building2,
+  ArrowRight,
+  User as UserIcon,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input, Textarea, Label, Field } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { ThemeSelect } from "@/components/ui/theme-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { ServingBreakdown } from "@/components/cart/serving-breakdown";
 import { CartDayList } from "@/features/cart/cart-view";
+import { subsidyLabel } from "@/lib/subsidy";
+import { IdentityModal } from "@/components/auth/identity-modal";
+import { useUiStore } from "@/store/use-ui-store";
+import {
+  useSessionStore,
+  isSubsidized,
+  deliveryComplete,
+  type Account,
+} from "@/store/use-session-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { toast } from "@/store/use-toast-store";
 import { program, addresses, getAddress } from "@/data/program";
+import { checkZip, neighborhoodFor } from "@/data/service-areas";
 import { me } from "@/data/me";
 import { fromISODate, formatDay } from "@/lib/dates";
 import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
@@ -52,13 +68,59 @@ export function CheckoutView() {
   const [mounted, setMounted] = React.useState(false);
   const [placed, setPlaced] = React.useState(false);
   const cart = useCartStore();
+  // Subscribed, not just read: the cart's own store holds no subsidy state, so
+  // these are what re-render the totals when the contract is switched, or when a
+  // guest verifies into a corporate account and the subsidy starts applying.
+  const subsidyMode = useUiStore((s) => s.subsidyMode);
+  const account = useSessionStore((s) => s.account);
+  const hydrated = useSessionStore((s) => s.hydrated);
+  const delivery = useSessionStore((s) => s.delivery);
+
+  /** The one branch everything below reads: subsidy, address, payment, receipt. */
+  const corporate = isSubsidized(account);
 
   React.useEffect(() => setMounted(true), []);
+
+  const [identityOpen, setIdentityOpen] = React.useState(false);
+  const autoPrompted = React.useRef(false);
+
+  /**
+   * Ask who they are the moment checkout settles. Everything below — the subsidy,
+   * which address question we even ask, whether "pay later" exists — is decided
+   * by the answer, so asking later would mean rearranging a form they'd already
+   * started filling in.
+   *
+   * Waits for `hydrated` rather than `mounted`: a returning corporate employee's
+   * account arrives from localStorage a tick after first paint, and prompting on
+   * mount would flash a sign-in dialog at someone already signed in. The ref
+   * makes this a one-shot — dismissing it must not re-trigger on re-render.
+   */
+  React.useEffect(() => {
+    if (!hydrated || account || autoPrompted.current) return;
+    autoPrompted.current = true;
+    setIdentityOpen(true);
+  }, [hydrated, account]);
+
+  function announceIdentity(a: Account) {
+    if (a.kind === "corporate") {
+      toast.success(
+        `${a.company} pricing applied`,
+        "Your company's share is now reflected in the total.",
+      );
+    } else {
+      toast.success("You're signed in", "Confirmation will go to your email.");
+    }
+  }
 
   const owed = mounted ? cart.totalEmployeePaid() : 0;
   const [payment, setPayment] = React.useState<PaymentChoice>(
     me.permissions.payLater ? "pay_later" : "pay_now",
   );
+  // Deferring to a company invoice needs a company. An individual who signed in
+  // after picking "pay later" as a guest must not keep it, so this is derived
+  // from the account rather than reset in an effect that a re-render could miss.
+  const payLaterAvailable = corporate && me.permissions.payLater;
+  const effectivePayment: PaymentChoice = payLaterAvailable ? payment : "pay_now";
   const [commonWindow, setCommonWindow] = React.useState(program.deliveryWindows[1]);
   // Email-only order updates — address where confirmation/updates are sent.
   const [editOpen, setEditOpen] = React.useState(false);
@@ -83,7 +145,13 @@ export function CheckoutView() {
   const dates = cart.dates();
 
   if (placed) {
-    return <Confirmation owed={finalOwed} payment={finalOwed === 0 ? "covered" : payment} />;
+    return (
+      <Confirmation
+        owed={finalOwed}
+        payment={finalOwed === 0 ? "covered" : effectivePayment}
+        account={account}
+      />
+    );
   }
 
   if (dates.length === 0) {
@@ -158,6 +226,20 @@ export function CheckoutView() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
+          {/* Identity — the one place the flow asks who you are. A guest gets it
+              first, because everything below (subsidy, address rules, payment)
+              depends on the answer.
+
+              A corporate employee signed in at /login, so the question is already
+              answered and the subsidy is already on every price they've seen. Ask
+              nothing, confirm nothing: the sidebar shows who they are, and the
+              summary already itemises what their company covers. */}
+          {corporate ? null : account ? (
+            <IdentitySummary account={account} />
+          ) : (
+            <IdentityGate onOpen={() => setIdentityOpen(true)} />
+          )}
+
           {/* Cutoff check */}
           <Card>
             <CardHeader className="flex-wrap">
@@ -184,34 +266,44 @@ export function CheckoutView() {
             </CardBody>
           </Card>
 
-          {/* Delivery address */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Delivery address</CardTitle>
-            </CardHeader>
-            <CardBody>
-              <div className="flex items-start gap-3">
-                <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
-                <div className="min-w-0 flex-1 text-[13px]">
-                  <div className="font-semibold">{address.name}</div>
-                  <div className="text-muted-foreground">{address.address}</div>
-                  {address.instructions ? (
-                    <div className="mt-1 text-2xs text-muted-foreground">{address.instructions}</div>
+          {/* Delivery address. A corporate order goes to a contract-locked company
+              site — the employee picks from a list and can't type a new one. An
+              individual has no such site, so we ask. Same heading, different
+              question entirely. */}
+          {corporate ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Delivery address</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <div className="flex items-start gap-3">
+                  <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div className="min-w-0 flex-1 text-[13px]">
+                    <div className="font-semibold">{address.name}</div>
+                    <div className="text-muted-foreground">{address.address}</div>
+                    {address.instructions ? (
+                      <div className="mt-1 text-2xs text-muted-foreground">{address.instructions}</div>
+                    ) : null}
+                  </div>
+                  {addresses.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => setAddressOpen(true)}
+                      aria-label="Change delivery address"
+                      className="shrink-0 rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <Pencil className="size-4" />
+                    </button>
                   ) : null}
                 </div>
-                {addresses.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => setAddressOpen(true)}
-                    aria-label="Change delivery address"
-                    className="shrink-0 rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <Pencil className="size-4" />
-                  </button>
-                ) : null}
-              </div>
-            </CardBody>
-          </Card>
+              </CardBody>
+            </Card>
+          ) : (
+            /* Locked until we have an email. A corporate employee who types their
+               address here would have it thrown away the moment they verify and
+               the order snaps to the contract site — so don't invite the work. */
+            <IndividualAddressCard locked={!account} onUnlock={() => setIdentityOpen(true)} />
+          )}
 
           {/* Delivery time — one common time for all days, editable per day in a modal */}
           <Card>
@@ -255,7 +347,7 @@ export function CheckoutView() {
               <CardTitle>Payment</CardTitle>
             </CardHeader>
             <CardBody className="space-y-3">
-              {owed === 0 ? (
+              {corporate && owed === 0 ? (
                 <Notice tone="success">
                   <CheckCircle2 className="inline size-3.5" /> Your order is fully covered by{" "}
                   {program.company}. <strong>No payment needed.</strong>
@@ -263,21 +355,30 @@ export function CheckoutView() {
               ) : (
                 <>
                   <p className="text-[13px] text-muted-foreground">
-                    {program.company} pays {formatCurrency(subsidy)}. You pay{" "}
-                    <strong className="text-foreground">{formatCurrency(finalOwed)}</strong> for the
-                    extras, tax included.
+                    {corporate ? (
+                      <>
+                        {program.company} pays {formatCurrency(subsidy)}. You pay{" "}
+                        <strong className="text-foreground">{formatCurrency(finalOwed)}</strong> for the
+                        extras, tax included.
+                      </>
+                    ) : (
+                      <>
+                        You pay <strong className="text-foreground">{formatCurrency(finalOwed)}</strong>,
+                        tax included.
+                      </>
+                    )}
                   </p>
                   <div className="space-y-2">
-                    {me.permissions.payLater ? (
+                    {payLaterAvailable ? (
                       <PayOption
-                        active={payment === "pay_later"}
+                        active={effectivePayment === "pay_later"}
                         onClick={() => setPayment("pay_later")}
                         title="Add to my company invoice"
                         subtitle="Added to your company's monthly invoice — nothing to pay now"
                       />
                     ) : null}
                     <PayOption
-                      active={payment === "pay_now"}
+                      active={effectivePayment === "pay_now"}
                       onClick={() => setPayment("pay_now")}
                       title="Pay with card on file"
                       subtitle="•••• 4242 · charged 24h before delivery"
@@ -307,14 +408,31 @@ export function CheckoutView() {
               {dates.map((date) => (
                 <div key={date} className="border-b border-border pb-2 last:border-0 last:pb-0">
                   <div className="text-overline">{formatDay(fromISODate(date))}</div>
-                  <ul className="mt-1 space-y-1">
+                  <ul className="mt-1 space-y-2">
                     {cart.itemsForDate(date).map((line) => (
                       <li key={line.uid} className="flex justify-between gap-2 text-[13px]">
-                        <span className="text-muted-foreground">
-                          {line.name} ×{line.qty}
-                        </span>
+                        {/* A family line is a package, not a plate — the guest count and the
+                            serving split are what the user is actually confirming here. */}
+                        <div className="min-w-0">
+                          <span className="text-muted-foreground">
+                            {line.name} ×{line.qty}
+                          </span>
+                          {line.type === "family_style" ? (
+                            <Badge tone="neutral" className="ml-1.5 align-middle">
+                              Family Style · {line.guests} guests
+                            </Badge>
+                          ) : null}
+                          {line.addOns.length ? (
+                            <p className="mt-0.5 text-2xs text-muted-foreground">
+                              {line.addOns.map((a) => a.name).join(" · ")}
+                            </p>
+                          ) : null}
+                          {line.servings?.length ? (
+                            <ServingBreakdown servings={line.servings} />
+                          ) : null}
+                        </div>
                         {program.showPrices ? (
-                          <span className="nums">{formatCurrency(line.unitPrice * line.qty)}</span>
+                          <span className="shrink-0 nums">{formatCurrency(line.unitPrice * line.qty)}</span>
                         ) : null}
                       </li>
                     ))}
@@ -325,7 +443,9 @@ export function CheckoutView() {
               {program.showPrices ? (
                 <div className="space-y-1.5 pt-1">
                   <SummaryRow label="Meals total" value={formatCurrency(subtotal)} />
-                  <SummaryRow label="Company pays" value={`−${formatCurrency(subsidy)}`} tone="success" />
+                  {corporate ? (
+                    <SummaryRow label={subsidyLabel(subsidyMode)} value={`−${formatCurrency(subsidy)}`} tone="success" />
+                  ) : null}
                   {discount > 0 && promo ? (
                     <SummaryRow
                       label={`Promo · ${promo.code}`}
@@ -360,8 +480,20 @@ export function CheckoutView() {
                 />
               ) : null}
 
-              <Button block size="lg" onClick={placeOrder}>
-                Place order
+              {/* An individual's order can't be driven anywhere without a street and
+                  a phone, so the button waits on them the same way it waits on an
+                  account. Corporate orders skip this: the address is the contract's. */}
+              <Button
+                block
+                size="lg"
+                onClick={placeOrder}
+                disabled={!account || (!corporate && !deliveryComplete(delivery))}
+              >
+                {!account
+                  ? "Add your email to continue"
+                  : !corporate && !deliveryComplete(delivery)
+                    ? "Add a delivery address to continue"
+                    : "Place order"}
               </Button>
               <Button asChild variant="ghost" block>
                 <Link href="/cart">Back to cart</Link>
@@ -370,6 +502,12 @@ export function CheckoutView() {
           </Card>
         </div>
       </div>
+
+      <IdentityModal
+        open={identityOpen}
+        onClose={() => setIdentityOpen(false)}
+        onDone={announceIdentity}
+      />
 
       {addressOpen ? <AddressModal onClose={() => setAddressOpen(false)} /> : null}
       {editOpen ? <EditOrderModal onClose={() => setEditOpen(false)} /> : null}
@@ -381,6 +519,153 @@ export function CheckoutView() {
         />
       ) : null}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Delivery details — the individual's own address, asked for at checkout   */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * Everything the kitchen and the driver need for an order that isn't going to a
+ * company office. It writes straight to the session store on each keystroke
+ * rather than holding a local draft: a user who wanders back to the cart to
+ * change a meal returns to a filled-in form, and the Place-order button's
+ * readiness check reads the same source the order will be built from.
+ */
+function IndividualAddressCard({
+  locked,
+  onUnlock,
+}: {
+  locked: boolean;
+  onUnlock: () => void;
+}) {
+  const delivery = useSessionStore((s) => s.delivery);
+  const setDelivery = useSessionStore((s) => s.setDelivery);
+  const set = (field: keyof typeof delivery, value: string) =>
+    setDelivery({ ...delivery, [field]: value });
+
+  // The ZIP is prefilled from the serviceability check, but the field stays
+  // editable — people move, and typo'd. If they edit it out of the zone, say so
+  // here rather than letting the order fail after payment.
+  const zipStatus = checkZip(delivery.zip);
+  const neighborhood = neighborhoodFor(delivery.zip);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Delivery address</CardTitle>
+        <span className="text-2xs text-muted-foreground">
+          {locked ? "Available once we have your email" : "Where should we bring it?"}
+        </span>
+      </CardHeader>
+      <CardBody className="space-y-4">
+        {locked ? (
+          <Notice tone="locked">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>Add your email above to fill in a delivery address.</span>
+              <button
+                type="button"
+                onClick={onUnlock}
+                className="font-semibold text-primary underline underline-offset-2"
+              >
+                Add email
+              </button>
+            </div>
+          </Notice>
+        ) : null}
+
+        {/* One `disabled` on the wrapper rather than on each control: a fieldset
+            takes its whole subtree out of the tab order, so a locked form can't
+            be reached by keyboard even though it's still on screen. */}
+        <fieldset disabled={locked} className="space-y-4 disabled:opacity-60">
+        <Field>
+          <Label htmlFor="d-street">Street address</Label>
+          <Input
+            id="d-street"
+            value={delivery.street}
+            onChange={(e) => set("street", e.target.value)}
+            placeholder="123 Market St"
+            autoComplete="address-line1"
+          />
+        </Field>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field>
+            <Label htmlFor="d-apt">Apt, suite, floor (optional)</Label>
+            <Input
+              id="d-apt"
+              value={delivery.apt}
+              onChange={(e) => set("apt", e.target.value)}
+              placeholder="Apt 4B"
+              autoComplete="address-line2"
+            />
+          </Field>
+          <Field>
+            <Label htmlFor="d-city">City</Label>
+            <Input
+              id="d-city"
+              value={delivery.city}
+              onChange={(e) => set("city", e.target.value)}
+              placeholder="San Francisco"
+              autoComplete="address-level2"
+            />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field>
+            <Label htmlFor="d-zip">ZIP code</Label>
+            <Input
+              id="d-zip"
+              inputMode="numeric"
+              maxLength={5}
+              value={delivery.zip}
+              onChange={(e) => set("zip", e.target.value.replace(/\D/g, ""))}
+              placeholder="94105"
+              autoComplete="postal-code"
+            />
+            {zipStatus === "serviceable" && neighborhood ? (
+              <p className="mt-1.5 flex items-center gap-1.5 text-2xs text-success">
+                <Check className="size-3.5 shrink-0" /> We deliver to {neighborhood}.
+              </p>
+            ) : null}
+          </Field>
+          <Field>
+            <Label htmlFor="d-phone">Phone</Label>
+            <Input
+              id="d-phone"
+              type="tel"
+              value={delivery.phone}
+              onChange={(e) => set("phone", e.target.value)}
+              placeholder="+1 (555) 123-4567"
+              autoComplete="tel"
+            />
+            <p className="mt-1.5 text-2xs text-muted-foreground">
+              Used only if the driver can&apos;t find you.
+            </p>
+          </Field>
+        </div>
+
+        {zipStatus === "unserviceable" ? (
+          <Notice tone="warning">
+            We don&apos;t deliver to {delivery.zip} yet. Use an address in our service area, or your
+            order can&apos;t be dispatched.
+          </Notice>
+        ) : null}
+
+        <Field>
+          <Label htmlFor="d-instructions">Delivery instructions (optional)</Label>
+          <Textarea
+            id="d-instructions"
+            value={delivery.instructions}
+            onChange={(e) => set("instructions", e.target.value)}
+            placeholder="Gate code, buzzer, where to leave it…"
+          />
+        </Field>
+        </fieldset>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -485,12 +770,99 @@ function AddressModal({ onClose }: { onClose: () => void }) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* Identity — guest → individual or corporate, resolved here at checkout    */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * The guest's branch point. Nothing above it required an account.
+ *
+ * The dialog asks the actual question; this card is what's left behind if they
+ * close it. It has to stand on its own, because a dismissed modal is otherwise
+ * a dead end — the address below is locked and nothing on screen would say why.
+ */
+function IdentityGate({ onOpen }: { onOpen: () => void }) {
+  return (
+    <Card>
+      <CardBody className="space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-teal-wash text-primary">
+            <Mail className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-display text-xl font-semibold tracking-tight">
+              Where should we send the receipt?
+            </h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+              Add your email to continue. If your company covers lunch, verifying a work address
+              unlocks the subsidy before you pay.
+            </p>
+          </div>
+        </div>
+        <Button block size="lg" onClick={onOpen}>
+          Add your email <ArrowRight className="size-4" />
+        </Button>
+      </CardBody>
+    </Card>
+  );
+}
+
+/**
+ * Once identified, show *why* the total looks the way it does. A corporate user
+ * whose bill just dropped by $35 between the cart and here needs that explained
+ * — an unexplained price change reads as a bug, or worse, a bait-and-switch.
+ */
+function IdentitySummary({ account }: { account: Account }) {
+  const cart = useCartStore();
+  const signOut = useSessionStore((s) => s.signOut);
+  const corporate = account.kind === "corporate";
+  const subsidy = cart.totalSubsidy();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Ordering as</CardTitle>
+        <Button size="sm" variant="ghost" onClick={signOut}>
+          Not you?
+        </Button>
+      </CardHeader>
+      <CardBody className="space-y-3">
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "flex size-10 shrink-0 items-center justify-center rounded-2xl",
+              corporate ? "bg-teal-wash text-primary" : "bg-muted text-muted-foreground",
+            )}
+          >
+            {corporate ? <Building2 className="size-5" /> : <UserIcon className="size-5" />}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{account.name ?? account.email}</p>
+            <p className="truncate text-2xs text-muted-foreground">
+              {corporate ? `${account.company} · verified` : "Individual order"}
+            </p>
+          </div>
+        </div>
+
+        {corporate && subsidy > 0 ? (
+          <Notice tone="success">
+            <strong>{account.company}</strong> covers {formatCurrency(subsidy)} of this order. Prices
+            below were re-checked against your company&apos;s program.
+          </Notice>
+        ) : null}
+      </CardBody>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
 /* Edit order — the cart, shown as a modal with a pinned bottom summary     */
 /* ---------------------------------------------------------------------- */
 
 function EditOrderModal({ onClose }: { onClose: () => void }) {
   const [shown, setShown] = React.useState(false);
   const cart = useCartStore();
+  const subsidyMode = useUiStore((s) => s.subsidyMode);
+  const corporate = isSubsidized(useSessionStore((s) => s.account));
   const subtotal = cart.subtotal();
   const subsidy = cart.totalSubsidy();
   const tax = cart.tax();
@@ -542,7 +914,9 @@ function EditOrderModal({ onClose }: { onClose: () => void }) {
           {program.showPrices ? (
             <>
               <SummaryRow label="Meals total" value={formatCurrency(subtotal)} />
-              <SummaryRow label="Company pays" value={`−${formatCurrency(subsidy)}`} tone="success" />
+              {corporate ? (
+                <SummaryRow label={subsidyLabel(subsidyMode)} value={`−${formatCurrency(subsidy)}`} tone="success" />
+              ) : null}
               <SummaryRow label="Tax" value={formatCurrency(tax)} />
               <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
                 <span>You pay</span>
@@ -661,7 +1035,20 @@ function PerDayTimeModal({
   );
 }
 
-function Confirmation({ owed, payment }: { owed: number; payment: PaymentChoice }) {
+function Confirmation({
+  owed,
+  payment,
+  account,
+}: {
+  owed: number;
+  payment: PaymentChoice;
+  account: Account | null;
+}) {
+  // The receipt has to describe the order that was actually placed — quoting a
+  // company an individual has no relationship with is worse than saying nothing.
+  const corporate = isSubsidized(account);
+  const email = account?.email ?? me.email;
+
   return (
     <Card>
       <CardBody className="flex flex-col items-center gap-4 py-14 text-center">
@@ -672,10 +1059,10 @@ function Confirmation({ owed, payment }: { owed: number; payment: PaymentChoice 
           <h2 className="font-display text-2xl font-semibold tracking-tight">Order confirmed 🎉</h2>
           <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-muted-foreground">
             Order <strong>#ORD-2892</strong> is in. We&apos;ve emailed your confirmation to{" "}
-            <strong>{me.email}</strong>.{" "}
-            {owed === 0 ? (
-              <>This order is fully covered by {me.company} — nothing to pay.</>
-            ) : payment === "pay_later" ? (
+            <strong>{email}</strong>.{" "}
+            {corporate && owed === 0 ? (
+              <>This order is fully covered by {account?.company ?? me.company} — nothing to pay.</>
+            ) : corporate && payment === "pay_later" ? (
               <>The {formatCurrency(owed)} balance will appear on your company invoice.</>
             ) : (
               <>Your card on file will be charged {formatCurrency(owed)} 24 hours before delivery.</>

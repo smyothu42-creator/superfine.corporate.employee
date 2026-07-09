@@ -3,12 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, LogIn } from "lucide-react";
 import { NAV_ITEMS, isActive } from "@/lib/nav";
 import { useUiStore } from "@/store/use-ui-store";
+import { useSessionStore } from "@/store/use-session-store";
 import { Logo } from "@/components/brand/logo";
 import { Avatar } from "@/components/ui/avatar";
-import { me } from "@/data/me";
 import { confirm } from "@/store/use-confirm-store";
 import { cn } from "@/lib/utils";
 
@@ -23,13 +23,21 @@ function Sidebar({ onNavigate }: SidebarProps) {
   // While changing a placed order, /menu is a sub-flow — don't light up "Menu".
   const editing = useUiStore((s) => Boolean(s.editingOrder));
 
+  const account = useSessionStore((s) => s.account);
+  const signOut = useSessionStore((s) => s.signOut);
+
   async function handleLogout() {
     const ok = await confirm({
-      title: `Sign out of ${me.company}?`,
-      description: "You'll need to sign in again with your company email to order your meals.",
+      title: account?.company ? `Sign out of ${account.company}?` : "Sign out?",
+      description: account?.company
+        ? "Your company's pricing will no longer apply until you verify again."
+        : "You can keep browsing, but you'll need to sign in again to order.",
       confirmLabel: "Sign out",
     });
     if (ok) {
+      // Actually drop the session. The old code only navigated, which left the
+      // subsidy applied to whoever sat down at the machine next.
+      signOut();
       onNavigate?.();
       router.push("/login");
     }
@@ -67,27 +75,43 @@ function Sidebar({ onNavigate }: SidebarProps) {
 
       {/* Profile — moved down from the topbar into the rail */}
       <div className="border-t border-sidebar-active/50 p-3">
-        <div className="flex items-center gap-2 rounded-full bg-sidebar-active/40 py-1 pl-1 pr-1.5">
+        {/* A guest is a guest. The old footer showed the hardcoded employee to
+            everyone, which is how "am I signed in?" became unanswerable. */}
+        {account ? (
+          <div className="flex items-center gap-2 rounded-full bg-sidebar-active/40 py-1 pl-1 pr-1.5">
+            <Link
+              href="/account"
+              onClick={onNavigate}
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-full p-1 transition-colors hover:bg-sidebar-active"
+            >
+              <Avatar name={account.name ?? account.email} className="bg-yellow text-teal-deep" />
+              <span className="min-w-0 leading-tight">
+                <span className="block truncate text-sm font-semibold text-white">
+                  {account.name ?? account.email}
+                </span>
+                <span className="block truncate text-2xs text-sidebar-muted">
+                  {account.company ?? "Individual"}
+                </span>
+              </span>
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              aria-label="Sign out"
+              className="rounded-full p-2 text-sidebar-muted transition-colors hover:bg-sidebar-active hover:text-white"
+            >
+              <LogOut className="size-4" />
+            </button>
+          </div>
+        ) : (
           <Link
-            href="/account"
+            href="/login"
             onClick={onNavigate}
-            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-full p-1 transition-colors hover:bg-sidebar-active"
+            className="flex items-center justify-center gap-2 rounded-full bg-sidebar-active/40 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sidebar-active"
           >
-            <Avatar name={me.name} className="bg-yellow text-teal-deep" />
-            <span className="min-w-0 leading-tight">
-              <span className="block truncate text-sm font-semibold text-white">{me.name}</span>
-              <span className="block truncate text-2xs text-sidebar-muted">{me.role}</span>
-            </span>
+            <LogIn className="size-4" /> Sign in
           </Link>
-          <button
-            type="button"
-            onClick={handleLogout}
-            aria-label="Sign out"
-            className="rounded-full p-2 text-sidebar-muted transition-colors hover:bg-sidebar-active hover:text-white"
-          >
-            <LogOut className="size-4" />
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );

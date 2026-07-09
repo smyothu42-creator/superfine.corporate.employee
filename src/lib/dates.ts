@@ -20,6 +20,21 @@ export function isoWeekday(date: Date) {
   return d === 0 ? 7 : d;
 }
 
+/**
+ * Calendars in this app are US-style: weeks run Sunday → Saturday. This is the
+ * single definition of that convention — how many columns sit between the start
+ * of `date`'s week and `date` itself. Every month grid uses it to pad its first
+ * row, so changing the week start here changes it everywhere.
+ */
+export function weekdayOffset(date: Date) {
+  return date.getDay();
+}
+
+/** The Sunday that opens the week containing `date`. */
+export function startOfWeek(date: Date) {
+  return addDays(date, -weekdayOffset(date));
+}
+
 export function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);

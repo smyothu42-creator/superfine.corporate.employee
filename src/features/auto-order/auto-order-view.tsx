@@ -5,23 +5,20 @@ import Link from "next/link";
 import { Repeat, UtensilsCrossed, CalendarClock, Mail, PlusCircle, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { me } from "@/data/me";
 import { toast } from "@/store/use-toast-store";
 import { useAutoOrderStore } from "@/store/use-auto-order-store";
 import { SetupWizard } from "./setup-wizard";
 import { ActiveDashboard } from "./active-dashboard";
 import { AutoOrderWalkthrough, TOUR_START_EVENT } from "./walkthrough";
-import type { AutoConfig } from "./shared";
 
 export function AutoOrderView() {
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
-  const [config, setConfig] = React.useState<AutoConfig>(() => ({
-    status: me.autoOrder.enabled ? "active" : "inactive",
-    favorites: me.autoOrder.favorites,
-    soldOut: "notify",
-  }));
+  // Held in the store, not local state: this page unmounts on every navigation,
+  // so an active setup has to outlive it. Only "Stop ordering" clears it.
+  const config = useAutoOrderStore((s) => s.config);
+  const setConfig = useAutoOrderStore((s) => s.setConfig);
   const [setupOpen, setSetupOpen] = React.useState(false);
 
   // Drive the topbar title per state: while picking meals it's "Edit Your Auto

@@ -9,6 +9,7 @@ export const program: MealProgram = {
   company: "Neptune Corp",
   platform: "Superfine Kitchen",
   subsidyPerDay: 15,
+  subsidyPercent: 70,
   subsidyModel: "Company covers $15 each service day. You pay any remainder.",
   // SF prepared-food sales tax, applied to the employee-paid portion only.
   taxRate: 0.08625,

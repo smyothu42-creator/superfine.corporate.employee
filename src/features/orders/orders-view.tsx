@@ -21,6 +21,7 @@ import { ThemeSelect } from "@/components/ui/theme-select";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { OrderTimeline } from "@/components/orders/order-status";
+import { FeedbackModal } from "@/components/orders/feedback-modal";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { orders } from "@/data/orders";
@@ -209,6 +210,8 @@ function OrderCard({ order }: { order: Order }) {
   const editable = active && !order.locked;
   // Re-order confirmation modal (past orders).
   const [reorderOpen, setReorderOpen] = React.useState(false);
+  // In-platform feedback form (delivered orders).
+  const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   // Shared change/swap flow (opens the change-order popup, hands off to the menu).
   const { startChange, sheets } = useChangeOrder(order);
 
@@ -413,14 +416,15 @@ function OrderCard({ order }: { order: Order }) {
             >
               <Repeat className="size-3.5" /> Re-Order
             </Button>
-            <Button asChild size="sm" variant="ghost" onClick={stop}>
-              <a
-                href={`https://superfinekitchen.com/feedback?order=${encodeURIComponent(order.id)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <MessageSquare className="size-3.5" /> Leave feedback
-              </a>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                stop(e);
+                setFeedbackOpen(true);
+              }}
+            >
+              <MessageSquare className="size-3.5" /> Leave feedback
             </Button>
           </div>
         ) : null}
@@ -436,6 +440,9 @@ function OrderCard({ order }: { order: Order }) {
     {sheets}
     {reorderOpen ? (
       <ReOrderModal order={order} onClose={() => setReorderOpen(false)} onConfirm={reorder} />
+    ) : null}
+    {feedbackOpen ? (
+      <FeedbackModal orderId={order.id} onClose={() => setFeedbackOpen(false)} />
     ) : null}
     </>
   );

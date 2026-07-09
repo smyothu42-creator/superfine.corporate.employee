@@ -2,11 +2,17 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, Check, Leaf, Wheat, ShieldCheck, SunSnow, Flame, Nut, Milk, ArrowLeftRight } from "lucide-react";
+import { Plus, Check, Leaf, Wheat, ShieldCheck, SunSnow, Flame, Nut, Milk, ArrowLeftRight, Users } from "lucide-react";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { flyCardToCart } from "@/lib/fly-to-cart";
 import { formatCurrency, cn } from "@/lib/utils";
-import { hasRequiredAddOns, hasOptionalAddOns } from "@/data/menu";
+import {
+  hasRequiredAddOns,
+  hasOptionalAddOns,
+  isFamilyStyle,
+  pricePerGuestFor,
+  minGuestsFor,
+} from "@/data/menu";
 import type { MenuItem } from "@/data/types";
 
 const TAG_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -64,8 +70,14 @@ export function MenuItemCard({
   editing = false,
   className,
 }: MenuItemCardProps) {
+  const family = isFamilyStyle(item);
   const required = hasRequiredAddOns(item);
-  const customizable = required || hasOptionalAddOns(item);
+  // Family packages always open their configurator — headcount and the serving
+  // split have to be answered before the kitchen can cook anything.
+  const customizable = family || required || hasOptionalAddOns(item);
+  // Only an individual plate can be "on sale" here — a family package quotes a
+  // per-guest rate, which the flat `originalPrice` wouldn't be comparable to.
+  const onSale = !family && item.originalPrice != null && item.originalPrice > item.price;
   const cardRef = React.useRef<HTMLDivElement>(null);
   // In "change a placed order" mode the action reads as a swap.
   const ActionIcon = editing ? ArrowLeftRight : Plus;
@@ -85,11 +97,17 @@ export function MenuItemCard({
     </div>
   ) : null;
 
-  // Promo pills (Popular / Seasonal) — filled tags that sit inline beside the
-  // meal name rather than as a separate eyebrow above it.
+  // Promo pills (Popular / Seasonal) and — on a family package — the guest
+  // minimum, which is the one fact that decides whether the package is even
+  // orderable. All sit inline beside the meal name rather than as an eyebrow.
   const promoBadges =
-    item.popular || item.seasonal ? (
+    item.popular || item.seasonal || family ? (
       <span className="flex shrink-0 items-center gap-1.5">
+        {family ? (
+          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-coral/10 px-2 py-0.5 text-2xs font-semibold text-coral-deep">
+            <Users className="size-3" /> {minGuestsFor(item)} guest minimum
+          </span>
+        ) : null}
         {item.popular ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-coral/10 px-2 py-0.5 text-2xs font-semibold text-coral-deep">
             <Flame className="size-3" /> Popular
@@ -113,8 +131,24 @@ export function MenuItemCard({
           {promoBadges}
         </div>
         {showPrice ? (
-          <span className="shrink-0 font-display text-base font-semibold nums">
-            {formatCurrency(item.price)}
+          // Family packages are priced per guest, not per plate — quoting a flat
+          // package price would imply a fixed size the user can't actually order.
+          <span className="shrink-0 text-right">
+            <span className="block font-display text-base font-semibold nums">
+              {/* On offer: the old price leads, struck through, so the drop reads
+                  left-to-right and the live price is the one in strong type. */}
+              {onSale ? (
+                <span className="mr-1.5 text-[13px] font-medium text-muted-foreground line-through">
+                  {formatCurrency(item.originalPrice!)}
+                </span>
+              ) : null}
+              <span className={cn(onSale && "text-coral-deep")}>
+                {formatCurrency(family ? pricePerGuestFor(item) : item.price)}
+              </span>
+            </span>
+            {family ? (
+              <span className="block text-2xs text-muted-foreground">per guest</span>
+            ) : null}
           </span>
         ) : null}
       </div>
@@ -129,9 +163,6 @@ export function MenuItemCard({
   // from the primary cluster by the auto margin above it.
   const meta = (
     <div className="mt-auto space-y-1.5 pt-3">
-      {item.serves ? (
-        <p className="text-2xs text-muted-foreground">Serves {item.serves}</p>
-      ) : null}
       {dietaryTags}
       <p className="text-2xs text-muted-foreground">Allergens: {item.allergens}</p>
     </div>
@@ -217,7 +248,13 @@ export function MenuItemCard({
           <button
             type="button"
             onClick={onCustomize}
-            aria-label={editing ? `Change to ${item.name}` : `Choose options for ${item.name}`}
+            aria-label={
+              editing
+                ? `Change to ${item.name}`
+                : family
+                  ? `Set guests and quantities for ${item.name}`
+                  : `Choose options for ${item.name}`
+            }
             className="absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
           >
             <ActionIcon className="size-4" />

@@ -20,6 +20,13 @@ export interface EditingOrderContext {
 }
 
 /**
+ * Which subsidy contract the topbar budget indicator is showing. `fixed` is
+ * Neptune's real contract ($15/day cap); `percent` is a demo-only preview of
+ * how the same screen reads for a share-of-order contract.
+ */
+export type SubsidyMode = "fixed" | "percent";
+
+/**
  * Global UI state (chrome / shell). Kept separate from domain stores so layout
  * concerns don't re-render data views.
  */
@@ -54,6 +61,12 @@ interface UiState {
   editingOrder: EditingOrderContext | null;
   startEditingOrder: (ctx: EditingOrderContext) => void;
   clearEditingOrder: () => void;
+  /** Demo-only subsidy-model switch behind the topbar budget pill. */
+  subsidyMode: SubsidyMode;
+  toggleSubsidyMode: () => void;
+  /** Explainer modal shown when the model is switched. */
+  subsidyModalOpen: boolean;
+  closeSubsidyModal: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -78,4 +91,12 @@ export const useUiStore = create<UiState>((set) => ({
   editingOrder: null,
   startEditingOrder: (editingOrder) => set({ editingOrder }),
   clearEditingOrder: () => set({ editingOrder: null }),
+  subsidyMode: "fixed",
+  toggleSubsidyMode: () =>
+    set((s) => ({
+      subsidyMode: s.subsidyMode === "fixed" ? "percent" : "fixed",
+      subsidyModalOpen: true,
+    })),
+  subsidyModalOpen: false,
+  closeSubsidyModal: () => set({ subsidyModalOpen: false }),
 }));

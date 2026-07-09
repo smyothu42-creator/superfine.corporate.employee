@@ -3,21 +3,30 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle, ArrowLeftRight, Check, ExternalLink } from "lucide-react";
+import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle, ArrowLeftRight, Check, ExternalLink, Users } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
-import { hasRequiredAddOns, hasOptionalAddOns, menuCategory, buildCombos } from "@/data/menu";
+import {
+  hasRequiredAddOns,
+  hasOptionalAddOns,
+  menuCategory,
+  isFamilyStyle,
+  minGuestsFor,
+  pricePerGuestFor,
+} from "@/data/menu";
+import { OptionGroups, useItemOptions } from "@/components/menu/option-groups";
+import { FamilyStyleModal } from "@/components/menu/family-style-modal";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
-import { useCartStore, type CartAddOn } from "@/store/use-cart-store";
+import { useCartStore } from "@/store/use-cart-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { toast } from "@/store/use-toast-store";
 import { confirm } from "@/store/use-confirm-store";
 import { nextServiceDays, startOfToday, toISODate, fromISODate, formatDay, WEEKDAY_SHORT } from "@/lib/dates";
-import { formatCurrency, cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
 
 const TAG_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -35,12 +44,12 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
   const editing = Boolean(editingOrder);
   const [mounted, setMounted] = React.useState(false);
   const [date, setDate] = React.useState("");
-  // Meal options (combos) shown inline on the detail page.
-  const combos = React.useMemo(() => buildCombos(item), [item]);
-  const [comboId, setComboId] = React.useState<string>(() => combos[0]?.id ?? "");
-  const combo = combos.find((c) => c.id === comboId) ?? combos[0];
-  const resolved: CartAddOn[] = combo?.selections ?? [];
-  const unitPrice = item.price + (combo?.upcharge ?? 0);
+  // Family packages are portioned by headcount, so they can never be added
+  // straight from the page — the configurator has to answer for them first.
+  const family = isFamilyStyle(item);
+  const [configuring, setConfiguring] = React.useState(false);
+  // The meal's choice groups (protein, sauce, dressing…), shown inline.
+  const { groups, picked, toggle, selections, unitPrice, valid, missingLabel } = useItemOptions(item);
 
   // While changing a placed order, the day is fixed to the order's day.
   const activeDate = editingOrder ? editingOrder.date : date;
@@ -80,13 +89,17 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
       requestChange();
       return;
     }
+    if (family) {
+      setConfiguring(true);
+      return;
+    }
     cart.add({
       date,
       itemId: item.id,
       name: item.name,
       basePrice: item.price,
       qty: 1,
-      addOns: resolved,
+      addOns: selections,
       unitPrice,
       type: item.type,
     });
@@ -109,11 +122,18 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
                 <h2 className="font-display text-2xl font-semibold tracking-tight">{item.name}</h2>
                 <p className="mt-0.5 text-[13px] text-muted-foreground">
                   {item.cuisine} · {menuCategory(item)}
-                  {item.serves ? ` · serves ${item.serves}` : ""}
+                  {family ? ` · ${minGuestsFor(item)} guest minimum` : ""}
                 </p>
               </div>
               {program.showPrices ? (
-                <span className="font-display text-2xl font-semibold nums">{formatCurrency(item.price)}</span>
+                <span className="shrink-0 text-right">
+                  <span className="block font-display text-2xl font-semibold nums">
+                    {formatCurrency(family ? pricePerGuestFor(item) : item.price)}
+                  </span>
+                  {family ? (
+                    <span className="block text-2xs text-muted-foreground">per guest</span>
+                  ) : null}
+                </span>
               ) : null}
             </div>
             <p className="text-sm leading-relaxed text-muted-foreground">{item.description}</p>
@@ -170,73 +190,113 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
                 </p>
               ) : null}
 
-              {customizable && combos.length > 0 ? (
-                <>
-                  <div className="text-overline">
-                    {hasRequiredAddOns(item) ? "Choose an option" : "Options"}
-                  </div>
-                  <div className="space-y-2">
-                    {combos.map((c) => {
-                      const checked = c.id === comboId;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => setComboId(c.id)}
-                          className={cn(
-                            "flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
-                            checked ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
-                          )}
-                        >
-                          <span className="flex min-w-0 items-start gap-2.5">
-                            <span
-                              className={cn(
-                                "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
-                                checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
-                              )}
-                            >
-                              {checked ? <Check className="size-3.5" /> : null}
-                            </span>
-                            <span className="min-w-0">
-                              <span className="font-medium">{c.name}</span>
-                              <span className="mt-1 block space-y-0.5">
-                                {c.includes.map((inc) => (
-                                  <span key={inc.group} className="block text-2xs text-muted-foreground">
-                                    <span className="font-semibold text-foreground/70">{inc.group}:</span>{" "}
-                                    {inc.item}
-                                  </span>
-                                ))}
-                              </span>
-                            </span>
-                          </span>
-                          {c.upcharge > 0 ? (
-                            <span className="shrink-0 font-semibold nums">+{formatCurrency(c.upcharge)}</span>
-                          ) : (
-                            <span className="shrink-0 text-2xs text-muted-foreground">included</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
+              {family ? (
+                <FamilyStylePreview item={item} />
+              ) : customizable && groups.length > 0 ? (
+                <OptionGroups groups={groups} picked={picked} onToggle={toggle} className="pb-1" />
               ) : null}
 
-              <Button block size="lg" disabled={!activeDate} onClick={addToOrder}>
-                {editing ? (
+              <Button block size="lg" disabled={!activeDate || (!family && !valid)} onClick={addToOrder}>
+                {!family && !valid ? (
+                  `Choose ${missingLabel}`
+                ) : editing ? (
                   <>
                     <ArrowLeftRight className="size-4" /> Change to this meal
+                  </>
+                ) : family ? (
+                  <>
+                    <Users className="size-4" /> Set guests &amp; quantities
                   </>
                 ) : (
                   <>
                     <Plus className="size-4" /> Add to order
+                    {program.showPrices ? ` · ${formatCurrency(unitPrice)}` : ""}
                   </>
                 )}
-                {program.showPrices ? ` · ${formatCurrency(unitPrice)}` : ""}
               </Button>
             </CardBody>
           </Card>
         </div>
       </div>
+
+      {configuring ? (
+        <FamilyStyleModal
+          item={item}
+          dateLabel={activeDate ? formatDay(fromISODate(activeDate)) : ""}
+          onClose={() => setConfiguring(false)}
+          onConfirm={(guests, servings, totalPrice) => {
+            cart.add({
+              date: activeDate,
+              itemId: item.id,
+              name: item.name,
+              basePrice: totalPrice,
+              qty: 1,
+              addOns: [],
+              unitPrice: totalPrice,
+              type: item.type,
+              guests,
+              servings,
+            });
+            setConfiguring(false);
+            toast.success(`${item.name} added`, `For ${guests} guests on ${formatDay(fromISODate(activeDate))}.`);
+            router.push("/menu");
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What a family package looks like before you open the configurator: what
+ * always comes with it, and which groups you'll be asked to split. The actual
+ * quantities are set in the modal, where the headcount is known.
+ */
+function FamilyStylePreview({ item }: { item: MenuItem }) {
+  const groups = item.servingGroups ?? [];
+  return (
+    <div className="space-y-3">
+      {item.includedItems?.length ? (
+        <div>
+          <div className="text-overline">Included with every package</div>
+          <ul className="mt-1.5 space-y-1">
+            {item.includedItems.map((inc) => (
+              <li key={inc.name} className="flex items-baseline justify-between gap-3 text-[13px]">
+                <span className="flex min-w-0 items-baseline gap-2">
+                  <Check className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
+                  <span className="truncate">{inc.name}</span>
+                </span>
+                {inc.note ? (
+                  <span className="shrink-0 text-2xs text-muted-foreground">{inc.note}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {groups.length ? (
+        <div>
+          <div className="text-overline">You&apos;ll choose quantities for</div>
+          <ul className="mt-1.5 space-y-1.5">
+            {groups.map((g) => (
+              <li key={g.id} className="rounded-xl border border-border p-2.5 text-[13px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{g.name}</span>
+                  <span className="shrink-0 text-2xs text-muted-foreground">
+                    {g.perGuest > 0
+                      ? `${g.perGuest} per guest`
+                      : "Optional extra"}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-2xs text-muted-foreground">
+                  {g.options.map((o) => o.name).join(" · ")}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

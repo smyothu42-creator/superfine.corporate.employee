@@ -15,8 +15,12 @@ import {
   Repeat,
   Ban,
   BookOpen,
+  Percent,
+  ArrowLeftRight,
 } from "lucide-react";
 import { NAV_ITEMS, isActive } from "@/lib/nav";
+import { companyCovers, employeeCovers, budgetRemaining } from "@/lib/subsidy";
+import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { useAutoOrderStore, type AutoOrderHeader } from "@/store/use-auto-order-store";
@@ -281,70 +285,126 @@ function CheckoutCutoffIndicator() {
 /* Budget indicator — pill trigger + hover/focus breakdown dropdown          */
 /* ----------------------------------------------------------------------- */
 
+/**
+ * Budget pill + a demo-only switch between the two subsidy contracts.
+ *
+ * The models read differently because they answer different questions. A fixed
+ * daily allowance has a cap, so the useful number is headroom — "$8.50 left
+ * today". A percentage share has no cap, so nothing is ever "left"; the useful
+ * number is the employee's running share — "You pay $4.50 · 30%".
+ */
 function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
-  const subsidy = program.subsidyPerDay;
-  const companyCovers = Math.min(dayTotal, subsidy);
-  const youCover = Math.max(0, dayTotal - subsidy);
-  const remaining = Math.max(0, subsidy - dayTotal);
-  const over = youCover > 0;
+  const mode = useUiStore((s) => s.subsidyMode);
+  const toggleMode = useUiStore((s) => s.toggleSubsidyMode);
+  const account = useSessionStore((s) => s.account);
+  const percentMode = mode === "percent";
+
+  // Guests and individual customers have no company budget. Showing them an
+  // allowance — even an empty one — advertises pricing they aren't entitled to.
+  if (!isSubsidized(account)) return null;
+
+  const allowance = program.subsidyPerDay;
+  const pct = program.subsidyPercent;
+
+  const covered = companyCovers(dayTotal, mode);
+  const youCover = employeeCovers(dayTotal, mode);
+  const remaining = budgetRemaining(dayTotal, mode);
+  // A percentage contract can never be "over" — the split holds at any total.
+  const over = !percentMode && youCover > 0;
+  const empty = dayTotal === 0;
+
+  const label = percentMode
+    ? empty
+      ? `${program.company} pays ${pct}%`
+      : `You pay ${formatCurrency(youCover)} · ${100 - pct}%`
+    : over
+      ? `Budget over · you pay ${formatCurrency(youCover)}`
+      : remaining === 0
+        ? "Budget used · extra is on you"
+        : `${formatCurrency(remaining)} left today`;
 
   return (
-    <div className={cn("group relative", !over && "hidden sm:block")}>
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        className={cn(
-          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold outline-none transition-colors",
-          over
-            ? "border-danger-border bg-danger-bg text-danger"
-            : remaining === 0
-              ? "border-warning-border bg-warning-bg text-coral-deep"
-              : "border-info-border bg-info-bg text-info",
-        )}
-      >
-        {over ? <AlertTriangle className="size-3.5" /> : <Wallet className="size-3.5" />}
-        <span className="nums">
-          {over
-            ? `Budget over · you pay ${formatCurrency(youCover)}`
-            : remaining === 0
-              ? "Budget used · extra is on you"
-              : `${formatCurrency(remaining)} left today`}
-        </span>
-        <ChevronDown className="size-3.5 opacity-70 transition-transform group-hover:rotate-180" />
-      </button>
+    <div className={cn("flex items-center gap-1.5", !over && "hidden sm:flex")}>
+      <div className="group relative">
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          className={cn(
+            "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold outline-none transition-colors",
+            over
+              ? "border-danger-border bg-danger-bg text-danger"
+              : !percentMode && remaining === 0
+                ? "border-warning-border bg-warning-bg text-coral-deep"
+                : "border-info-border bg-info-bg text-info",
+          )}
+        >
+          {over ? (
+            <AlertTriangle className="size-3.5" />
+          ) : percentMode ? (
+            <Percent className="size-3.5" />
+          ) : (
+            <Wallet className="size-3.5" />
+          )}
+          <span className="nums">{label}</span>
+          <ChevronDown className="size-3.5 opacity-70 transition-transform group-hover:rotate-180" />
+        </button>
 
-      {/* Hover/focus breakdown */}
-      <div
-        role="dialog"
-        aria-label="Today's budget breakdown"
-        className="pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-64 origin-top-right rounded-2xl border border-border bg-card p-4 text-foreground opacity-0 shadow-lg transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
-      >
-        <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <Wallet className="size-3.5 text-primary" /> Today&apos;s budget
-        </div>
+        {/* Hover/focus breakdown */}
+        <div
+          role="dialog"
+          aria-label="Today's budget breakdown"
+          className="pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-64 origin-top-right rounded-2xl border border-border bg-card p-4 text-foreground opacity-0 shadow-lg transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        >
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Wallet className="size-3.5 text-primary" /> Today&apos;s budget
+          </div>
 
-        <div className="mt-3 space-y-1.5 text-[13px]">
-          <BudgetRow label="Daily allowance" value={formatCurrency(subsidy)} />
-          <BudgetRow label="Meals this day" value={formatCurrency(dayTotal)} />
-          <div className="my-1.5 border-t border-border" />
-          <BudgetRow
-            label="Company pays"
-            value={`-${formatCurrency(companyCovers)}`}
-            tone="success"
-          />
-          <BudgetRow
-            label="You pay"
-            value={formatCurrency(youCover)}
-            tone={youCover > 0 ? "danger" : "muted"}
-          />
-        </div>
+          <div className="mt-3 space-y-1.5 text-[13px]">
+            <BudgetRow
+              label={percentMode ? "Subsidy rate" : "Daily allowance"}
+              value={percentMode ? `${pct}%` : formatCurrency(allowance)}
+            />
+            <BudgetRow label="Meals this day" value={formatCurrency(dayTotal)} />
+            <div className="my-1.5 border-t border-border" />
+            <BudgetRow
+              label={percentMode ? `Company pays (${pct}%)` : "Company pays"}
+              value={`-${formatCurrency(covered)}`}
+              tone="success"
+            />
+            <BudgetRow
+              label={percentMode ? `You pay (${100 - pct}%)` : "You pay"}
+              value={formatCurrency(youCover)}
+              tone={!percentMode && youCover > 0 ? "danger" : "muted"}
+            />
+          </div>
 
-        <div className="mt-3 rounded-xl bg-muted px-3 py-2 text-2xs text-muted-foreground">
-          {over
-            ? `Over the ${formatCurrency(subsidy)} allowance — the extra ${formatCurrency(youCover)} is charged to you.`
-            : `${formatCurrency(remaining)} of your ${formatCurrency(subsidy)} allowance left · resets daily.`}
+          {/* Fixed: a meter that depletes. Percent: a split that never moves. */}
+          {percentMode ? (
+            <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+              <div className="h-full bg-coral" style={{ width: `${100 - pct}%` }} />
+            </div>
+          ) : null}
+
+          <div className="mt-3 rounded-xl bg-muted px-3 py-2 text-2xs text-muted-foreground">
+            {percentMode
+              ? `${program.company} covers ${pct}% of every order — no daily cap. Your ${100 - pct}% share grows with the order.`
+              : over
+                ? `Over the ${formatCurrency(allowance)} allowance — the extra ${formatCurrency(youCover)} is charged to you.`
+                : `${formatCurrency(remaining)} of your ${formatCurrency(allowance)} allowance left · resets daily.`}
+          </div>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={toggleMode}
+        aria-label={`Demo: switch to the ${percentMode ? "fixed daily allowance" : "percentage share"} subsidy model`}
+        title="Demo: switch subsidy model"
+        className="rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <ArrowLeftRight className="size-3.5" />
+      </button>
     </div>
   );
 }

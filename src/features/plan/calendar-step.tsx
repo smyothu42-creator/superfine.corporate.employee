@@ -4,8 +4,9 @@ import * as React from "react";
 import { ChevronLeft, ChevronRight, CalendarRange, Rows3, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
-import { addDays, fromISODate, toISODate, sameDay } from "@/lib/dates";
+import { addDays, fromISODate, toISODate, sameDay, weekdayOffset, startOfWeek } from "@/lib/dates";
 import { program } from "@/data/program";
+import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import {
   HOLIDAYS,
   isHoliday,
@@ -14,7 +15,7 @@ import {
   isCutoffPassed,
 } from "@/lib/cutoff";
 
-const WEEKDAY_COLS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAY_COLS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface CalendarStepProps {
   todayISO: string;
@@ -25,10 +26,10 @@ interface CalendarStepProps {
   onContinue: () => void;
 }
 
-/** Monday-first matrix of the given month, padded with nulls to full weeks. */
+/** Sunday-first matrix of the given month, padded with nulls to full weeks. */
 function monthMatrix(year: number, month: number): (Date | null)[] {
   const first = new Date(year, month, 1);
-  const lead = (first.getDay() + 6) % 7; // 0 = Monday
+  const lead = weekdayOffset(first);
   const days = new Date(year, month + 1, 0).getDate();
   const cells: (Date | null)[] = Array.from({ length: lead }, () => null);
   for (let d = 1; d <= days; d++) cells.push(new Date(year, month, d));
@@ -36,11 +37,10 @@ function monthMatrix(year: number, month: number): (Date | null)[] {
   return cells;
 }
 
-/** The Mon–Sun dates of the week containing `date`. */
+/** The Sun–Sat dates of the week containing `date`. */
 function weekOf(date: Date): Date[] {
-  const lead = (date.getDay() + 6) % 7;
-  const monday = addDays(date, -lead);
-  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const sunday = startOfWeek(date);
+  return Array.from({ length: 7 }, (_, i) => addDays(sunday, i));
 }
 
 export function CalendarStep({
@@ -71,6 +71,8 @@ export function CalendarStep({
     });
   }
 
+  const corporate = isSubsidized(useSessionStore((s) => s.account));
+
   function handleSelectWeek() {
     const dates = weekOf(today)
       .map(toISODate)
@@ -83,8 +85,10 @@ export function CalendarStep({
       <header className="space-y-1">
         <h2 className="font-display text-xl font-semibold tracking-tight">Plan your week</h2>
         <p className="text-[13px] text-muted-foreground">
-          Tap the days you want meals. {program.company} covers {formatCurrency(program.subsidyPerDay)} each
-          weekday.
+          Tap the days you want meals.{" "}
+          {corporate
+            ? `${program.company} covers ${formatCurrency(program.subsidyPerDay)} each weekday.`
+            : "Pick as many weekdays as you like."}
         </p>
       </header>
 

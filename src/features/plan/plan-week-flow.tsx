@@ -19,6 +19,9 @@ import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
+import { companyCovers, employeeCovers } from "@/lib/subsidy";
+import { useUiStore } from "@/store/use-ui-store";
+import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { cn, formatCurrency } from "@/lib/utils";
 import { startOfToday, toISODate, fromISODate, formatDay, formatDayLong } from "@/lib/dates";
 import { isCutoffPassed, nextOpenDays } from "@/lib/cutoff";
@@ -44,6 +47,12 @@ export function PlanWeekFlow() {
   const [activeDate, setActiveDate] = React.useState("");
   const [placing, setPlacing] = React.useState(false);
   const [recurring, setRecurring] = React.useState(false);
+
+  // Subscribed, not read via getState: companyCovers() consults the session
+  // itself, so without this the totals would keep quoting the old entitlement
+  // after a guest verifies into a corporate account.
+  const subsidyMode = useUiStore((s) => s.subsidyMode);
+  const corporate = isSubsidized(useSessionStore((s) => s.account));
 
   React.useEffect(() => {
     setTodayISO(toISODate(startOfToday()));
@@ -99,8 +108,12 @@ export function PlanWeekFlow() {
     return (selections[d] ?? []).reduce((s, l) => s + l.price, 0);
   }
   const subtotal = payableDays.reduce((s, d) => s + dayTotal(d), 0);
-  const subsidy = payableDays.reduce((s, d) => s + Math.min(dayTotal(d), program.subsidyPerDay), 0);
-  const youPay = payableDays.reduce((s, d) => s + Math.max(0, dayTotal(d) - program.subsidyPerDay), 0);
+  // Routed through lib/subsidy rather than reading program.subsidyPerDay directly:
+  // that's the only path that checks whether *this viewer* is entitled to a
+  // subsidy at all. Doing the min()/max() inline here quoted every guest and
+  // individual a corporate price.
+  const subsidy = payableDays.reduce((s, d) => s + companyCovers(dayTotal(d), subsidyMode), 0);
+  const youPay = payableDays.reduce((s, d) => s + employeeCovers(dayTotal(d), subsidyMode), 0);
   const allPastCutoff = orderedDays.length > 0 && payableDays.length === 0;
 
   async function placeOrder() {
@@ -160,6 +173,7 @@ export function PlanWeekFlow() {
           subtotal={subtotal}
           subsidy={subsidy}
           youPay={youPay}
+          corporate={corporate}
           dayTotal={dayTotal}
           onEditDay={(d) => {
             setActiveDate(d);
@@ -178,6 +192,7 @@ export function PlanWeekFlow() {
           cutoffDays={cutoffDays}
           youPay={youPay}
           subsidy={subsidy}
+          corporate={corporate}
           placing={placing}
           onBack={() => setStep("review")}
           onConfirm={placeOrder}
@@ -207,13 +222,19 @@ export function PlanWeekFlow() {
 /* ----------------------------------------------------------------------- */
 
 function PhoneFrame({ children, stepIndex }: { children: React.ReactNode; stepIndex: number }) {
+  // The allowance pill is a statement about an entitlement. Shown to someone who
+  // has none, it's just a false promise, so the strip carries only the platform.
+  const corporate = isSubsidized(useSessionStore((s) => s.account));
+
   return (
     <div className="mx-auto w-full max-w-[430px]">
       <div className="overflow-hidden rounded-[28px] border border-border bg-background shadow-raised">
         {/* status strip */}
         <div className="flex items-center justify-between bg-sidebar px-5 py-2.5 text-2xs font-semibold text-sidebar-foreground">
           <span>{program.platform}</span>
-          <span>{program.company} · {formatCurrency(program.subsidyPerDay)}/day</span>
+          {corporate ? (
+            <span>{program.company} · {formatCurrency(program.subsidyPerDay)}/day</span>
+          ) : null}
         </div>
         {/* progress */}
         <div className="flex gap-1.5 px-4 pt-3">
@@ -246,6 +267,7 @@ function ReviewStep({
   subtotal,
   subsidy,
   youPay,
+  corporate,
   dayTotal,
   onEditDay,
   onRemoveDay,
@@ -261,6 +283,7 @@ function ReviewStep({
   subtotal: number;
   subsidy: number;
   youPay: number;
+  corporate: boolean;
   dayTotal: (d: string) => number;
   onEditDay: (d: string) => void;
   onRemoveDay: (d: string) => void;
@@ -377,7 +400,9 @@ function ReviewStep({
       ) : (
         <div className="rounded-2xl border border-border bg-card p-4">
           <Row label="Subtotal" value={formatCurrency(subtotal)} />
-          <Row label={`${program.company} covers`} value={`-${formatCurrency(subsidy)}`} tone="success" />
+          {corporate ? (
+            <Row label={`${program.company} covers`} value={`-${formatCurrency(subsidy)}`} tone="success" />
+          ) : null}
           <div className="my-2 border-t border-border" />
           <Row label="You pay" value={formatCurrency(youPay)} bold />
         </div>
@@ -433,6 +458,7 @@ function CheckoutStep({
   cutoffDays,
   youPay,
   subsidy,
+  corporate,
   placing,
   onBack,
   onConfirm,
@@ -441,10 +467,15 @@ function CheckoutStep({
   cutoffDays: string[];
   youPay: number;
   subsidy: number;
+  corporate: boolean;
   placing: boolean;
   onBack: () => void;
   onConfirm: () => void;
 }) {
+  // Only read for the individual branch — a corporate order goes to the
+  // contract's site regardless of anything this user has typed.
+  const delivery = useSessionStore((s) => s.delivery);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -461,8 +492,26 @@ function CheckoutStep({
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <p className="text-[13px] text-muted-foreground">Delivering to</p>
-        <p className="text-sm font-semibold">HQ · Floor 3 Kitchen</p>
-        <p className="text-2xs text-muted-foreground">500 Market St, Floor 3, San Francisco</p>
+        {corporate ? (
+          <>
+            <p className="text-sm font-semibold">HQ · Floor 3 Kitchen</p>
+            <p className="text-2xs text-muted-foreground">500 Market St, Floor 3, San Francisco</p>
+          </>
+        ) : delivery.street ? (
+          <>
+            <p className="text-sm font-semibold">
+              {delivery.street}
+              {delivery.apt ? `, ${delivery.apt}` : ""}
+            </p>
+            <p className="text-2xs text-muted-foreground">
+              {[delivery.city, delivery.zip].filter(Boolean).join(" ")}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm font-semibold text-muted-foreground">
+            Add an address at checkout
+          </p>
+        )}
         <div className="my-3 border-t border-border" />
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Confirmed days</span>
@@ -474,10 +523,12 @@ function CheckoutStep({
             <span className="font-semibold">{cutoffDays.length}</span>
           </div>
         ) : null}
-        <div className="mt-1 flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Company pays</span>
-          <span className="font-semibold text-success">-{formatCurrency(subsidy)}</span>
-        </div>
+        {corporate ? (
+          <div className="mt-1 flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Company pays</span>
+            <span className="font-semibold text-success">-{formatCurrency(subsidy)}</span>
+          </div>
+        ) : null}
       </div>
 
       {youPay > 0 ? (
@@ -491,10 +542,12 @@ function CheckoutStep({
           </div>
           <span className="text-sm font-bold nums">{formatCurrency(youPay)}</span>
         </div>
-      ) : (
+      ) : corporate ? (
         <Notice tone="success">
           Fully covered by {program.company}. No payment needed — just confirm.
         </Notice>
+      ) : (
+        <Notice tone="info">Nothing to pay yet — add meals to a day to continue.</Notice>
       )}
 
       <Button variant="teal" block size="lg" disabled={placing} onClick={onConfirm}>

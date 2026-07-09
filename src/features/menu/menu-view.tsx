@@ -28,9 +28,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { AddOnModal } from "@/components/menu/add-on-modal";
+import { FamilyStyleModal } from "@/components/menu/family-style-modal";
 import { DateRangeModal } from "@/features/menu/date-range-modal";
 import {
   menuFor,
+  isItemAvailableOn,
   categoriesForType,
   menuCategory,
   allergenOptions,
@@ -38,9 +40,11 @@ import {
   itemHasAnyAllergen,
   hasRequiredAddOns,
   hasOptionalAddOns,
+  isFamilyStyle,
 } from "@/data/menu";
 import { program } from "@/data/program";
-import { me } from "@/data/me";
+import { useSessionStore, isSubsidized } from "@/store/use-session-store";
+import { CorporatePrompt } from "@/components/auth/corporate-prompt";
 import { useCartStore } from "@/store/use-cart-store";
 import { useUiStore } from "@/store/use-ui-store";
 import {
@@ -54,6 +58,7 @@ import {
   formatDay,
   formatDayLong,
   formatShort,
+  weekdayOffset,
   WEEKDAY_SHORT,
 } from "@/lib/dates";
 import {
@@ -102,20 +107,27 @@ export function MenuView() {
   const [rangeChosen, setRangeChosen] = React.useState(false);
   const [rangePickerOpen, setRangePickerOpen] = React.useState(false);
 
+  // Who's browsing. `null` = guest: retail prices, no company anywhere on screen.
+  const account = useSessionStore((s) => s.account);
+  const firstName = account?.name?.trim().split(" ")[0] ?? "";
+
   // Filters
   const [query, setQuery] = React.useState("");
   const [priceMax, setPriceMax] = React.useState("");
   // Branded category tag (e.g. "Stack, Wrap & Roll"). "" = All.
   const [category, setCategory] = React.useState("");
   // Two distinct filters: allergens to AVOID (hide matches) and dietary
-  // preferences to REQUIRE (show only matches). This is for *extra* allergens
-  // the user wants to avoid today — their saved profile allergens are ALWAYS
-  // hidden (hard safety filter below), so this starts empty.
+  // preferences to REQUIRE (show only matches). Both start empty, so the menu
+  // opens showing everything we sell. Seeding them from the saved profile hid
+  // most of the menu behind chips the user never set on this visit, which reads
+  // as a short menu rather than a filtered one.
   const [allergens, setAllergens] = React.useState<string[]>([]);
   const [diets, setDiets] = React.useState<string[]>([]);
 
-  // Add-on sheet
+  // Individual meals open the option sheet; family packages open the headcount +
+  // quantity configurator. They are never the same sheet.
   const [customizing, setCustomizing] = React.useState<MenuItem | null>(null);
+  const [configuring, setConfiguring] = React.useState<MenuItem | null>(null);
 
   const cart = useCartStore();
   const router = useRouter();
@@ -332,10 +344,8 @@ export function MenuView() {
       );
     }
     if (priceMax) items = items.filter((i) => i.price <= Number(priceMax));
-    // Allergens: the employee's saved allergens are ALWAYS hidden (never shown,
-    // not greyed), plus any extra allergens chosen in the filter.
-    const avoid = [...me.allergens, ...allergens];
-    if (avoid.length) items = items.filter((i) => !itemHasAnyAllergen(i, avoid));
+    // Allergens: hide anything containing one the user is avoiding.
+    if (allergens.length) items = items.filter((i) => !itemHasAnyAllergen(i, allergens));
     // Dietary: show only items matching every selected preference.
     if (diets.length) items = items.filter((i) => diets.every((d) => (i.tags as string[]).includes(d)));
     return items;
@@ -361,7 +371,9 @@ export function MenuView() {
   }
 
   function handleAdd(item: MenuItem) {
-    if (hasRequiredAddOns(item) || hasOptionalAddOns(item)) {
+    if (isFamilyStyle(item)) {
+      setConfiguring(item);
+    } else if (hasRequiredAddOns(item) || hasOptionalAddOns(item)) {
       setCustomizing(item);
     } else {
       quickAdd(item);
@@ -467,9 +479,32 @@ export function MenuView() {
       onSelectSingle={(iso) => {
         // Switching back to a single day drops every other day's cart items so
         // the cart instantly reflects just this one day (was a multi-day plan).
-        if (mode === "multi") cart.retainRange(iso, iso);
-        setSelectedDate(iso);
-        setActiveDate(iso);
+        if (mode === "multi") {
+          cart.retainRange(iso, iso);
+          setSelectedDate(iso);
+          setActiveDate(iso);
+          return;
+        }
+        // Single → single: retarget the cart to the newly picked day. Menus
+        // rotate by weekday, so any meal that isn't served on the new day can't
+        // come along — it's dropped and the user is told to pick another.
+        if (iso !== selectedDate) {
+          const weekday = isoWeekday(fromISODate(iso));
+          const dropped = cart.moveDay(selectedDate, iso, (itemId) =>
+            isItemAvailableOn(itemId, weekday),
+          );
+          setSelectedDate(iso);
+          setActiveDate(iso);
+          const dayLabel = formatDayLong(fromISODate(iso));
+          if (dropped.length) {
+            toast.warning(
+              `${dropped.length === 1 ? "Meal isn't" : "Meals aren't"} available on ${dayLabel}`,
+              `${dropped.join(", ")} — this meal is not available for the selected date. Please choose another meal.`,
+            );
+          } else if (cart.itemsForDate(iso).length > 0) {
+            toast.success("Date updated", `Your order now delivers ${dayLabel}.`);
+          }
+        }
       }}
       rangeStart={rangeStart}
       rangeEnd={rangeEnd}
@@ -492,6 +527,10 @@ export function MenuView() {
 
   return (
     <div className="space-y-5 pb-4">
+      {/* Lets a corporate employee who came in through the general flow claim
+          their subsidy before they judge the menu on retail prices. */}
+      <CorporatePrompt />
+
       {/* Start an order — date selection. The sticky wrapper pins flush to the
           topbar with a solid background so nothing shows through the float gap,
           while the inner card sits below it with a shadow (floating look). */}
@@ -516,29 +555,32 @@ export function MenuView() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
+          // The greeting and the meal-style / date controls share one line. The
+          // controls stay pinned to the opposite edge, and only fall below the
+          // greeting on genuinely narrow screens.
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
               <h2 className="font-display text-xl font-semibold tracking-tight">
-                Hi {me.firstName}, what would you like to eat?
+                {firstName ? `Hi ${firstName}, what` : "What"} would you like to eat?
               </h2>
+              {/* Only a verified employee is told what their company pays. To a
+                  guest this line would be someone else's contract. */}
               <p className="mt-0.5 text-[13px] text-muted-foreground">
-                {program.company} pays {formatCurrency(program.subsidyPerDay)} a day.
+                {isSubsidized(account)
+                  ? `${account?.company} pays ${formatCurrency(program.subsidyPerDay)} a day.`
+                  : "Fresh, globally inspired lunches — delivered daily."}
               </p>
             </div>
-            {/* Meal-style toggle + the order-length / date controls, grouped so
-                the date picker sits right beside the Individual / Family tabs. */}
-            <div className="flex flex-col gap-2 xl:items-end">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Tabs
-                  tabs={[
-                    { id: "individual", label: "Individual" },
-                    { id: "family_style", label: "Family Style" },
-                  ]}
-                  value={menuType}
-                  onValueChange={(v) => setMenuType(v as OrderType)}
-                />
-                {datePicker}
-              </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2.5 md:flex-nowrap md:justify-end">
+              <Tabs
+                tabs={[
+                  { id: "individual", label: "Individual" },
+                  { id: "family_style", label: "Family Style" },
+                ]}
+                value={menuType}
+                onValueChange={(v) => setMenuType(v as OrderType)}
+              />
+              {datePicker}
             </div>
           </div>
         )}
@@ -669,7 +711,7 @@ export function MenuView() {
               inCart={inCartFor(item.id)}
               showPrice={program.showPrices}
               editing={Boolean(editingOrder)}
-              onAdd={() => (editingOrder ? requestChange(item) : quickAdd(item))}
+              onAdd={() => (editingOrder ? requestChange(item) : handleAdd(item))}
               onCustomize={() => (editingOrder ? requestChange(item) : handleAdd(item))}
             />
           ))}
@@ -720,6 +762,36 @@ export function MenuView() {
             });
             setCustomizing(null);
             bumpCart();
+          }}
+        />
+      ) : null}
+
+      {configuring ? (
+        <FamilyStyleModal
+          item={configuring}
+          dateLabel={formatDay(fromISODate(day))}
+          onClose={() => setConfiguring(null)}
+          onConfirm={(guests, servings, totalPrice) => {
+            cart.add({
+              date: day,
+              itemId: configuring.id,
+              name: configuring.name,
+              basePrice: totalPrice,
+              // A family package is one line: the headcount and the split live
+              // on the line, so quantity means "how many of this package".
+              qty: 1,
+              addOns: [],
+              unitPrice: totalPrice,
+              type: configuring.type,
+              guests,
+              servings,
+            });
+            setConfiguring(null);
+            bumpCart();
+            toast.success(
+              `${configuring.name} added`,
+              `For ${guests} guests on ${formatDay(fromISODate(day))}.`,
+            );
           }}
         />
       ) : null}
@@ -1173,13 +1245,13 @@ interface DateOption {
   reason: string;
 }
 
-/** Monday-first weekday header for the unified calendar. */
-const CAL_COLS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+/** Sunday-first weekday header for the unified calendar. */
+const CAL_COLS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
-/** Monday-first month grid (leading/trailing blanks padded to full weeks). */
+/** Sunday-first month grid (leading/trailing blanks padded to full weeks). */
 function calMatrix(year: number, month: number): (Date | null)[] {
   const first = new Date(year, month, 1);
-  const lead = (first.getDay() + 6) % 7; // 0 = Monday
+  const lead = weekdayOffset(first);
   const days = new Date(year, month + 1, 0).getDate();
   const cells: (Date | null)[] = Array.from({ length: lead }, () => null);
   for (let d = 1; d <= days; d++) cells.push(new Date(year, month, d));

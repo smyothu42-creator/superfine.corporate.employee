@@ -17,6 +17,7 @@ import {
   MilkOff,
   Pencil,
   CalendarOff,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,9 @@ import { AllergenCombobox } from "@/components/ui/allergen-combobox";
 import { DateMultiModal } from "@/components/ui/date-multi-modal";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/ui/stat-card";
+import { useProfileStore } from "@/store/use-profile-store";
+import { useSessionStore, isSubsidized } from "@/store/use-session-store";
+import { IdentityFlow } from "@/features/auth/identity-flow";
 import { dietaryPreferences, allergenOptions } from "@/data/menu";
 import { program, addresses } from "@/data/program";
 import { me } from "@/data/me";
@@ -45,12 +49,23 @@ const dietaryIcons: Record<string, LucideIcon> = {
 };
 
 export function AccountView() {
-  const [dietary, setDietary] = React.useState<string[]>(me.dietary);
-  const [allergens, setAllergens] = React.useState<string[]>(me.allergens);
+  // Shared with the menu, which seeds its filters from these — so a preference
+  // saved here shows up pre-applied the next time the menu is opened.
+  const dietary = useProfileStore((s) => s.dietary);
+  const allergens = useProfileStore((s) => s.allergens);
+  const setDietary = useProfileStore((s) => s.setDietary);
+  const setAllergens = useProfileStore((s) => s.setAllergens);
   const [prefs, setPrefs] = React.useState(me.notifications);
+  // An individual has no company program, no allowance and no company-set
+  // addresses — those whole cards are corporate furniture and are omitted rather
+  // than shown empty.
+  const account = useSessionStore((s) => s.account);
+  const corporate = isSubsidized(account);
+  const delivery = useSessionStore((s) => s.delivery);
+  const name = account?.name ?? me.name;
 
   function toggleDiet(d: string) {
-    setDietary((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
+    setDietary(dietary.includes(d) ? dietary.filter((x) => x !== d) : [...dietary, d]);
   }
   function setPref<K extends keyof typeof prefs>(k: K, v: (typeof prefs)[K]) {
     setPrefs((p) => ({ ...p, [k]: v }));
@@ -58,30 +73,42 @@ export function AccountView() {
 
   return (
     <div className="space-y-5">
+      {/* An individual who's since joined a company links their work email here.
+          It attaches to this same account, so history and preferences carry over. */}
+      <LinkWorkEmailCard />
+
       {/* Profile header */}
       <Card>
         <CardBody className="flex flex-wrap items-center gap-4">
-          <Avatar name={me.name} className="size-14 bg-yellow text-lg text-teal-deep" />
+          <Avatar name={name} className="size-14 bg-yellow text-lg text-teal-deep" />
           <div className="min-w-0 flex-1">
-            <h2 className="font-display text-xl font-semibold tracking-tight">{me.name}</h2>
+            <h2 className="font-display text-xl font-semibold tracking-tight">{name}</h2>
             <p className="text-[13px] text-muted-foreground">
-              {me.role} · {me.company}
+              {corporate ? `${me.role} · ${account?.company ?? me.company}` : "Individual account"}
             </p>
-            <p className="text-[13px] text-muted-foreground">{me.email}</p>
+            <p className="text-[13px] text-muted-foreground">{account?.email ?? me.email}</p>
           </div>
           <OOOHeaderButton />
         </CardBody>
       </Card>
 
-      {/* Subsidy snapshot — cutoff is split into its own card per meal style. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Company pays / day"
-          value={formatCurrency(program.subsidyPerDay)}
-          sub="Resets every service day"
-          icon={<Wallet className="size-4" />}
-          tone="teal"
-        />
+      {/* Program snapshot — the allowance tile is corporate-only; cutoffs and meal
+          limits are kitchen rules that apply to everyone. */}
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-3 sm:grid-cols-2",
+          corporate ? "lg:grid-cols-4" : "lg:grid-cols-3",
+        )}
+      >
+        {corporate ? (
+          <StatCard
+            label="Company pays / day"
+            value={formatCurrency(program.subsidyPerDay)}
+            sub="Resets every service day"
+            icon={<Wallet className="size-4" />}
+            tone="teal"
+          />
+        ) : null}
         <StatCard
           label="Meals / day"
           value={program.mealsPerDay}
@@ -154,24 +181,44 @@ export function AccountView() {
         </CardBody>
       </Card>
 
-      {/* Meal program policy (read-only) */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Your company meal program</CardTitle>
-          <Badge tone="neutral">Read-only</Badge>
-        </CardHeader>
-        <CardBody className="space-y-0">
-          <PolicyRow label="Company" value={program.company} />
-          <PolicyRow label="Subsidy model" value={program.subsidyModel} />
-          <PolicyRow label="Service days" value={program.serviceDays} />
-          <PolicyRow label="Individual order cutoff" value={program.individualSoftCutoff} />
-          <PolicyRow label="Family-style cutoff" value={program.familyCutoff} />
-          <PolicyRow label="Hard cutoff" value={program.individualHardCutoff} />
-          <PolicyRow label="Change / cancel window" value={program.changeWindow} />
-          <PolicyRow label="Delivery windows" value={program.deliveryWindows.join(" · ")} />
-          <PolicyRow label="Utensils" value={program.utensilsPolicy} />
-        </CardBody>
-      </Card>
+      {/* Meal program policy (read-only). Corporate contract terms — an individual
+          isn't on a program, so the ordering rules they *are* subject to appear on
+          their own card below rather than being dressed up as company policy. */}
+      {corporate ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Your company meal program</CardTitle>
+            <Badge tone="neutral">Read-only</Badge>
+          </CardHeader>
+          <CardBody className="space-y-0">
+            <PolicyRow label="Company" value={account?.company ?? program.company} />
+            <PolicyRow label="Subsidy model" value={program.subsidyModel} />
+            <PolicyRow label="Service days" value={program.serviceDays} />
+            <PolicyRow label="Individual order cutoff" value={program.individualSoftCutoff} />
+            <PolicyRow label="Family-style cutoff" value={program.familyCutoff} />
+            <PolicyRow label="Hard cutoff" value={program.individualHardCutoff} />
+            <PolicyRow label="Change / cancel window" value={program.changeWindow} />
+            <PolicyRow label="Delivery windows" value={program.deliveryWindows.join(" · ")} />
+            <PolicyRow label="Utensils" value={program.utensilsPolicy} />
+          </CardBody>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Ordering rules</CardTitle>
+            <Badge tone="neutral">Read-only</Badge>
+          </CardHeader>
+          <CardBody className="space-y-0">
+            <PolicyRow label="Service days" value={program.serviceDays} />
+            <PolicyRow label="Individual order cutoff" value={program.individualSoftCutoff} />
+            <PolicyRow label="Family-style cutoff" value={program.familyCutoff} />
+            <PolicyRow label="Hard cutoff" value={program.individualHardCutoff} />
+            <PolicyRow label="Change / cancel window" value={program.changeWindow} />
+            <PolicyRow label="Delivery windows" value={program.deliveryWindows.join(" · ")} />
+            <PolicyRow label="Utensils" value={program.utensilsPolicy} />
+          </CardBody>
+        </Card>
+      )}
 
       {/* Permissions (read-only) */}
       <Card>
@@ -182,16 +229,21 @@ export function AccountView() {
           </span>
         </CardHeader>
         <CardBody className="space-y-0">
-          <PermissionRow label="Invoice to company" on={me.permissions.payLater} />
+          {/* Deferring to an invoice needs a company to invoice. */}
+          {corporate ? <PermissionRow label="Invoice to company" on={me.permissions.payLater} /> : null}
           <PermissionRow label="Flexible delivery window" on={me.permissions.flexibleDelivery} />
         </CardBody>
       </Card>
 
-      {/* Addresses (view-only) */}
+      {/* Addresses (view-only). A corporate employee sees the company sites they
+          may deliver to; an individual sees the one address they gave us — edited
+          at checkout, which is the only place it's ever needed. */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Delivery addresses</CardTitle>
-          {me.permissions.editAddress ? (
+          {!corporate ? (
+            <Badge tone="neutral">Set at checkout</Badge>
+          ) : me.permissions.editAddress ? (
             <Button
               variant="ghost"
               size="sm"
@@ -204,18 +256,40 @@ export function AccountView() {
           )}
         </CardHeader>
         <CardBody className="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-          {addresses.map((a) => (
-            <div key={a.id} className="flex items-start gap-3 py-3">
+          {corporate ? (
+            addresses.map((a) => (
+              <div key={a.id} className="flex items-start gap-3 py-3">
+                <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
+                <div className="min-w-0 flex-1 text-[13px]">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{a.name}</span>
+                    {a.id === me.defaultAddressId ? <Badge tone="success">Default</Badge> : null}
+                  </div>
+                  <div className="text-muted-foreground">{a.address}</div>
+                </div>
+              </div>
+            ))
+          ) : delivery.street ? (
+            <div className="flex items-start gap-3 py-3">
               <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
               <div className="min-w-0 flex-1 text-[13px]">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">{a.name}</span>
-                  {a.id === me.defaultAddressId ? <Badge tone="success">Default</Badge> : null}
+                <div className="font-semibold">
+                  {delivery.street}
+                  {delivery.apt ? `, ${delivery.apt}` : ""}
                 </div>
-                <div className="text-muted-foreground">{a.address}</div>
+                <div className="text-muted-foreground">
+                  {[delivery.city, delivery.zip].filter(Boolean).join(" ")}
+                </div>
+                {delivery.phone ? (
+                  <div className="mt-0.5 text-2xs text-muted-foreground">{delivery.phone}</div>
+                ) : null}
               </div>
             </div>
-          ))}
+          ) : (
+            <p className="py-3 text-[13px] text-muted-foreground">
+              You&apos;ll add a delivery address when you check out.
+            </p>
+          )}
         </CardBody>
       </Card>
 
@@ -368,5 +442,47 @@ function PrefRow({
       </span>
       <ToggleSwitch checked={on} onCheckedChange={onChange} aria-label={label} />
     </div>
+  );
+}
+
+/**
+ * The "individual who later joins a company" path.
+ *
+ * Linking a work email attaches a company membership to the *existing* account
+ * rather than forking a second one — order history, saved addresses and the
+ * dietary profile all carry over. Past individual orders stay individual; the
+ * subsidy applies from here on, because entitlement is a property of the
+ * session's company, not of the person.
+ */
+function LinkWorkEmailCard() {
+  const account = useSessionStore((s) => s.account);
+  const [open, setOpen] = React.useState(false);
+
+  // Nothing to offer a guest (they have no account to attach to) or someone
+  // whose company is already verified.
+  if (!account || account.kind === "corporate") return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Does your company cover lunch?</CardTitle>
+        <Badge tone="neutral">Individual</Badge>
+      </CardHeader>
+      <CardBody>
+        {open ? (
+          <IdentityFlow onDone={() => setOpen(false)} />
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">
+              Link your work email to apply your company&apos;s subsidy to future orders. Your
+              existing orders and preferences stay exactly as they are.
+            </p>
+            <Button variant="teal" onClick={() => setOpen(true)}>
+              <Building2 className="size-4" /> Link work email
+            </Button>
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }

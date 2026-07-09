@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { me } from "@/data/me";
+import type { AutoConfig } from "@/features/auto-order/shared";
 
 /**
  * Bridges the Auto-Order dashboard's controls up to the global Topbar, so the
@@ -17,6 +19,14 @@ export interface AutoOrderHeader {
 }
 
 interface AutoOrderHeaderState {
+  /**
+   * The live Auto-Order config. It lives here rather than in the page because
+   * the page unmounts on every navigation — once it's set up, leaving and
+   * coming back must land on the dashboard, not the intro. Only turning it off
+   * returns the status to "inactive".
+   */
+  config: AutoConfig;
+  setConfig: (config: AutoConfig) => void;
   header: AutoOrderHeader | null;
   setHeader: (header: AutoOrderHeader | null) => void;
   /** Contextual page title for the auto-order route (null = default). */
@@ -29,6 +39,12 @@ interface AutoOrderHeaderState {
 }
 
 export const useAutoOrderStore = create<AutoOrderHeaderState>((set) => ({
+  config: {
+    status: me.autoOrder.enabled ? "active" : "inactive",
+    favorites: me.autoOrder.favorites,
+    soldOut: "notify",
+  },
+  setConfig: (config) => set({ config }),
   header: null,
   setHeader: (header) => set({ header }),
   navTitle: null,

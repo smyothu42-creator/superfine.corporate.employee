@@ -4,9 +4,9 @@ import * as React from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { addDays, fromISODate, toISODate, sameDay, startOfToday, isServiceDay, formatDay } from "@/lib/dates";
+import { addDays, fromISODate, toISODate, sameDay, startOfToday, isServiceDay, formatDay, weekdayOffset } from "@/lib/dates";
 
-const COLS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const COLS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 /** Hover bubble explaining why a day is closed. Lives on the (enabled) cell
  *  wrapper so it reveals on group-hover even over a disabled day button. */
@@ -39,7 +39,7 @@ interface DateRangeModalProps {
 
 function monthMatrix(year: number, month: number): (Date | null)[] {
   const first = new Date(year, month, 1);
-  const lead = (first.getDay() + 6) % 7; // 0 = Monday
+  const lead = weekdayOffset(first);
   const days = new Date(year, month + 1, 0).getDate();
   const cells: (Date | null)[] = Array.from({ length: lead }, () => null);
   for (let d = 1; d <= days; d++) cells.push(new Date(year, month, d));

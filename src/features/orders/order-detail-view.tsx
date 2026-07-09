@@ -12,11 +12,12 @@ import {
   CalendarDays,
   Clock,
   CreditCard,
-  ExternalLink,
+  MessageSquare,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OrderStatusBadge, OrderTimeline } from "@/components/orders/order-status";
+import { FeedbackModal } from "@/components/orders/feedback-modal";
 import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
 import { useChangeOrder } from "./use-change-order";
 import { FoodPhoto } from "@/components/menu/food-photo";
@@ -197,9 +198,9 @@ export function OrderDetailView({ order }: { order: Order }) {
 }
 
 function FeedbackCard({ orderId }: { orderId: string }) {
-  // The feedback form lives outside the app — link out to it, pre-tagged with
-  // this order so the kitchen knows which meal it's about.
-  const feedbackUrl = `https://superfinekitchen.com/feedback?order=${encodeURIComponent(orderId)}`;
+  // In-platform feedback form — opens a lightweight rating/comment sheet tagged
+  // to this order so the kitchen knows which meal it's about.
+  const [open, setOpen] = React.useState(false);
 
   return (
     <Card>
@@ -211,12 +212,11 @@ function FeedbackCard({ orderId }: { orderId: string }) {
           Tell us how {orderId} was — the meal, portion, freshness or delivery. The kitchen reads
           every note.
         </p>
-        <Button asChild size="sm">
-          <a href={feedbackUrl} target="_blank" rel="noopener noreferrer">
-            Share your feedback <ExternalLink className="size-4" />
-          </a>
+        <Button size="sm" onClick={() => setOpen(true)}>
+          <MessageSquare className="size-4" /> Share your feedback
         </Button>
       </CardBody>
+      {open ? <FeedbackModal orderId={orderId} onClose={() => setOpen(false)} /> : null}
     </Card>
   );
 }
