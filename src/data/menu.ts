@@ -44,7 +44,6 @@ export const INDIVIDUAL_OPTION_GROUPS: AddOnGroup[] = [
     select: "single",
     required: false,
     options: [
-      { id: "none", name: "None", price: 0 },
       { id: "garlic-bread", name: "Garlic Bread", price: 1.5 },
       { id: "rice", name: "Rice", price: 1 },
       { id: "napkins", name: "Extra Napkins", price: 0 },
@@ -200,7 +199,7 @@ export const menu: MenuItem[] = [
     name: "Veggie Bibimbap",
     category: "Mains",
     cuisine: "Korean",
-    description: "Rice, seasoned vegetables, gochujang — choose a protein",
+    description: "Rice, seasoned vegetables, gochujang. Choose a protein",
     proteinType: "Vegetarian",
     allergens: "soy, sesame",
     tags: ["Vegetarian"],

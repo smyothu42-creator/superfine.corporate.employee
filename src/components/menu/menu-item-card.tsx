@@ -125,9 +125,12 @@ export function MenuItemCard({
   // and the description sit tightly together as the card's focal cluster.
   const primary = (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h3 className="truncate font-display text-base font-semibold leading-tight">{item.name}</h3>
+      <div className="flex items-start justify-between gap-2">
+        {/* Wrap, don't truncate: the phone text column is ~200px, and a
+            truncated name next to a Popular badge reads as "Pane…". Names get
+            two lines and the badges drop below when the row is tight. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <h3 className="line-clamp-2 font-display text-base font-semibold leading-tight">{item.name}</h3>
           {promoBadges}
         </div>
         {showPrice ? (
@@ -152,7 +155,7 @@ export function MenuItemCard({
           </span>
         ) : null}
       </div>
-      <p className="mt-1 line-clamp-1 text-[13px] leading-snug text-muted-foreground">
+      <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-muted-foreground sm:line-clamp-1">
         {item.description}
       </p>
     </>
@@ -172,7 +175,7 @@ export function MenuItemCard({
   // collides with the "+" / select control in the bottom-right corner.
   const photoInner = (
     <>
-      <FoodPhoto src={item.image} alt={item.name} className="size-28 rounded-xl" iconClassName="size-8" />
+      <FoodPhoto src={item.image} alt={item.name} className="size-full rounded-xl" iconClassName="size-8" />
       {inCart > 0 ? (
         <span className="absolute left-1.5 top-1.5 flex min-w-[20px] items-center justify-center rounded-full bg-coral px-1.5 text-2xs font-bold text-white shadow ring-2 ring-card">
           {inCart}
@@ -206,7 +209,7 @@ export function MenuItemCard({
           {primary}
           {meta}
         </div>
-        <div className="relative size-28 shrink-0 self-center">
+        <div className="relative size-24 shrink-0 self-center sm:size-28">
           {photoInner}
           <span
             className={cn(
@@ -238,8 +241,8 @@ export function MenuItemCard({
         {meta}
       </div>
 
-      <div className="relative size-28 shrink-0 self-center">
-        <Link href={`/menu/${item.id}`} className="block">
+      <div className="relative size-24 shrink-0 self-center sm:size-28">
+        <Link href={`/menu/${item.id}`} className="block h-full">
           {photoInner}
         </Link>
 
@@ -255,7 +258,7 @@ export function MenuItemCard({
                   ? `Set guests and quantities for ${item.name}`
                   : `Choose options for ${item.name}`
             }
-            className="absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
+            className="touch-target absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
           >
             <ActionIcon className="size-4" />
           </button>
@@ -267,7 +270,7 @@ export function MenuItemCard({
               onAdd?.();
             }}
             aria-label={editing ? `Change to ${item.name}` : `Add ${item.name}`}
-            className="absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
+            className="touch-target absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
           >
             <ActionIcon className="size-4" />
           </button>

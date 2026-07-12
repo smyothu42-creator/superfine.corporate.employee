@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, LogIn } from "lucide-react";
-import { NAV_ITEMS, isActive } from "@/lib/nav";
+import { NAV_ITEMS, isActive, visibleNav } from "@/lib/nav";
 import { useUiStore } from "@/store/use-ui-store";
 import { useSessionStore } from "@/store/use-session-store";
 import { Logo } from "@/components/brand/logo";
@@ -50,7 +50,7 @@ function Sidebar({ onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 space-y-2.5 overflow-y-auto px-3 py-1">
-        {NAV_ITEMS.map((item) => {
+        {visibleNav(NAV_ITEMS, account).map((item) => {
           const active = isActive(pathname, item) && !(editing && item.href === "/menu");
           const Icon = item.icon;
           return (

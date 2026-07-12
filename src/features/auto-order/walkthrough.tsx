@@ -138,7 +138,7 @@ function TourModal({ onExit }: { onExit: () => void }) {
       />
       <div
         className={cn(
-          "relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
+          "relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
           shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",
         )}
       >
@@ -146,7 +146,7 @@ function TourModal({ onExit }: { onExit: () => void }) {
           type="button"
           onClick={onExit}
           aria-label="Close"
-          className="absolute right-4 top-4 z-10 rounded-full border border-border bg-card/80 p-1.5 text-muted-foreground backdrop-blur hover:bg-muted"
+          className="absolute right-4 top-4 z-10 rounded-full border border-border bg-card/80 touch-target p-1.5 text-muted-foreground backdrop-blur hover:bg-muted"
         >
           <X className="size-4" />
         </button>

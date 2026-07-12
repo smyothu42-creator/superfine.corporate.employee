@@ -82,7 +82,7 @@ export function ChangeOrderDialog({
       />
       <div
         className={cn(
-          "relative flex max-h-[80vh] w-full max-w-[460px] flex-col rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
+          "relative flex max-h-[80dvh] w-full max-w-[460px] flex-col rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
           shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",
         )}
       >
@@ -95,7 +95,7 @@ export function ChangeOrderDialog({
                   type="button"
                   onClick={() => setCustomizing(null)}
                   aria-label="Back"
-                  className="-ml-1 mt-0.5 rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+                  className="-ml-1 mt-0.5 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
                 >
                   <ChevronLeft className="size-4" />
                 </button>
@@ -113,7 +113,7 @@ export function ChangeOrderDialog({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+              className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
             >
               <X className="size-4" />
             </button>

@@ -127,7 +127,7 @@ export function cutoffInfo(
     : state === "urgent"
       ? urgencyLabel
       : state === "soon"
-        ? `Closing soon — ${verb} by ${cutoffTime} ${cutoffDayLong}`
+        ? `Closing soon: ${verb} by ${cutoffTime} ${cutoffDayLong}`
         : type === "family_style"
           ? `Order by ${cutoffShort}`
           : `Order by ${cutoffTime} ${cutoffDayLong}`;

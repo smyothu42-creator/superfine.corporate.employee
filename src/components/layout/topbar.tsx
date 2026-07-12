@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Menu,
@@ -8,15 +9,12 @@ import {
   Wallet,
   AlertTriangle,
   ChevronDown,
-  Clock,
-  CheckCircle2,
-  XCircle,
   CheckCheck,
   Repeat,
   Ban,
   BookOpen,
-  Percent,
   ArrowLeftRight,
+  Apple,
 } from "lucide-react";
 import { NAV_ITEMS, isActive } from "@/lib/nav";
 import { companyCovers, employeeCovers, budgetRemaining } from "@/lib/subsidy";
@@ -29,8 +27,6 @@ import { useNotificationsStore } from "@/store/use-notifications-store";
 import { Button } from "@/components/ui/button";
 import { program } from "@/data/program";
 import { toast } from "@/store/use-toast-store";
-import { cutoffFor, demoNow } from "@/lib/cutoff";
-import { fromISODate, formatDay } from "@/lib/dates";
 import { formatCurrency, cn } from "@/lib/utils";
 
 const TITLE_OVERRIDES: Record<string, string> = {
@@ -79,24 +75,35 @@ function Topbar() {
   const onOrders = pathname === "/orders";
   const onCheckout = pathname === "/checkout";
   const onNotifications = pathname === "/notifications";
+  const onMenu = pathname === "/menu";
   // Pages where the subsidy + cart header actions don't apply.
-  const hideHeaderActions = pathname === "/account" || pathname === "/cart";
+  const hideHeaderActions =
+    pathname === "/account" || pathname === "/cart" || pathname === "/feedback";
 
   // Today's budget for the day the menu is ordering for.
   const dayTotal = activeOrderDate ? cart.dayTotal(activeOrderDate) : 0;
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background px-4 sm:px-6">
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <button
           type="button"
           onClick={toggleMobileNav}
           aria-label="Open navigation"
-          className="-ml-1 rounded-full border border-border bg-card p-2 text-foreground hover:bg-muted lg:hidden"
+          className="touch-target -ml-1 shrink-0 rounded-full border border-border bg-card p-2 text-foreground hover:bg-muted lg:hidden"
         >
           <Menu className="size-5" />
         </button>
-        <h1 className="font-display text-lg font-semibold tracking-tight">{title}</h1>
+        <h1 className="truncate font-display text-lg font-semibold tracking-tight">{title}</h1>
+        {/* Nutrition lookup — a quiet link beside the Menu title. */}
+        {onMenu ? (
+          <Link
+            href="/nutrition"
+            className="hidden items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-2xs font-semibold text-primary transition-colors hover:bg-teal-wash sm:inline-flex"
+          >
+            <Apple className="size-3.5" /> Look up nutrition info
+          </Link>
+        ) : null}
         {onAutoOrder && autoHeader ? (
           <span className="hidden items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-2xs font-semibold text-foreground sm:flex">
             <Repeat className="size-3.5 text-primary" />
@@ -106,7 +113,7 @@ function Topbar() {
         ) : null}
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         {onAutoOrder ? (
           /* Auto-Order: the wizard shows "See how it works"; the live dashboard
              shows Edit / Turn off auto order. */
@@ -125,8 +132,9 @@ function Topbar() {
           /* Orders: no header action — out-of-office lives in Account & Profile. */
           null
         ) : onCheckout ? (
-          /* Checkout: per-day cutoff indicator instead of subsidy + cart. */
-          <CheckoutCutoffIndicator />
+          /* Checkout: no header action — the on-page "Cutoff check" card already
+             covers per-day cutoffs. */
+          null
         ) : onNotifications ? (
           /* Notifications: unread count + mark all read. */
           <NotificationsHeaderControl />
@@ -145,7 +153,7 @@ function Topbar() {
                 aria-expanded={cartOpen}
                 aria-label={`Cart${cartCount ? `, ${cartCount} items` : ""}`}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full border text-sm font-semibold transition-colors",
+                  "touch-target flex items-center gap-1.5 rounded-full border text-sm font-semibold transition-colors",
                   cartOpen
                     ? "border-primary bg-teal-wash text-teal-deep"
                     : "border-border bg-card text-foreground hover:bg-muted",
@@ -214,74 +222,6 @@ function NotificationsHeaderControl() {
 }
 
 /* ----------------------------------------------------------------------- */
-/* Checkout cutoff indicator — pill + hover/focus per-day cutoff dropdown     */
-/* ----------------------------------------------------------------------- */
-
-function CheckoutCutoffIndicator() {
-  const cart = useCartStore();
-  const dates = cart.dates();
-  if (!dates.length) return null;
-
-  const now = demoNow().getTime();
-  const days = dates.map((date) => ({ date, passed: cutoffFor(date).getTime() - now <= 0 }));
-  const passed = days.filter((d) => d.passed).length;
-  const open = days.length - passed;
-  const anyPassed = passed > 0;
-
-  return (
-    <div className="group relative">
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        className={cn(
-          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold outline-none transition-colors",
-          anyPassed
-            ? "border-danger-border bg-danger-bg text-danger"
-            : "border-info-border bg-info-bg text-info",
-        )}
-      >
-        {anyPassed ? <AlertTriangle className="size-3.5" /> : <Clock className="size-3.5" />}
-        <span className="nums">
-          {anyPassed
-            ? `${passed} past cutoff`
-            : `${open} ${open === 1 ? "day" : "days"} within cutoff`}
-        </span>
-        <ChevronDown className="size-3.5 opacity-70 transition-transform group-hover:rotate-180" />
-      </button>
-
-      <div
-        role="dialog"
-        aria-label="Order cutoffs"
-        className="pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-64 origin-top-right rounded-2xl border border-border bg-card p-4 text-foreground opacity-0 shadow-lg transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
-      >
-        <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <Clock className="size-3.5 text-primary" /> Order cutoffs
-        </div>
-        <div className="mt-3 space-y-1.5">
-          {days.map((d) => (
-            <div key={d.date} className="flex items-center justify-between gap-2 text-[13px]">
-              <span className="font-medium">{formatDay(fromISODate(d.date))}</span>
-              {d.passed ? (
-                <span className="flex items-center gap-1 font-semibold text-danger">
-                  <XCircle className="size-3.5" /> Passed
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 font-semibold text-success">
-                  <CheckCircle2 className="size-3.5" /> Open
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 rounded-xl bg-muted px-3 py-2 text-2xs text-muted-foreground">
-          Each day closes at its day-before cutoff. Past-cutoff days are cancelled automatically.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* ----------------------------------------------------------------------- */
 /* Budget indicator — pill trigger + hover/focus breakdown dropdown          */
 /* ----------------------------------------------------------------------- */
 
@@ -340,9 +280,8 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
         >
           {over ? (
             <AlertTriangle className="size-3.5" />
-          ) : percentMode ? (
-            <Percent className="size-3.5" />
           ) : (
+            // Both subsidy models share the wallet icon on the pill.
             <Wallet className="size-3.5" />
           )}
           <span className="nums">{label}</span>
@@ -388,9 +327,9 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
 
           <div className="mt-3 rounded-xl bg-muted px-3 py-2 text-2xs text-muted-foreground">
             {percentMode
-              ? `${program.company} covers ${pct}% of every order — no daily cap. Your ${100 - pct}% share grows with the order.`
+              ? `${program.company} covers ${pct}% of every order with no daily cap. Your ${100 - pct}% share grows with the order.`
               : over
-                ? `Over the ${formatCurrency(allowance)} allowance — the extra ${formatCurrency(youCover)} is charged to you.`
+                ? `Over the ${formatCurrency(allowance)} allowance. The extra ${formatCurrency(youCover)} is charged to you.`
                 : `${formatCurrency(remaining)} of your ${formatCurrency(allowance)} allowance left · resets daily.`}
           </div>
         </div>
@@ -401,7 +340,7 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
         onClick={toggleMode}
         aria-label={`Demo: switch to the ${percentMode ? "fixed daily allowance" : "percentage share"} subsidy model`}
         title="Demo: switch subsidy model"
-        className="rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <ArrowLeftRight className="size-3.5" />
       </button>

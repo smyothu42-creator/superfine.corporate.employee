@@ -108,7 +108,7 @@ export function MenuStep({
           type="button"
           onClick={onBack}
           aria-label="Back to calendar"
-          className="rounded-full border border-border bg-card p-1.5 text-foreground hover:bg-muted"
+          className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
         >
           <ChevronLeft className="size-4" />
         </button>
@@ -171,7 +171,7 @@ export function MenuStep({
       </div>
       {cutoff ? (
         <div className="rounded-xl border border-danger-border bg-danger-bg px-3 py-2 text-2xs font-semibold text-danger">
-          Cutoff passed — this day won&apos;t be ordered. You can still plan it, or deselect it in review.
+          Cutoff passed. This day won&apos;t be ordered. You can still plan it, or deselect it in review.
         </div>
       ) : null}
 
@@ -244,7 +244,7 @@ export function MenuStep({
                             type="button"
                             aria-label={`Remove one ${item.name}`}
                             onClick={() => onRemoveLast(activeDate, item.id)}
-                            className="flex size-8 items-center justify-center rounded-full border-2 border-primary text-primary hover:bg-teal-wash"
+                            className="flex size-11 items-center justify-center rounded-full sm:size-8 border-2 border-primary text-primary hover:bg-teal-wash"
                           >
                             <Minus className="size-4" />
                           </button>
@@ -253,7 +253,7 @@ export function MenuStep({
                             type="button"
                             aria-label={`Add one ${item.name}`}
                             onClick={() => handlePlus(item)}
-                            className="flex size-8 items-center justify-center rounded-full bg-coral text-white hover:bg-coral-deep disabled:opacity-40"
+                            className="flex size-11 items-center justify-center rounded-full sm:size-8 bg-coral text-white hover:bg-coral-deep disabled:opacity-40"
                           >
                             <Plus className="size-4" />
                           </button>
@@ -264,7 +264,7 @@ export function MenuStep({
                           aria-label={`Add ${item.name}`}
                           disabled={disabled}
                           onClick={() => handlePlus(item)}
-                          className="flex size-9 items-center justify-center rounded-full bg-coral text-white shadow-sm transition-colors hover:bg-coral-deep disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+                          className="flex size-11 items-center justify-center rounded-full sm:size-9 bg-coral text-white shadow-sm transition-colors hover:bg-coral-deep disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
                         >
                           <Plus className="size-5" />
                         </button>

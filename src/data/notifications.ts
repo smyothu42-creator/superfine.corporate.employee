@@ -25,7 +25,7 @@ export const notifications: AppNotification[] = [
   {
     id: "n-2",
     type: "confirmation",
-    title: "Order confirmed — ORD-2891",
+    title: "Order confirmed · ORD-2891",
     body: "Superfine Kitchen confirmed your order for Mon, Jun 29. Fully covered by Neptune Corp.",
     time: "Sat, 4:12 PM",
     read: false,
@@ -41,7 +41,7 @@ export const notifications: AppNotification[] = [
   {
     id: "n-4",
     type: "change",
-    title: "Order updated — ORD-2890",
+    title: "Order updated · ORD-2890",
     body: "Added Sumac fries to your Tue, Jun 30 order. You can keep editing until cutoff.",
     time: "Fri, 9:41 AM",
     read: true,
@@ -57,7 +57,7 @@ export const notifications: AppNotification[] = [
   {
     id: "n-6",
     type: "confirmation",
-    title: "Delivered — ORD-2885",
+    title: "Delivered · ORD-2885",
     body: "Your BBQ Brisket Bowl was delivered Wed, Jun 24. Enjoy! Tap to leave feedback.",
     time: "Wed, 12:05 PM",
     read: true,

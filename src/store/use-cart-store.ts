@@ -218,6 +218,10 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: "sfk:cart",
+      // Read localStorage after mount, never during the first render — the
+      // server has no cart, so a synchronously-restored one makes React find a
+      // badge in the DOM that the server never wrote. `StoreHydrator` does it.
+      skipHydration: true,
       // Only the contents. The selectors are functions, and prices are re-derived
       // from the live session on every read — a persisted subsidised total would
       // otherwise survive a sign-out.

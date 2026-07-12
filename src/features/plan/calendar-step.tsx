@@ -100,7 +100,7 @@ export function CalendarStep({
             onClick={() => shiftMonth(-1)}
             disabled={view === "week"}
             aria-label="Previous month"
-            className="rounded-full border border-border bg-card p-1.5 text-foreground hover:bg-muted disabled:opacity-40"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted disabled:opacity-40"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -110,7 +110,7 @@ export function CalendarStep({
             onClick={() => shiftMonth(1)}
             disabled={view === "week"}
             aria-label="Next month"
-            className="rounded-full border border-border bg-card p-1.5 text-foreground hover:bg-muted disabled:opacity-40"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted disabled:opacity-40"
           >
             <ChevronRight className="size-4" />
           </button>
@@ -156,7 +156,7 @@ export function CalendarStep({
                 aria-pressed={isSel}
                 aria-label={date.toDateString()}
                 className={cn(
-                  "relative flex aspect-square flex-col items-center justify-center rounded-xl border text-sm transition-colors",
+                  "relative flex aspect-square min-h-11 flex-col items-center justify-center rounded-xl border text-sm transition-colors",
                   isSel
                     ? "border-primary bg-primary font-bold text-primary-foreground"
                     : disabled
@@ -216,12 +216,13 @@ export function CalendarStep({
 
       {Object.keys(HOLIDAYS).length ? (
         <p className="text-2xs text-muted-foreground">
-          Note: {Object.values(HOLIDAYS)[0]} is a company holiday — no service that day.
+          Note: {Object.values(HOLIDAYS)[0]} is a company holiday. No service that day.
         </p>
       ) : null}
 
-      {/* Sticky footer */}
-      <div className="sticky bottom-0 -mx-1 flex items-center justify-between gap-3 border-t border-border bg-card/95 px-1 py-3 backdrop-blur">
+      {/* Sticky footer — on phones it clears the fixed bottom tab bar (which
+          would otherwise cover it); on lg+ there is no tab bar to clear. */}
+      <div className="sticky bottom-[calc(var(--tab-bar-h)+env(safe-area-inset-bottom,0px))] -mx-1 flex items-center justify-between gap-3 border-t border-border bg-card/95 px-1 py-3 backdrop-blur lg:bottom-0">
         <span className="text-sm font-semibold">
           {selected.length} {selected.length === 1 ? "day" : "days"} selected
         </span>

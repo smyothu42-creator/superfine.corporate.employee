@@ -8,13 +8,22 @@ import { addDays, fromISODate, toISODate, sameDay, startOfToday, isServiceDay, f
 
 const COLS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
-/** Hover bubble explaining why a day is closed. Lives on the (enabled) cell
- *  wrapper so it reveals on group-hover even over a disabled day button. */
-function DayTooltip({ reason }: { reason: string }) {
+/**
+ * Bubble explaining why a day is closed. Lives on the (enabled) cell wrapper so
+ * it reveals on group-hover even over a disabled day button.
+ *
+ * `open` is the touch path: a finger has no hover, and a disabled button fires
+ * no click, so the wrapper takes the tap and pins the bubble open. Without it
+ * the reason a day can't be picked is simply unreadable on a phone.
+ */
+function DayTooltip({ reason, open }: { reason: string; open: boolean }) {
   return (
     <span
       role="tooltip"
-      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-40 -translate-x-1/2 rounded-lg bg-foreground px-2.5 py-1.5 text-center text-2xs font-medium leading-snug text-background shadow-raised group-hover:block"
+      className={cn(
+        "pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 w-40 -translate-x-1/2 rounded-lg bg-foreground px-2.5 py-1.5 text-center text-2xs font-medium leading-snug text-background shadow-raised group-hover:block",
+        open ? "block" : "hidden",
+      )}
     >
       {reason}
       <span className="absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-foreground" />
@@ -69,6 +78,8 @@ export function DateRangeModal({
   const [start, setStart] = React.useState<string>(initialStart ?? "");
   const [end, setEnd] = React.useState<string>(initialEnd ?? "");
   const [hovered, setHovered] = React.useState<string>("");
+  /** ISO of the closed day whose reason is pinned open by a tap. "" = none. */
+  const [revealed, setRevealed] = React.useState<string>("");
   const anchor = fromISODate(initialStart || todayISO);
   const [cursor, setCursor] = React.useState(() => ({ y: anchor.getFullYear(), m: anchor.getMonth() }));
 
@@ -142,7 +153,7 @@ export function DateRangeModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -153,7 +164,7 @@ export function DateRangeModal({
             type="button"
             onClick={() => shiftMonth(-1)}
             aria-label="Previous month"
-            className="rounded-full border border-border bg-card p-1.5 hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 hover:bg-muted"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -162,7 +173,7 @@ export function DateRangeModal({
             type="button"
             onClick={() => shiftMonth(1)}
             aria-label="Next month"
-            className="rounded-full border border-border bg-card p-1.5 hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 hover:bg-muted"
           >
             <ChevronRight className="size-4" />
           </button>
@@ -199,12 +210,17 @@ export function DateRangeModal({
             return (
               <div
                 key={iso}
+                // The disabled button below is `pointer-events-none`, so a tap on
+                // a closed day lands here and toggles its reason.
+                onClick={() => disabled && info?.reason && setRevealed((r) => (r === iso ? "" : iso))}
                 className={cn(
                   "relative flex items-center justify-center py-0.5",
                   disabled && info?.reason && "group",
                 )}
               >
-                {disabled && info?.reason ? <DayTooltip reason={info.reason} /> : null}
+                {disabled && info?.reason ? (
+                  <DayTooltip reason={info.reason} open={revealed === iso} />
+                ) : null}
                 {/* Continuous range band — never drawn on weekends, so a range
                     that spans Sat/Sun visibly skips them. */}
                 {inMiddle && !disabled ? <span className="absolute inset-y-0.5 inset-x-0 bg-teal-wash" /> : null}
@@ -222,7 +238,10 @@ export function DateRangeModal({
                     disabled && info?.reason ? `${date.toDateString()}, ${info.reason}` : date.toDateString()
                   }
                   className={cn(
-                    "relative z-10 flex size-9 items-center justify-center rounded-full text-sm transition-colors",
+                    "relative z-10 flex size-11 items-center justify-center rounded-full text-sm transition-colors sm:size-9",
+                    // A disabled button swallows the tap and fires no event, so
+                    // let it through to the wrapper that shows the reason.
+                    disabled && "pointer-events-none",
                     isEndpoint
                       ? "bg-primary font-semibold text-primary-foreground"
                       : cutoffClosed
@@ -243,7 +262,7 @@ export function DateRangeModal({
         </div>
 
         <p className="mt-3 text-2xs text-muted-foreground">
-          Weekends (Sat &amp; Sun) are off — pick any weekday, Mon through Fri.
+          Weekends (Sat &amp; Sun) are off. Pick any weekday, Mon through Fri.
         </p>
 
         <div className="mt-4 flex gap-2">

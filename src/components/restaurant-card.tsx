@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Utensils, Plus, Minus, Leaf, Wheat, ShieldCheck, Sparkles, ChevronDown, ExternalLink } from "lucide-react";
+import { Utensils, Plus, Minus, Leaf, Wheat, ShieldCheck, Sparkles, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
@@ -45,7 +45,7 @@ function MenuItemCard({
 }: MenuItemCardProps) {
   const showStepper = quantity !== undefined && onQuantityChange;
   const [open, setOpen] = React.useState(false);
-  const hasDetail = detailed && (item.ingredients || item.nutrition);
+  const hasDetail = detailed && Boolean(item.ingredients);
 
   return (
     <div
@@ -129,7 +129,7 @@ function MenuItemCard({
             className="flex items-center gap-1 text-2xs font-semibold uppercase tracking-[0.08em] text-primary"
           >
             <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
-            {open ? "Hide details" : "Ingredients & nutrition"}
+            {open ? "Hide details" : "Ingredients"}
           </button>
           {open ? (
             <div className="mt-2 space-y-3">
@@ -139,16 +139,6 @@ function MenuItemCard({
                   <p className="mt-0.5 text-[13px] text-muted-foreground">{item.ingredients}</p>
                 </div>
               ) : null}
-              {/* Full macros are hosted externally — link out instead of an inline breakdown. */}
-              <a
-                href={`https://superfinekitchen.com/nutrition/${item.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[13px] font-semibold text-primary hover:underline"
-              >
-                Nutritional info
-                <ExternalLink className="size-3.5" />
-              </a>
             </div>
           ) : null}
         </div>

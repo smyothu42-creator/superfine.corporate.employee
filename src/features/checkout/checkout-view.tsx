@@ -17,9 +17,7 @@ import {
   XCircle,
   AlertTriangle,
   Tag,
-  Building2,
   ArrowRight,
-  User as UserIcon,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -199,7 +197,7 @@ export function CheckoutView() {
     setPromo({ code, ...def });
     setPromoError("");
     setPromoInput("");
-    toast.success("Promo applied", `${code} — ${def.label}`);
+    toast.success("Promo applied", `${code}: ${def.label}`);
   }
 
   function removePromo() {
@@ -212,7 +210,7 @@ export function CheckoutView() {
     cart.setPayment(resolvedPayment);
     toast.success(
       "Order placed",
-      finalOwed === 0 ? "Fully covered — confirmation on its way." : "Confirmation on its way.",
+      finalOwed === 0 ? "Fully covered. Confirmation on its way." : "Confirmation on its way.",
     );
     setPlaced(true);
     cart.clear();
@@ -226,19 +224,13 @@ export function CheckoutView() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          {/* Identity — the one place the flow asks who you are. A guest gets it
-              first, because everything below (subsidy, address rules, payment)
-              depends on the answer.
-
-              A corporate employee signed in at /login, so the question is already
-              answered and the subsidy is already on every price they've seen. Ask
-              nothing, confirm nothing: the sidebar shows who they are, and the
-              summary already itemises what their company covers. */}
-          {corporate ? null : account ? (
-            <IdentitySummary account={account} />
-          ) : (
+          {/* Identity — a guest is asked who they are first, because everything
+              below (subsidy, address rules, payment) depends on the answer.
+              Once signed in — corporate or individual — the sidebar already shows
+              who they are, so we don't repeat it with an "Ordering as" card. */}
+          {!corporate && !account ? (
             <IdentityGate onOpen={() => setIdentityOpen(true)} />
-          )}
+          ) : null}
 
           {/* Cutoff check */}
           <Card>
@@ -247,7 +239,7 @@ export function CheckoutView() {
                 <CardTitle>Cutoff check</CardTitle>
                 <span className="inline-flex items-center gap-1 text-2xs font-medium leading-snug text-warning">
                   <AlertTriangle className="size-3 shrink-0 -translate-y-px" />
-                  Order by each day&apos;s cutoff — individual meals 4 PM the day before, family style 72 h ahead — or that day is cancelled automatically.
+                  Order by each day&apos;s cutoff (individual meals 4 PM the day before, family style 72 h ahead) or that day is cancelled automatically.
                 </span>
               </div>
             </CardHeader>
@@ -290,7 +282,7 @@ export function CheckoutView() {
                       type="button"
                       onClick={() => setAddressOpen(true)}
                       aria-label="Change delivery address"
-                      className="shrink-0 rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      className="shrink-0 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     >
                       <Pencil className="size-4" />
                     </button>
@@ -308,12 +300,15 @@ export function CheckoutView() {
           {/* Delivery time — one common time for all days, editable per day in a modal */}
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-              <div className="flex items-center gap-4">
+              {/* The title and the select are both unshrinkable; without wrap
+                  they overflow the card at 375px. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <span className="flex items-center gap-2 whitespace-nowrap font-display text-base font-semibold tracking-tight">
                   <CalendarDays className="size-4 text-primary" /> Delivery windows
                 </span>
                 {me.permissions.flexibleDelivery ? (
-                  <div className="w-44 shrink-0 sm:w-56">
+                  // w-52 fits "12:00 PM – 12:30 PM" without truncating.
+                  <div className="w-52 shrink-0 sm:w-56">
                     <ThemeSelect
                       value={commonWindow}
                       onValueChange={applyCommonWindow}
@@ -374,7 +369,7 @@ export function CheckoutView() {
                         active={effectivePayment === "pay_later"}
                         onClick={() => setPayment("pay_later")}
                         title="Add to my company invoice"
-                        subtitle="Added to your company's monthly invoice — nothing to pay now"
+                        subtitle="Added to your company's monthly invoice. Nothing to pay now"
                       />
                     ) : null}
                     <PayOption
@@ -388,7 +383,7 @@ export function CheckoutView() {
               )}
               <Notice tone="info" className="text-xs">
                 <Lock className="inline size-3.5" /> Your order locks in and{" "}
-                <strong>payment is taken 24 hours before delivery</strong> — never before. You can edit
+                <strong>payment is taken 24 hours before delivery</strong>, never before. You can edit
                 until then.
               </Notice>
             </CardBody>
@@ -495,7 +490,7 @@ export function CheckoutView() {
                     ? "Add a delivery address to continue"
                     : "Place order"}
               </Button>
-              <Button asChild variant="ghost" block>
+              <Button asChild variant="ghost" block size="lg">
                 <Link href="/cart">Back to cart</Link>
               </Button>
             </CardBody>
@@ -700,7 +695,7 @@ function AddressModal({ onClose }: { onClose: () => void }) {
       />
       <div
         className={cn(
-          "relative w-full max-w-md rounded-3xl bg-card p-5 shadow-raised transition-all duration-200",
+          "relative flex max-h-[85dvh] w-full max-w-md flex-col overflow-y-auto rounded-3xl bg-card p-5 shadow-raised transition-all duration-200",
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
         )}
       >
@@ -715,7 +710,7 @@ function AddressModal({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -806,53 +801,6 @@ function IdentityGate({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-/**
- * Once identified, show *why* the total looks the way it does. A corporate user
- * whose bill just dropped by $35 between the cart and here needs that explained
- * — an unexplained price change reads as a bug, or worse, a bait-and-switch.
- */
-function IdentitySummary({ account }: { account: Account }) {
-  const cart = useCartStore();
-  const signOut = useSessionStore((s) => s.signOut);
-  const corporate = account.kind === "corporate";
-  const subsidy = cart.totalSubsidy();
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Ordering as</CardTitle>
-        <Button size="sm" variant="ghost" onClick={signOut}>
-          Not you?
-        </Button>
-      </CardHeader>
-      <CardBody className="space-y-3">
-        <div className="flex items-center gap-3">
-          <span
-            className={cn(
-              "flex size-10 shrink-0 items-center justify-center rounded-2xl",
-              corporate ? "bg-teal-wash text-primary" : "bg-muted text-muted-foreground",
-            )}
-          >
-            {corporate ? <Building2 className="size-5" /> : <UserIcon className="size-5" />}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{account.name ?? account.email}</p>
-            <p className="truncate text-2xs text-muted-foreground">
-              {corporate ? `${account.company} · verified` : "Individual order"}
-            </p>
-          </div>
-        </div>
-
-        {corporate && subsidy > 0 ? (
-          <Notice tone="success">
-            <strong>{account.company}</strong> covers {formatCurrency(subsidy)} of this order. Prices
-            below were re-checked against your company&apos;s program.
-          </Notice>
-        ) : null}
-      </CardBody>
-    </Card>
-  );
-}
 
 /* ---------------------------------------------------------------------- */
 /* Edit order — the cart, shown as a modal with a pinned bottom summary     */
@@ -890,7 +838,7 @@ function EditOrderModal({ onClose }: { onClose: () => void }) {
       />
       <div
         className={cn(
-          "relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-card shadow-raised transition-all duration-200",
+          "relative flex max-h-[85dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-card shadow-raised transition-all duration-200",
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
         )}
       >
@@ -900,7 +848,7 @@ function EditOrderModal({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -983,7 +931,9 @@ function PerDayTimeModal({
       />
       <div
         className={cn(
-          "relative flex w-full max-w-md flex-col rounded-3xl bg-card shadow-raised transition-all duration-200",
+          // A week-long plan is seven rows; without a cap the sheet grows past
+          // the viewport and pushes Done off the bottom of a phone.
+          "relative flex max-h-[85dvh] w-full max-w-md flex-col rounded-3xl bg-card shadow-raised transition-all duration-200",
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
         )}
       >
@@ -996,22 +946,25 @@ function PerDayTimeModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        <div className="space-y-3 p-5">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
           {dates.map((date) => {
             const win = cart.windows[date] ?? commonWindow;
             return (
               <div key={date} className="flex items-center justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
-                <span className="flex items-center gap-2 whitespace-nowrap text-base font-semibold">
-                  <CalendarDays className="size-4 text-primary" />
+                {/* "Wednesday, Jul 15" beside a 176px select overflows a 375px
+                    sheet if neither can give. The label truncates; the select
+                    narrows. */}
+                <span className="flex min-w-0 items-center gap-2 truncate text-base font-semibold">
+                  <CalendarDays className="size-4 shrink-0 text-primary" />
                   {formatDay(fromISODate(date))}
                 </span>
-                <div className="w-44 shrink-0 sm:w-56">
+                <div className="w-36 shrink-0 sm:w-56">
                   <ThemeSelect
                     value={win}
                     onValueChange={(v) => cart.setWindow(date, v)}
@@ -1050,34 +1003,44 @@ function Confirmation({
   const email = account?.email ?? me.email;
 
   return (
-    <Card>
-      <CardBody className="flex flex-col items-center gap-4 py-14 text-center">
-        <span className="flex size-16 items-center justify-center rounded-full bg-success-bg text-success">
-          <CheckCircle2 className="size-9" />
+    <Card className="overflow-hidden">
+      <CardBody className="flex flex-col items-center gap-5 px-6 py-12 text-center sm:py-14">
+        {/* Success mark with a soft layered halo. */}
+        <span className="relative flex size-20 items-center justify-center">
+          <span className="absolute inset-0 rounded-full bg-success-bg" />
+          <span className="absolute inset-[0.55rem] rounded-full bg-success/15" />
+          <CheckCircle2 className="relative size-10 text-success" />
         </span>
-        <div>
+
+        <div className="space-y-2.5">
           <h2 className="font-display text-2xl font-semibold tracking-tight">Order confirmed 🎉</h2>
-          <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-muted-foreground">
-            Order <strong>#ORD-2892</strong> is in. We&apos;ve emailed your confirmation to{" "}
-            <strong>{email}</strong>.{" "}
-            {corporate && owed === 0 ? (
-              <>This order is fully covered by {account?.company ?? me.company} — nothing to pay.</>
-            ) : corporate && payment === "pay_later" ? (
-              <>The {formatCurrency(owed)} balance will appear on your company invoice.</>
-            ) : (
-              <>Your card on file will be charged {formatCurrency(owed)} 24 hours before delivery.</>
-            )}
-          </p>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-2xs font-bold uppercase tracking-wide text-foreground nums">
+            Order #ORD-2892
+          </span>
         </div>
+
+        <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
+          We&apos;ve emailed your confirmation to{" "}
+          <strong className="font-semibold text-foreground">{email}</strong>.{" "}
+          {corporate && owed === 0 ? (
+            <>This order is fully covered by {account?.company ?? me.company}. Nothing to pay.</>
+          ) : corporate && payment === "pay_later" ? (
+            <>The {formatCurrency(owed)} balance will appear on your company invoice.</>
+          ) : (
+            <>Your card on file will be charged {formatCurrency(owed)} 24 hours before delivery.</>
+          )}
+        </p>
+
         <Notice tone="info" className="max-w-md text-left text-xs">
           <Mail className="inline size-3.5" /> You&apos;ll get one email now, and a heads-up the day before
-          delivery — no surprise &quot;payment taken&quot; emails.
+          delivery. No surprise &quot;payment taken&quot; emails.
         </Notice>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button asChild>
+
+        <div className="grid w-full max-w-md grid-cols-1 gap-2.5 pt-1 sm:grid-cols-2">
+          <Button asChild block size="lg">
             <Link href="/orders">Track my orders</Link>
           </Button>
-          <Button asChild variant="outline">
+          <Button asChild block size="lg" variant="outline">
             <Link href="/menu">Order more</Link>
           </Button>
         </div>
@@ -1209,7 +1172,7 @@ function PromoField({
           type="button"
           onClick={onRemove}
           aria-label={`Remove promo code ${promo.code}`}
-          className="shrink-0 rounded-full p-1 text-success/80 transition-colors hover:bg-success/10 hover:text-success"
+          className="touch-target shrink-0 rounded-full p-1 text-success/80 transition-colors hover:bg-success/10 hover:text-success"
         >
           <X className="size-3.5" />
         </button>
@@ -1239,7 +1202,7 @@ function PromoField({
           aria-label="Promo code"
           autoCapitalize="characters"
           spellCheck={false}
-          className="h-8 min-w-0 flex-1 bg-transparent text-[13px] uppercase tracking-wide text-foreground outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground/70"
+          className="h-9 min-w-0 flex-1 bg-transparent text-base uppercase tracking-wide text-foreground outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground/70 sm:h-8 sm:text-[13px]"
         />
         <Button size="sm" variant="teal" onClick={onApply} disabled={!value.trim()}>
           Apply

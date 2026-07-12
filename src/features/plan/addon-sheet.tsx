@@ -104,13 +104,13 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        <div className="mt-4 max-h-[50vh] space-y-4 overflow-y-auto">
+        <div className="mt-4 max-h-[50dvh] space-y-4 overflow-y-auto">
           {groups.map((g) => (
             <div key={g.id}>
               <div className="mb-2 flex items-center justify-between">

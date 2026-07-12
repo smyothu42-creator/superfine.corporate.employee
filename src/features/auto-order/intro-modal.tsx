@@ -86,7 +86,7 @@ export function AutoOrderIntroModal() {
             type="button"
             onClick={dismiss}
             aria-label="Close"
-            className="absolute right-4 top-4 rounded-full bg-white/40 p-1.5 text-teal-deep hover:bg-white/60"
+            className="absolute right-4 top-4 rounded-full bg-white/40 touch-target p-1.5 text-teal-deep hover:bg-white/60"
           >
             <X className="size-4" />
           </button>

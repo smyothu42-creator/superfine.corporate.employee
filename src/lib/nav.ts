@@ -5,8 +5,10 @@ import {
   Bell,
   UserCog,
   ShoppingBag,
+  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
+import { isSubsidized, type Account } from "@/store/use-session-store";
 
 export type NavItem = {
   label: string;
@@ -14,6 +16,8 @@ export type NavItem = {
   icon: LucideIcon;
   /** Extra path prefixes that should keep this item highlighted. */
   match?: string[];
+  /** Only shown to subsidized (corporate) accounts, e.g. Auto-Order. */
+  corporateOnly?: boolean;
 };
 
 /**
@@ -25,8 +29,10 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Menu", href: "/menu", icon: UtensilsCrossed, match: ["/checkout"] },
   { label: "My Orders", href: "/orders", icon: ClipboardList },
-  { label: "Auto-Order", href: "/auto-order", icon: Repeat },
+  // Auto-Order draws from a company subsidy, so it's corporate-only.
+  { label: "Auto-Order", href: "/auto-order", icon: Repeat, corporateOnly: true },
   { label: "Notifications", href: "/notifications", icon: Bell },
+  { label: "Feedback", href: "/feedback", icon: MessageSquare },
   { label: "Account & Profile", href: "/account", icon: UserCog },
 ];
 
@@ -38,9 +44,15 @@ export const MOBILE_NAV: NavItem[] = [
   { label: "Menu", href: "/menu", icon: UtensilsCrossed },
   { label: "Cart", href: "/cart", icon: ShoppingBag, match: ["/checkout"] },
   { label: "Orders", href: "/orders", icon: ClipboardList },
-  { label: "Auto", href: "/auto-order", icon: Repeat },
+  { label: "Auto", href: "/auto-order", icon: Repeat, corporateOnly: true },
   { label: "Account", href: "/account", icon: UserCog },
 ];
+
+/** Nav items visible to the given account — hides corporate-only items (e.g.
+ *  Auto-Order) from individuals and guests. */
+export function visibleNav(items: NavItem[], account: Account | null): NavItem[] {
+  return items.filter((item) => !item.corporateOnly || isSubsidized(account));
+}
 
 export function isActive(pathname: string, item: NavItem) {
   if (pathname === item.href) return true;

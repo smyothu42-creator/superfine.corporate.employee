@@ -49,7 +49,8 @@ export function CorporatePrompt() {
             Your company may cover part of the bill. Verify your work email to unlock it.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        {/* gap-2 keeps the dismiss X's 44px touch box off the primary CTA. */}
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setOpen(true)}
@@ -61,7 +62,7 @@ export function CorporatePrompt() {
             type="button"
             onClick={dismiss}
             aria-label="Dismiss"
-            className="rounded-full p-1.5 text-info/70 hover:bg-card"
+            className="rounded-full touch-target p-1.5 text-info/70 hover:bg-card"
           >
             <X className="size-4" />
           </button>

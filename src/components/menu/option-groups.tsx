@@ -74,23 +74,20 @@ export function useItemOptions(item: MenuItem, omitGroup?: (g: AddOnGroup) => bo
   };
 }
 
-/** The instruction under a group's name — what the user is being asked to do. */
-function groupHint(group: AddOnGroup) {
-  if (group.select === "single") return "Choose 1";
-  if (group.max) return `Choose up to ${group.max}`;
-  return "Choose any";
-}
-
 export function OptionGroups({
   groups,
   picked,
   onToggle,
   className,
+  showPrices = true,
 }: {
   groups: AddOnGroup[];
   picked: Record<string, string[]>;
   onToggle: (group: AddOnGroup, optionId: string) => void;
   className?: string;
+  /** Hide the per-option price badge — e.g. the nutrition lookup, where price
+      is irrelevant. Defaults to showing prices (menu/order surfaces). */
+  showPrices?: boolean;
 }) {
   if (!groups.length) return null;
 
@@ -100,18 +97,13 @@ export function OptionGroups({
         const selected = picked[group.id] ?? [];
         return (
           <section key={group.id}>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <h3 className="font-display text-sm font-semibold tracking-tight">{group.name}</h3>
-                {group.required ? (
-                  <span className="rounded-full bg-coral/10 px-2 py-0.5 text-2xs font-bold uppercase tracking-wide text-coral-deep">
-                    Required
-                  </span>
-                ) : (
-                  <span className="text-2xs font-medium text-muted-foreground">Optional</span>
-                )}
-              </div>
-              <span className="shrink-0 text-2xs text-muted-foreground">{groupHint(group)}</span>
+            {/* An unanswered required group is a question still open, not an
+                error — the button names it, so the header stays quiet. */}
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="font-display text-sm font-semibold tracking-tight">{group.name}</h3>
+              {!group.required ? (
+                <span className="text-2xs text-muted-foreground">Optional</span>
+              ) : null}
             </div>
 
             <div className="space-y-1.5">
@@ -150,11 +142,13 @@ export function OptionGroups({
                         <span className="block truncate font-medium">{cleanOptionName(option.name)}</span>
                       </span>
                     </span>
-                    {option.price > 0 ? (
-                      <span className="shrink-0 font-semibold nums">+{formatCurrency(option.price)}</span>
-                    ) : (
-                      <span className="shrink-0 text-2xs text-muted-foreground">Included</span>
-                    )}
+                    {showPrices ? (
+                      option.price > 0 ? (
+                        <span className="shrink-0 font-semibold nums">+{formatCurrency(option.price)}</span>
+                      ) : (
+                        <span className="shrink-0 font-semibold nums">$0</span>
+                      )
+                    ) : null}
                   </button>
                 );
               })}

@@ -52,7 +52,7 @@ export function IdentityModal({
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="absolute right-4 top-4 rounded-full border border-border p-1.5 text-muted-foreground hover:bg-muted"
+          className="absolute right-4 top-4 rounded-full border border-border touch-target p-1.5 text-muted-foreground hover:bg-muted"
         >
           <X className="size-4" />
         </button>

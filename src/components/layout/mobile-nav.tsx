@@ -4,9 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
-import { MOBILE_NAV, isActive } from "@/lib/nav";
+import { MOBILE_NAV, isActive, visibleNav } from "@/lib/nav";
 import { Sidebar } from "./sidebar";
 import { useUiStore } from "@/store/use-ui-store";
+import { useSessionStore } from "@/store/use-session-store";
 import { cn } from "@/lib/utils";
 
 /** Slide-in drawer (full nav) used on tablet/mobile. */
@@ -49,9 +50,19 @@ function MobileDrawer() {
 /** Persistent bottom tab bar — the interview's "mobile admin" requirement. */
 function MobileTabBar() {
   const pathname = usePathname();
+  const account = useSessionStore((s) => s.account);
+  // Auto-Order is corporate-only, so individuals get a 4-tab bar, not 5.
+  const items = visibleNav(MOBILE_NAV, account);
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-card/95 backdrop-blur lg:hidden">
-      {MOBILE_NAV.map((item) => {
+    // `pb-safe` keeps the labels off the home indicator, which otherwise draws
+    // straight through them on any modern iPhone.
+    <nav
+      className={cn(
+        "pb-safe fixed inset-x-0 bottom-0 z-30 grid border-t border-border bg-card/95 backdrop-blur lg:hidden",
+        items.length === 5 ? "grid-cols-5" : "grid-cols-4",
+      )}
+    >
+      {items.map((item) => {
         const active = isActive(pathname, item);
         const Icon = item.icon;
         return (
@@ -60,7 +71,8 @@ function MobileTabBar() {
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex flex-col items-center gap-1 py-2.5 text-2xs font-semibold transition-colors",
+              // min-h-[3.25rem] + the icon puck clears Apple's 44px target.
+              "flex min-h-[3.25rem] flex-col items-center justify-center gap-1 py-2.5 text-2xs font-semibold transition-colors",
               active ? "text-primary" : "text-muted-foreground",
             )}
           >

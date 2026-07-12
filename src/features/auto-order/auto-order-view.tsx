@@ -2,11 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Repeat, UtensilsCrossed, CalendarClock, Mail, PlusCircle, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/store/use-toast-store";
 import { useAutoOrderStore } from "@/store/use-auto-order-store";
+import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { SetupWizard } from "./setup-wizard";
 import { ActiveDashboard } from "./active-dashboard";
 import { AutoOrderWalkthrough, TOUR_START_EVENT } from "./walkthrough";
@@ -14,6 +16,17 @@ import { AutoOrderWalkthrough, TOUR_START_EVENT } from "./walkthrough";
 export function AutoOrderView() {
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
+
+  // Auto-Order draws from a company subsidy, so it's corporate-only. An
+  // individual who deep-links here is sent back to the menu once the session
+  // has hydrated (before that, account is null and we don't act on it).
+  const router = useRouter();
+  const account = useSessionStore((s) => s.account);
+  const hydrated = useSessionStore((s) => s.hydrated);
+  const blocked = hydrated && !isSubsidized(account);
+  React.useEffect(() => {
+    if (blocked) router.replace("/menu");
+  }, [blocked, router]);
 
   // Held in the store, not local state: this page unmounts on every navigation,
   // so an active setup has to outlive it. Only "Stop ordering" clears it.
@@ -47,6 +60,9 @@ export function AutoOrderView() {
     setInSetup(setupOpen);
     return () => setInSetup(false);
   }, [setupOpen, setInSetup]);
+
+  // Individuals aren't eligible — render nothing while the redirect above runs.
+  if (blocked) return null;
 
   // NOTE: every branch below returns a fragment with <AutoOrderWalkthrough />
   // as the FIRST child. The shared position/type keeps the tour mounted (alive)

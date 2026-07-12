@@ -248,7 +248,7 @@ function PhoneFrame({ children, stepIndex }: { children: React.ReactNode; stepIn
             />
           ))}
         </div>
-        <div className="max-h-[78vh] overflow-y-auto px-4 pb-4 pt-3">{children}</div>
+        <div className="max-h-[78dvh] overflow-y-auto px-4 pb-4 pt-3">{children}</div>
       </div>
     </div>
   );
@@ -300,7 +300,7 @@ function ReviewStep({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="rounded-full border border-border bg-card p-1.5 text-foreground hover:bg-muted"
+          className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
         >
           <ChevronRight className="size-4 rotate-180" />
         </button>
@@ -340,12 +340,15 @@ function ReviewStep({
                     </span>
                   ) : null}
                 </span>
+                {/* Edit and Remove sit side by side, so they grow for real
+                    rather than wearing invisible 44px boxes that would overlap
+                    — a tap meant for Edit must never delete the day. */}
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => onEditDay(d)}
                     aria-label={`Edit ${d}`}
-                    className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="flex size-11 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground sm:size-8"
                   >
                     <Pencil className="size-3.5" />
                   </button>
@@ -353,7 +356,7 @@ function ReviewStep({
                     type="button"
                     onClick={() => onRemoveDay(d)}
                     aria-label={`Remove ${d}`}
-                    className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-danger"
+                    className="flex size-11 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-danger sm:size-8"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -483,7 +486,7 @@ function CheckoutStep({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="rounded-full border border-border bg-card p-1.5 text-foreground hover:bg-muted"
+          className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
         >
           <ChevronRight className="size-4 rotate-180" />
         </button>
@@ -544,10 +547,10 @@ function CheckoutStep({
         </div>
       ) : corporate ? (
         <Notice tone="success">
-          Fully covered by {program.company}. No payment needed — just confirm.
+          Fully covered by {program.company}. No payment needed. Just confirm.
         </Notice>
       ) : (
-        <Notice tone="info">Nothing to pay yet — add meals to a day to continue.</Notice>
+        <Notice tone="info">Nothing to pay yet. Add meals to a day to continue.</Notice>
       )}
 
       <Button variant="teal" block size="lg" disabled={placing} onClick={onConfirm}>
@@ -624,7 +627,7 @@ function ConfirmationStep({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">{formatDayLong(fromISODate(d))}</p>
                 <p className={cn("text-2xs font-semibold", cut ? "text-danger" : "text-success")}>
-                  {cut ? "Cutoff passed — not ordered" : "Confirmed"}
+                  {cut ? "Cutoff passed · not ordered" : "Confirmed"}
                 </p>
               </div>
             </div>
@@ -635,7 +638,7 @@ function ConfirmationStep({
       {cutoffDays.length ? (
         <Notice tone="warning">
           <AlertTriangle className="inline size-3.5" /> We did <strong>not</strong> charge or order the
-          skipped day{cutoffDays.length === 1 ? "" : "s"} — no silent confirmations here.
+          skipped day{cutoffDays.length === 1 ? "" : "s"}. No silent confirmations here.
         </Notice>
       ) : null}
 

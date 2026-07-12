@@ -107,7 +107,7 @@ export function DateMultiModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -118,7 +118,7 @@ export function DateMultiModal({
             type="button"
             onClick={() => shiftMonth(-1)}
             aria-label="Previous month"
-            className="rounded-full border border-border bg-card p-1.5 hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 hover:bg-muted"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -127,7 +127,7 @@ export function DateMultiModal({
             type="button"
             onClick={() => shiftMonth(1)}
             aria-label="Next month"
-            className="rounded-full border border-border bg-card p-1.5 hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 hover:bg-muted"
           >
             <ChevronRight className="size-4" />
           </button>
@@ -159,7 +159,7 @@ export function DateMultiModal({
                   aria-pressed={isSelected}
                   aria-label={date.toDateString()}
                   className={cn(
-                    "relative z-10 flex size-9 items-center justify-center rounded-full text-sm transition-colors",
+                    "relative z-10 flex size-11 items-center justify-center rounded-full text-sm sm:size-9 transition-colors",
                     isSelected
                       ? "bg-primary font-semibold text-primary-foreground"
                       : disabled

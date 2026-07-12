@@ -5,6 +5,7 @@ import { Star, X, ImagePlus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Label } from "@/components/ui/input";
 import { toast } from "@/store/use-toast-store";
+import { useFeedbackStore } from "@/store/use-feedback-store";
 import { cn } from "@/lib/utils";
 
 const RATING_WORDS = ["", "Poor", "Fair", "Good", "Great", "Loved it"];
@@ -23,6 +24,7 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
   const [description, setDescription] = React.useState("");
   const [photo, setPhoto] = React.useState<{ url: string; name: string } | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const submitFeedback = useFeedbackStore((s) => s.submit);
 
   React.useEffect(() => {
     const id = requestAnimationFrame(() => setShown(true));
@@ -61,6 +63,15 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
 
   function submit() {
     if (!canSubmit) return;
+    // A real, signed-in order — records to the same admin store as the public
+    // form, resolving as verified since the order number exists.
+    submitFeedback({
+      orderNumber: orderId,
+      rating,
+      review: [title.trim(), description.trim()].filter(Boolean).join(". "),
+      photoName: photo?.name ?? null,
+      source: "past-order",
+    });
     toast.success("Thanks for your feedback", `Your ${rating}-star review of ${orderId} was sent to the kitchen.`);
     onClose();
   }
@@ -80,7 +91,7 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
       />
       <div
         className={cn(
-          "relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-200 sm:rounded-3xl",
+          "relative flex max-h-[90dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-200 sm:rounded-3xl",
           shown ? "translate-y-0 sm:scale-100 sm:opacity-100" : "translate-y-full sm:translate-y-0 sm:scale-95 sm:opacity-0",
         )}
       >
@@ -88,14 +99,14 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
           <div>
             <h3 className="font-display text-lg font-semibold tracking-tight">How was it?</h3>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              A quick note on {orderId} — the kitchen reads every one.
+              A quick note on {orderId}. The kitchen reads every one.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -113,7 +124,10 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
                   aria-pressed={rating === n}
                   onMouseEnter={() => setHover(n)}
                   onClick={() => setRating(n)}
-                  className="rounded-full p-1 transition-transform hover:scale-110"
+                  // Real padding, not a `touch-target` overlay: five stars in a
+                  // row would give each an invisible box overlapping its
+                  // neighbours, and a tap meant for 4 would register as 5.
+                  className="rounded-full p-1.5 transition-transform hover:scale-110"
                 >
                   <Star
                     className={cn(
@@ -176,7 +190,7 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
                   type="button"
                   onClick={removePhoto}
                   aria-label="Remove photo"
-                  className="shrink-0 rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted hover:text-danger"
+                  className="shrink-0 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted hover:text-danger"
                 >
                   <X className="size-4" />
                 </button>

@@ -16,7 +16,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
  */
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-background">
+    // `dvh`, not `vh`: mobile Safari's `100vh` is the height with the URL bar
+    // *hidden*, so a `min-h-screen` page is always taller than what you can see
+    // and the last row hides under the browser chrome until you scroll.
+    <div className="flex min-h-dvh bg-background">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-full focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground focus:shadow-raised"
@@ -25,7 +28,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </a>
 
       {/* Desktop rail */}
-      <aside aria-label="Primary" className="sticky top-0 hidden h-screen shrink-0 lg:block">
+      <aside aria-label="Primary" className="sticky top-0 hidden h-dvh shrink-0 lg:block">
         <Sidebar />
       </aside>
 
@@ -37,7 +40,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 px-4 py-6 pb-24 outline-none sm:px-6 lg:px-8 lg:pb-6"
+          // `pb-tab-bar` reserves the tab bar's height *plus* the home-indicator
+          // inset, so the last card on a page is always reachable.
+          className="pb-tab-bar flex-1 px-4 py-6 outline-none sm:px-6 lg:px-8"
         >
           {/* No transform/animation on this wrapper: a `transform` here (the old
               `animate-fade-in` used translateY) makes it the containing block for

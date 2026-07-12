@@ -56,6 +56,8 @@ interface SessionState {
   clearZip: () => void;
   setDelivery: (delivery: DeliveryDetails) => void;
   signIn: (account: Account) => void;
+  /** Rename the signed-in account (edited from Account & Profile). No-op for guests. */
+  setAccountName: (name: string) => void;
   signOut: () => void;
   markHydrated: () => void;
 }
@@ -92,6 +94,8 @@ export const useSessionStore = create<SessionState>()(
           // Carry the phone the individual just gave us into the address form.
           delivery: account.phone ? { ...s.delivery, phone: account.phone } : s.delivery,
         })),
+      setAccountName: (name) =>
+        set((s) => (s.account ? { account: { ...s.account, name } } : {})),
       // The ZIP survives sign-out: it isn't identity, and re-asking is friction.
       // The address does not — it belongs to the person who just left.
       signOut: () => set((s) => ({ account: null, delivery: { ...emptyDelivery, zip: s.zip } })),
@@ -99,6 +103,10 @@ export const useSessionStore = create<SessionState>()(
     }),
     {
       name: "sfk:session",
+      // Read localStorage after mount, never during the first render, or the
+      // server's signed-out markup and the client's restored session disagree
+      // and React throws a hydration error. `StoreHydrator` triggers the read.
+      skipHydration: true,
       // `hydrated` is derived, never stored — persisting it would make a cold
       // load claim it had already read a store it hasn't.
       partialize: (s) => ({

@@ -23,6 +23,7 @@ import { useChangeOrder } from "./use-change-order";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { program } from "@/data/program";
+import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
 import { fromISODate, formatDay } from "@/lib/dates";
@@ -39,6 +40,8 @@ export function OrderDetailView({ order }: { order: Order }) {
   const router = useRouter();
   const active = ["draft", "confirmed"].includes(order.status);
   const editable = active && !order.locked;
+  // Individuals pay retail — no subsidy line, and "covered" never applies.
+  const corporate = isSubsidized(useSessionStore((s) => s.account));
   // Same change-order popup + "Select from full menu" hand-off as the list page.
   const { startChange, sheets } = useChangeOrder(order);
 
@@ -153,17 +156,31 @@ export function OrderDetailView({ order }: { order: Order }) {
             <CardBody className="space-y-2">
               <div className="flex items-center gap-2 text-[13px]">
                 <CreditCard className="size-4 text-muted-foreground" />
-                {PAYMENT_LABEL[order.payment]}
+                {/* "Fully covered by company" can't apply to an individual. */}
+                {!corporate && order.payment === "covered"
+                  ? PAYMENT_LABEL.pay_now
+                  : PAYMENT_LABEL[order.payment]}
               </div>
               {program.showPrices ? (
-                <div className="space-y-1 pt-1 text-[13px]">
-                  <Row label="Meals total" value={formatCurrency(order.subtotal)} />
-                  <Row label="Company pays" value={`−${formatCurrency(order.subsidy)}`} tone="success" />
-                  <div className="flex items-center justify-between border-t border-border pt-1.5 font-semibold">
-                    <span>You paid</span>
-                    <span className="nums">{formatCurrency(order.employeePaid)}</span>
+                corporate ? (
+                  <div className="space-y-1 pt-1 text-[13px]">
+                    <Row label="Meals total" value={formatCurrency(order.subtotal)} />
+                    <Row label="Company pays" value={`−${formatCurrency(order.subsidy)}`} tone="success" />
+                    <div className="flex items-center justify-between border-t border-border pt-1.5 font-semibold">
+                      <span>You paid</span>
+                      <span className="nums">{formatCurrency(order.employeePaid)}</span>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  // Individuals: no subsidy, so a single "You paid" line at the
+                  // full meals total.
+                  <div className="pt-1 text-[13px]">
+                    <div className="flex items-center justify-between font-semibold">
+                      <span>You paid</span>
+                      <span className="nums">{formatCurrency(order.subtotal)}</span>
+                    </div>
+                  </div>
+                )
               ) : null}
             </CardBody>
           </Card>
@@ -209,7 +226,7 @@ function FeedbackCard({ orderId }: { orderId: string }) {
       </CardHeader>
       <CardBody className="space-y-3">
         <p className="text-[13px] text-muted-foreground">
-          Tell us how {orderId} was — the meal, portion, freshness or delivery. The kitchen reads
+          Tell us how {orderId} was: the meal, portion, freshness or delivery. The kitchen reads
           every note.
         </p>
         <Button size="sm" onClick={() => setOpen(true)}>

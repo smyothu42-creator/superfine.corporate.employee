@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { X, Plus, Minus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -156,7 +157,11 @@ export function FamilyStyleModal({
     onConfirm(guests, servings, total);
   }
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  // Portalled to <body> so a transformed/overflow ancestor in the menu tree can't
+  // become the containing block for this `fixed` overlay and clip its top edge.
+  return createPortal(
     <div
       className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
       role="dialog"
@@ -164,7 +169,7 @@ export function FamilyStyleModal({
       aria-label={`Configure ${item.name} for ${dateLabel}`}
     >
       <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[92vh] w-full flex-col rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl">
+      <div className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl">
         <div className="flex items-start justify-between gap-3 border-b border-border p-5">
           <div className="min-w-0">
             <h2 className="font-display text-lg font-semibold tracking-tight">
@@ -178,7 +183,7 @@ export function FamilyStyleModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -186,7 +191,7 @@ export function FamilyStyleModal({
 
         <div className="flex-1 space-y-6 overflow-y-auto p-5">
           {/* Headcount sets the price and every serving total below it. */}
-          <section className="flex items-center justify-between gap-3">
+          <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3">
             <div className="min-w-0">
               <h3 className="font-display text-sm font-semibold tracking-tight">
                 Quantity
@@ -201,7 +206,7 @@ export function FamilyStyleModal({
                 aria-label="Decrease quantity"
                 disabled={guests <= minGuests}
                 onClick={() => changeGuests(guests - 1)}
-                className="flex size-9 items-center justify-center rounded-full border border-border bg-card hover:bg-muted disabled:opacity-30"
+                className="flex size-11 items-center justify-center rounded-full sm:size-9 border border-border bg-card hover:bg-muted disabled:opacity-30"
               >
                 <Minus className="size-4" />
               </button>
@@ -212,7 +217,7 @@ export function FamilyStyleModal({
                 type="button"
                 aria-label="Increase quantity"
                 onClick={() => changeGuests(guests + 1)}
-                className="flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep"
+                className="flex size-11 items-center justify-center rounded-full sm:size-9 bg-primary text-primary-foreground hover:bg-teal-deep"
               >
                 <Plus className="size-4" />
               </button>
@@ -290,7 +295,8 @@ export function FamilyStyleModal({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -346,7 +352,7 @@ function ServingGroupPicker({
               "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-bold nums",
               balanced
                 ? "bg-success-bg text-success"
-                : "bg-coral/10 text-coral-deep",
+                : "bg-success-bg/60 text-success",
             )}
           >
             {balanced ? <Check className="size-3" /> : null}
@@ -363,10 +369,10 @@ function ServingGroupPicker({
             <div
               key={option.id}
               className={cn(
-                "rounded-xl border p-2.5 transition-colors",
+                "rounded-xl border p-3 transition-colors",
                 qty > 0
                   ? "border-primary bg-teal-wash"
-                  : "border-border bg-card",
+                  : "border-border bg-card hover:bg-muted/50",
               )}
             >
               <div className="flex items-center justify-between gap-3">
@@ -375,7 +381,7 @@ function ServingGroupPicker({
                     {option.name}
                   </p>
                   {option.upchargePerServing > 0 ? (
-                    <p className="mt-0.5 text-2xs font-semibold text-coral-deep">
+                    <p className="mt-0.5 text-2xs font-semibold text-foreground">
                       +{formatCurrency(option.upchargePerServing)} each
                     </p>
                   ) : null}
@@ -387,7 +393,7 @@ function ServingGroupPicker({
                     aria-label={`Fewer ${option.name}`}
                     disabled={qty === 0}
                     onClick={() => onSetQty(option.id, qty - 1)}
-                    className="flex size-8 items-center justify-center rounded-full border border-border bg-card hover:bg-muted disabled:opacity-30"
+                    className="flex size-11 items-center justify-center rounded-full sm:size-8 border border-border bg-card hover:bg-muted disabled:opacity-30"
                   >
                     <Minus className="size-3.5" />
                   </button>
@@ -410,7 +416,7 @@ function ServingGroupPicker({
                     // from a sibling, and picking that victim isn't ours to do.
                     disabled={!optional && remaining <= 0}
                     onClick={() => onSetQty(option.id, qty + 1)}
-                    className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep disabled:opacity-30"
+                    className="flex size-11 items-center justify-center rounded-full sm:size-8 bg-primary text-primary-foreground hover:bg-teal-deep disabled:opacity-30"
                   >
                     <Plus className="size-3.5" />
                   </button>

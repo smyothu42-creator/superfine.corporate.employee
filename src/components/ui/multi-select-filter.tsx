@@ -30,6 +30,23 @@ export function MultiSelectFilter({
 }: MultiSelectFilterProps) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+  const btnRef = React.useRef<HTMLButtonElement>(null);
+  // On phones the panel is `fixed` and clamped to the viewport — anchored
+  // `absolute` panels overhang the screen edge when the pill sits near it.
+  const [mobilePos, setMobilePos] = React.useState<{ top: number; left: number } | null>(null);
+
+  function toggleOpen() {
+    if (!open && btnRef.current && window.matchMedia("(max-width: 639px)").matches) {
+      const r = btnRef.current.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      const w = 224; // panel width (w-56)
+      const anchored = align === "right" ? r.right - w : r.left;
+      setMobilePos({ top: r.bottom + 8, left: Math.min(Math.max(8, anchored), vw - w - 8) });
+    } else {
+      setMobilePos(null);
+    }
+    setOpen((o) => !o);
+  }
 
   React.useEffect(() => {
     if (!open) return;
@@ -56,11 +73,12 @@ export function MultiSelectFilter({
   return (
     <div ref={ref} className={cn("relative inline-flex shrink-0", className)}>
       <button
+        ref={btnRef}
         type="button"
         aria-label={props["aria-label"] ?? label}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         className={cn(
           "flex h-9 items-center gap-1.5 rounded-full pl-3.5 pr-2.5 text-[13px] font-semibold text-teal-deep transition-colors",
           count > 0 ? "bg-teal-wash" : "hover:bg-teal-wash",
@@ -79,9 +97,12 @@ export function MultiSelectFilter({
         <div
           role="listbox"
           aria-multiselectable
+          style={mobilePos ?? undefined}
           className={cn(
-            "absolute top-full z-50 mt-2 max-h-72 w-56 overflow-auto rounded-2xl border border-border bg-card p-1.5 shadow-raised",
-            align === "right" ? "right-0" : "left-0",
+            "z-50 max-h-72 w-56 overflow-auto rounded-2xl border border-border bg-card p-1.5 shadow-raised",
+            mobilePos
+              ? "fixed"
+              : cn("absolute top-full mt-2", align === "right" ? "right-0" : "left-0"),
           )}
         >
           {options.map((opt) => {

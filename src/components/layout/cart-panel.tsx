@@ -46,13 +46,14 @@ export function CartPanel() {
           <span className="rounded-full bg-coral px-1.5 text-2xs font-bold text-white">{count}</span>
         ) : null}
       </h2>
-      <div className="flex items-center gap-1.5">
+      {/* gap-2 so the two icons' 44px touch boxes don't overlap on a phone. */}
+      <div className="flex items-center gap-2">
         <Link
           href="/cart"
           onClick={close}
           aria-label="Open cart as full page"
           title="View as full page"
-          className="rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Maximize2 className="size-4" />
         </Link>
@@ -60,7 +61,7 @@ export function CartPanel() {
           type="button"
           onClick={close}
           aria-label="Close cart"
-          className="rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X className="size-4" />
         </button>
@@ -103,8 +104,10 @@ export function CartPanel() {
         <aside
           aria-label="Cart"
           className={cn(
-            "fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-background shadow-raised transition-transform duration-300 ease-out",
-            open ? "translate-x-0" : "translate-x-full",
+            "fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-background transition-transform duration-300 ease-out",
+            // Shadow only while open — offscreen at translate-x-full its blur
+            // still bleeds back into the viewport as a grey strip on the right.
+            open ? "translate-x-0 shadow-raised" : "translate-x-full",
           )}
         >
           {header}

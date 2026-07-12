@@ -24,7 +24,7 @@ export const program: MealProgram = {
   familyMinPeople: 8,
   changeWindow: "Up to 48 hours before delivery",
   deliveryWindows: ["11:30 AM – 12:00 PM", "12:00 PM – 12:30 PM", "12:30 PM – 1:00 PM"],
-  utensilsPolicy: "Optional — you choose per order",
+  utensilsPolicy: "Optional. You choose per order",
   pricingTier: "L1 Standard",
   excludedCategories: [],
 };

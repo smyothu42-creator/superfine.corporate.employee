@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
 
 /**
- * Entry point. There is one door: sign in with your corporate email and
- * password. No ZIP question, no browse-first path — every price in the app is a
- * company-subsidised price, so there is nothing to show before we know who you
- * are.
+ * There is no landing page. It only ever offered three doors — browse, sign in,
+ * sign up — and `/login` already holds all three, so the extra screen was one
+ * more click in front of every one of them.
  */
-export default function HomePage() {
+export default function RootPage() {
   redirect("/login");
 }

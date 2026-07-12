@@ -2,11 +2,11 @@ import { create } from "zustand";
 import { me } from "@/data/me";
 
 /**
- * The employee's editable dietary profile, as shown on the account page.
- *
- * Deliberately NOT wired into the menu's filter chips: the menu opens unfiltered
- * so a first visit shows the whole menu rather than a silently narrowed one. This
- * records what the employee told us, not what the menu is currently showing.
+ * The user's editable dietary profile, shared by Account & Profile and the
+ * menu's filter chips. Both surfaces read and write this store, so the Dietary
+ * preferences on the account page and the menu's Dietary / Allergens filters
+ * always mirror each other — editing either updates the other. Applies to every
+ * account type (individual or corporate); it isn't gated on the session.
  */
 interface ProfileState {
   /** Dietary preferences to REQUIRE, e.g. Vegetarian. */

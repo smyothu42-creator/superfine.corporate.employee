@@ -43,7 +43,8 @@ import {
   isFamilyStyle,
 } from "@/data/menu";
 import { program } from "@/data/program";
-import { useSessionStore, isSubsidized } from "@/store/use-session-store";
+import { useSessionStore } from "@/store/use-session-store";
+import { useProfileStore } from "@/store/use-profile-store";
 import { CorporatePrompt } from "@/components/auth/corporate-prompt";
 import { useCartStore } from "@/store/use-cart-store";
 import { useUiStore } from "@/store/use-ui-store";
@@ -117,12 +118,13 @@ export function MenuView() {
   // Branded category tag (e.g. "Stack, Wrap & Roll"). "" = All.
   const [category, setCategory] = React.useState("");
   // Two distinct filters: allergens to AVOID (hide matches) and dietary
-  // preferences to REQUIRE (show only matches). Both start empty, so the menu
-  // opens showing everything we sell. Seeding them from the saved profile hid
-  // most of the menu behind chips the user never set on this visit, which reads
-  // as a short menu rather than a filtered one.
-  const [allergens, setAllergens] = React.useState<string[]>([]);
-  const [diets, setDiets] = React.useState<string[]>([]);
+  // preferences to REQUIRE (show only matches). Both are backed by the shared
+  // profile store, so the menu's chips and Account & Profile's Dietary
+  // preferences always mirror each other — editing one updates the other.
+  const allergens = useProfileStore((s) => s.allergens);
+  const setAllergens = useProfileStore((s) => s.setAllergens);
+  const diets = useProfileStore((s) => s.dietary);
+  const setDiets = useProfileStore((s) => s.setDietary);
 
   // Individual meals open the option sheet; family packages open the headcount +
   // quantity configurator. They are never the same sheet.
@@ -344,10 +346,17 @@ export function MenuView() {
       );
     }
     if (priceMax) items = items.filter((i) => i.price <= Number(priceMax));
-    // Allergens: hide anything containing one the user is avoiding.
-    if (allergens.length) items = items.filter((i) => !itemHasAnyAllergen(i, allergens));
-    // Dietary: show only items matching every selected preference.
-    if (diets.length) items = items.filter((i) => diets.every((d) => (i.tags as string[]).includes(d)));
+    // Two independent dietary systems, applied in priority order:
+    //  1. Allergens (negative) — an item containing ANY avoided allergen is
+    //     hidden outright. This is checked FIRST and always wins, so a dish that
+    //     matches every dietary preference is still hidden if it has an allergen.
+    //  2. Dietary preferences (positive) — with any selected, show ONLY items
+    //     whose tags include ALL of them. None selected = show everything.
+    items = items.filter((i) => {
+      if (allergens.length && itemHasAnyAllergen(i, allergens)) return false;
+      if (diets.length && !diets.every((d) => (i.tags as string[]).includes(d))) return false;
+      return true;
+    });
     return items;
   }, [day, menuType, category, availableCategories, query, priceMax, allergens, diets]);
 
@@ -435,8 +444,8 @@ export function MenuView() {
         iso === todayISO
           ? "Same-day ordering is closed"
           : menuType === "family_style"
-            ? "Order cutoff passed — family-style closes 72 hours before delivery"
-            : "Order cutoff passed — closes 4 PM the day before delivery";
+            ? "Order cutoff passed. Family-style closes 72 hours before delivery"
+            : "Order cutoff passed. Closes 4 PM the day before delivery";
       return { selectable: false, cutoff: true, reason };
     }
     return { selectable: true, cutoff: false, reason: "" };
@@ -499,7 +508,7 @@ export function MenuView() {
           if (dropped.length) {
             toast.warning(
               `${dropped.length === 1 ? "Meal isn't" : "Meals aren't"} available on ${dayLabel}`,
-              `${dropped.join(", ")} — this meal is not available for the selected date. Please choose another meal.`,
+              `${dropped.join(", ")}. This meal is not available for the selected date. Please choose another meal.`,
             );
           } else if (cart.itemsForDate(iso).length > 0) {
             toast.success("Date updated", `Your order now delivers ${dayLabel}.`);
@@ -526,7 +535,9 @@ export function MenuView() {
   );
 
   return (
-    <div className="space-y-5 pb-4">
+    // Extra room on phones for the floating "Review cart" bar, which sits above
+    // the tab bar and would otherwise cover the last menu card.
+    <div className="space-y-5 pb-16 lg:pb-4">
       {/* Lets a corporate employee who came in through the general flow claim
           their subsidy before they judge the menu on retail prices. */}
       <CorporatePrompt />
@@ -550,8 +561,8 @@ export function MenuView() {
           <div>
             <h2 className="font-display text-xl font-semibold tracking-tight">Choose a replacement meal</h2>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              Pick a new meal for <strong className="text-foreground">{editingOrder.dateLabel}</strong> —
-              you&apos;ll confirm the change.
+              Pick a new meal for <strong className="text-foreground">{editingOrder.dateLabel}</strong>.
+              You&apos;ll confirm the change.
             </p>
           </div>
         ) : (
@@ -563,12 +574,8 @@ export function MenuView() {
               <h2 className="font-display text-xl font-semibold tracking-tight">
                 {firstName ? `Hi ${firstName}, what` : "What"} would you like to eat?
               </h2>
-              {/* Only a verified employee is told what their company pays. To a
-                  guest this line would be someone else's contract. */}
               <p className="mt-0.5 text-[13px] text-muted-foreground">
-                {isSubsidized(account)
-                  ? `${account?.company} pays ${formatCurrency(program.subsidyPerDay)} a day.`
-                  : "Fresh, globally inspired lunches — delivered daily."}
+                Fresh, globally inspired lunches delivered daily.
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2.5 md:flex-nowrap md:justify-end">
@@ -585,9 +592,13 @@ export function MenuView() {
           </div>
         )}
 
-        {/* Filter bar — search + Allergens / Dietary / Price, separated by
-            vertical dividers. */}
-        <div className="mt-4 flex items-center gap-1 rounded-full border border-border bg-card p-1.5 shadow-sm">
+        {/* Filter bar — search + Allergens / Dietary / Price.
+            On a phone the three filter pills are ~287px of fixed, unshrinkable
+            width, so they can't share a row with the search box — it collapses
+            to a sliver. Search takes its own row and the pills scroll under it.
+            From `sm` up, `sm:contents` dissolves the wrapper and it's the
+            one-line bar with dividers the design intends. */}
+        <div className="mt-4 flex flex-col gap-2 rounded-3xl border border-border bg-card p-1.5 shadow-sm sm:flex-row sm:items-center sm:gap-1 sm:rounded-full">
           <div className="relative flex min-w-0 flex-1 items-center">
             <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
             <input
@@ -595,34 +606,41 @@ export function MenuView() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search the menu…"
               aria-label="Search the menu"
-              className="h-9 w-full rounded-full bg-transparent pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
+              // text-base on phones: iOS zooms the page in below 16px.
+              className="h-10 w-full rounded-full bg-transparent pl-9 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground/70 sm:h-9 sm:text-sm"
             />
           </div>
-          <div className="h-6 w-px shrink-0 bg-border" />
-          <MultiSelectFilter
-            label="Allergens"
-            aria-label="Filter out allergens to avoid"
-            options={allergenOptions}
-            selected={allergens}
-            onChange={setAllergens}
-          />
-          <div className="h-6 w-px shrink-0 bg-border" />
-          <MultiSelectFilter
-            label="Dietary"
-            aria-label="Filter by dietary preference"
-            options={dietaryPreferences}
-            selected={diets}
-            onChange={setDiets}
-          />
-          <div className="h-6 w-px shrink-0 bg-border" />
-          <ThemeSelect
-            value={priceMax}
-            onValueChange={setPriceMax}
-            aria-label="Filter by price"
-            variant="pill"
-            align="right"
-            options={PRICE_OPTIONS}
-          />
+          {/* flex-wrap, not overflow-x-auto: a scroll container clips the
+              pills' absolutely-positioned dropdown panels on both axes, so
+              they'd open invisibly on phones. The three pills fit one row at
+              390px and wrap gracefully below that. */}
+          <div className="flex flex-wrap items-center gap-1 sm:contents">
+            <div className="hidden h-6 w-px shrink-0 bg-border sm:block" />
+            <MultiSelectFilter
+              label="Allergens"
+              aria-label="Filter out allergens to avoid"
+              options={allergenOptions}
+              selected={allergens}
+              onChange={setAllergens}
+            />
+            <div className="hidden h-6 w-px shrink-0 bg-border sm:block" />
+            <MultiSelectFilter
+              label="Dietary"
+              aria-label="Filter by dietary preference"
+              options={dietaryPreferences}
+              selected={diets}
+              onChange={setDiets}
+            />
+            <div className="hidden h-6 w-px shrink-0 bg-border sm:block" />
+            <ThemeSelect
+              value={priceMax}
+              onValueChange={setPriceMax}
+              aria-label="Filter by price"
+              variant="pill"
+              align="right"
+              options={PRICE_OPTIONS}
+            />
+          </div>
         </div>
 
       </section>
@@ -724,7 +742,7 @@ export function MenuView() {
 
       {/* Sticky review-cart bar — mobile only (desktop uses the topbar cart) */}
       {cartCount > 0 && !editingOrder ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[68px] z-30 px-4 lg:hidden">
+        <div className="above-tab-bar pointer-events-none fixed inset-x-0 z-30 px-4 lg:hidden">
           <div className="pointer-events-auto mx-auto flex max-w-[1100px] items-center justify-between gap-3 rounded-full border border-teal-deep bg-sidebar px-4 py-2.5 text-sidebar-foreground shadow-raised">
             <span className="flex items-center gap-2 text-[13px] font-semibold">
               <ShoppingBag className="size-4" />
@@ -749,17 +767,22 @@ export function MenuView() {
           item={customizing}
           dateLabel={formatDay(fromISODate(day))}
           onClose={() => setCustomizing(null)}
-          onConfirm={(addOns, qty, unitPrice) => {
-            cart.add({
-              date: day,
-              itemId: customizing.id,
-              name: customizing.name,
-              basePrice: customizing.price,
-              qty,
-              addOns,
-              unitPrice,
-              type: customizing.type,
-            });
+          onConfirm={(combos) => {
+            // Each combo is packed as its own meal, so each becomes its own
+            // line, carrying however many copies of it were asked for.
+            // Identical combos merge on their own inside the cart.
+            for (const combo of combos) {
+              cart.add({
+                date: day,
+                itemId: customizing.id,
+                name: customizing.name,
+                basePrice: customizing.price,
+                qty: combo.qty,
+                addOns: combo.addOns,
+                unitPrice: combo.unitPrice,
+                type: customizing.type,
+              });
+            }
             setCustomizing(null);
             bumpCart();
           }}
@@ -958,13 +981,26 @@ function DayStrip({
               <span className="font-display text-base font-semibold leading-none">{cell.dayNum}</span>
               <span
                 className={cn(
-                  "mt-0.5 text-[10px]",
+                  "mt-0.5 text-[11px]",
                   cell.has && "font-bold",
                   active ? "text-primary-foreground/80" : "text-muted-foreground",
                 )}
               >
                 {cell.subLabel}
               </span>
+              {/* A finger has no hover, so the day's total — which the summary
+                  card below only reveals on mouseover — is printed on the pill
+                  itself for touch. Desktop keeps the roomier card. */}
+              {cell.has && program.showPrices ? (
+                <span
+                  className={cn(
+                    "text-[11px] font-semibold nums lg:hidden",
+                    active ? "text-primary-foreground/80" : "text-muted-foreground",
+                  )}
+                >
+                  {formatCurrency(cell.total)}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -1047,45 +1083,13 @@ interface Promo {
 /** Campaigns shown in the promo carousel; paged two-at-a-time. */
 const PROMOS: Promo[] = [
   {
-    id: "save10",
-    tag: "10% off",
-    icon: BadgePercent,
-    title: "Get 10% off your first order",
-    body: (
-      <>
-        Up to $10 off your share. Code{" "}
-        <span className="font-semibold text-teal-deep">SAVE10</span>. Valid this week.
-      </>
-    ),
-    href: "/account",
-    cta: "Learn more",
-    image: "https://www.themealdb.com/images/media/meals/bqx8mc1782684286.jpg",
-    alt: "Fresh harvest salad",
-  },
-  {
-    id: "freedelivery",
-    tag: "Free delivery",
-    icon: Truck,
-    title: "Free delivery on team orders",
-    body: (
-      <>
-        Order for 5+ and delivery is on us. Code{" "}
-        <span className="font-semibold text-teal-deep">TEAM5</span>. All month.
-      </>
-    ),
-    href: "/account",
-    cta: "Learn more",
-    image: "https://www.themealdb.com/images/media/meals/1548772327.jpg",
-    alt: "Shared family-style spread",
-  },
-  {
-    id: "newmenu",
+    id: "summerbowls",
     tag: "New",
     icon: Sparkles,
-    title: "New summer menu is live",
+    title: "Try our new summer bowls",
     body: (
       <>
-        Fresh seasonal bowls and grills, added this week. Explore what&apos;s new.
+        Fresh seasonal bowls and grills, just added. See what&apos;s new on the menu.
       </>
     ),
     href: "/menu",
@@ -1094,10 +1098,40 @@ const PROMOS: Promo[] = [
     alt: "Summer grain bowl",
   },
   {
-    id: "refer",
-    tag: "$15 credit",
+    id: "freedelivery",
+    tag: "Limited",
+    icon: Truck,
+    title: "Free delivery this week only",
+    body: (
+      <>
+        Delivery is on us on every order this week. No code needed.
+      </>
+    ),
+    href: "/menu",
+    cta: "Order now",
+    image: "https://www.themealdb.com/images/media/meals/1548772327.jpg",
+    alt: "Shared family-style spread",
+  },
+  {
+    id: "christmas",
+    tag: "Seasonal",
     icon: Gift,
-    title: "Refer a coworker, get $15",
+    title: "Christmas specials now available",
+    body: (
+      <>
+        Festive mains and sides, on the menu through the holidays.
+      </>
+    ),
+    href: "/menu",
+    cta: "See the menu",
+    image: "https://www.themealdb.com/images/media/meals/1550441882.jpg",
+    alt: "Holiday feast platter",
+  },
+  {
+    id: "refer",
+    tag: "New",
+    icon: BadgePercent,
+    title: "New referral rewards just launched",
     body: (
       <>
         You both earn $15 in credit on their first order. Share your link.
@@ -1105,27 +1139,26 @@ const PROMOS: Promo[] = [
     ),
     href: "/account",
     cta: "Get your link",
-    image: "https://www.themealdb.com/images/media/meals/1550441882.jpg",
-    alt: "Chef plating a dish",
+    image: "https://www.themealdb.com/images/media/meals/bqx8mc1782684286.jpg",
+    alt: "Fresh harvest salad",
   },
 ];
 
 /** One promo card — copy + CTA on the left, food photo on the right. */
 function PromoCard({ promo }: { promo: Promo }) {
-  const TagIcon = promo.icon;
   return (
     <div className="group relative flex items-stretch overflow-hidden rounded-2xl border border-teal-soft bg-gradient-to-br from-teal-wash via-teal-wash to-teal-soft/70 shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-raised">
       {/* Soft decorative glow behind the copy for depth. */}
       <div className="pointer-events-none absolute -left-10 -top-12 size-40 rounded-full bg-primary/10 blur-2xl" />
 
       <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-center gap-1.5 py-5 pl-5 pr-3 sm:pl-6">
-        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-coral px-2.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-white shadow-sm">
-          <TagIcon className="size-3" /> {promo.tag}
+        <span className="inline-flex w-fit items-center rounded-full bg-coral px-2.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-white shadow-sm">
+          {promo.tag}
         </span>
-        <h3 className="mt-0.5 font-display text-lg font-bold leading-tight tracking-tight text-teal-deep sm:text-xl">
+        <h3 className="mt-0.5 line-clamp-1 font-display text-lg font-bold leading-tight tracking-tight text-teal-deep sm:text-xl">
           {promo.title}
         </h3>
-        <p className="text-[13px] leading-snug text-teal-deep/75">{promo.body}</p>
+        <p className="line-clamp-2 text-[13px] leading-snug text-teal-deep/75">{promo.body}</p>
         <Link
           href={promo.href}
           className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-deep px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-primary"
@@ -1321,6 +1354,11 @@ function UnifiedDatePicker({
   onApplyRange: (startISO: string, endISO: string) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  // Phone placement: the panel is wider than the space left of the trigger, so
+  // an `absolute right-0` anchor pushes half the calendar off-screen. On <sm
+  // it's `fixed`, horizontally centered, and clamped below the trigger instead.
+  const [mobileTop, setMobileTop] = React.useState<number | null>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
   // Which sub-mode the open dropdown is previewing (defaults to the committed mode).
   const [tab, setTab] = React.useState<Mode>(mode);
   // Draft range endpoints — committed to the parent only on Apply.
@@ -1347,6 +1385,11 @@ function UnifiedDatePicker({
     setHovered("");
     const a = fromISODate((mode === "single" ? selectedDate : rangeStart) || toISODate(startOfToday()));
     setCursor({ y: a.getFullYear(), m: a.getMonth() });
+    if (triggerRef.current && window.matchMedia("(max-width: 639px)").matches) {
+      setMobileTop(triggerRef.current.getBoundingClientRect().bottom + 8);
+    } else {
+      setMobileTop(null);
+    }
     setOpen(true);
   }
 
@@ -1408,6 +1451,7 @@ function UnifiedDatePicker({
   return (
     <div ref={ref} className="relative shrink-0">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -1447,7 +1491,13 @@ function UnifiedDatePicker({
         <div
           role="dialog"
           aria-label="Choose a delivery date"
-          className="absolute right-0 top-full z-50 mt-2 w-[19.5rem] rounded-2xl border border-border bg-card p-3 shadow-raised"
+          style={mobileTop != null ? { top: mobileTop } : undefined}
+          className={cn(
+            "z-50 rounded-2xl border border-border bg-card p-3 shadow-raised",
+            mobileTop != null
+              ? "fixed left-1/2 w-[min(19.5rem,calc(100vw-1.5rem))] -translate-x-1/2"
+              : "absolute right-0 top-full mt-2 w-[19.5rem]",
+          )}
         >
           {/* Single day / Date range toggle — the only mode control now. */}
           <div className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-border bg-muted/40 p-1" role="tablist">
@@ -1625,7 +1675,7 @@ function UnifiedDatePicker({
               <p className="mt-2 text-2xs text-muted-foreground">
                 {dStart
                   ? `${formatDay(fromISODate(dStart))} → ${formatDay(fromISODate(draftEnd))} · ${draftCount} ${draftCount === 1 ? "day" : "days"}`
-                  : "Tap a start and end day — weekends are skipped."}
+                  : "Tap a start and end day. Weekends are skipped."}
               </p>
               <Button
                 variant="teal"

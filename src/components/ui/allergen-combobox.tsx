@@ -13,6 +13,9 @@ interface AllergenComboboxProps {
   placeholder?: string;
   /** Allow adding a typed allergen that isn't in the suggestion list. */
   allowCustom?: boolean;
+  /** Render selected chips in a separate row below the search box (like the
+   *  Dietary tags) instead of inside the input. */
+  separateChips?: boolean;
   "aria-label"?: string;
   className?: string;
 }
@@ -28,6 +31,7 @@ export function AllergenCombobox({
   options,
   placeholder = "Search allergens…",
   allowCustom = true,
+  separateChips = false,
   className,
   ...props
 }: AllergenComboboxProps) {
@@ -115,25 +119,27 @@ export function AllergenCombobox({
         }}
       >
         <Search className="size-4 shrink-0 text-muted-foreground" />
-        {value.map((v) => (
-          <span
-            key={v}
-            className="flex items-center gap-1 rounded-full border border-danger-border bg-danger-bg px-2 py-0.5 text-2xs font-semibold text-danger"
-          >
-            {v}
-            <button
-              type="button"
-              aria-label={`Remove ${v}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggle(v);
-              }}
-              className="rounded-full text-danger/70 hover:text-danger"
+        {/* Inline chips, unless the caller wants them in a separate row below. */}
+        {!separateChips &&
+          value.map((v) => (
+            <span
+              key={v}
+              className="flex items-center gap-1 rounded-full border border-danger-border bg-danger-bg px-2 py-0.5 text-2xs font-semibold text-danger"
             >
-              <X className="size-3" />
-            </button>
-          </span>
-        ))}
+              {v}
+              <button
+                type="button"
+                aria-label={`Remove ${v}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggle(v);
+                }}
+                className="rounded-full text-danger/70 hover:text-danger"
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
         <input
           ref={inputRef}
           type="text"
@@ -141,7 +147,7 @@ export function AllergenCombobox({
           aria-label={props["aria-label"] ?? "Search allergens"}
           aria-haspopup="listbox"
           aria-expanded={open}
-          placeholder={value.length ? "Add more…" : placeholder}
+          placeholder={value.length && !separateChips ? "Add more…" : placeholder}
           onFocus={() => setOpen(true)}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -229,6 +235,29 @@ export function AllergenCombobox({
           {filtered.length === 0 && !canAddCustom ? (
             <p className="px-3 py-2 text-[13px] text-muted-foreground">No allergens found.</p>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* Selected chips in their own row below the search box — same pill shape
+          as the Dietary tags, kept in the danger tone to read as "avoid". */}
+      {separateChips && value.length ? (
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          {value.map((v) => (
+            <span
+              key={v}
+              className="inline-flex items-center gap-1.5 rounded-full border border-danger-border bg-danger-bg px-3 py-1.5 text-[13px] font-semibold text-danger"
+            >
+              {v}
+              <button
+                type="button"
+                aria-label={`Remove ${v}`}
+                onClick={() => toggle(v)}
+                className="rounded-full text-danger/70 hover:text-danger"
+              >
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ))}
         </div>
       ) : null}
     </div>

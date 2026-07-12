@@ -52,7 +52,7 @@ function SubsidyModelModal() {
         </h2>
         <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
           The two contracts answer different questions, so the budget pill says different things. This
-          switch is for the demo only — {program.company}&apos;s real contract is the fixed allowance.
+          switch is for the demo only. {program.company}&apos;s real contract is the fixed allowance.
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -80,7 +80,11 @@ function SubsidyModelModal() {
           />
         </div>
 
-        <div className="mt-6 flex justify-end">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <p className="flex items-center gap-1.5 text-2xs font-semibold text-coral-deep">
+            <FlaskConical className="size-3.5 shrink-0" /> Demo purposes only. Nothing here changes
+            real billing.
+          </p>
           <Button ref={dismissRef} onClick={close}>
             Got it
           </Button>

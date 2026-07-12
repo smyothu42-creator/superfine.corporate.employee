@@ -379,6 +379,19 @@ export function getOrder(id: string) {
   return orders.find((o) => o.id === id);
 }
 
+/**
+ * Match a customer-typed order number against a real order. Deliberately
+ * lenient: someone reading a number off a delivery label may type "2891",
+ * "ORD-2891", "ord 2891" or "#2891" — we compare on digits alone so any of
+ * those resolve. Returns `undefined` when nothing matches, which the public
+ * feedback flow treats as "unverified" rather than an error.
+ */
+export function findOrder(input: string): Order | undefined {
+  const digits = input.replace(/\D/g, "");
+  if (!digits) return undefined;
+  return orders.find((o) => o.id.replace(/\D/g, "") === digits);
+}
+
 export const upcomingOrders = orders.filter(
   (o) => o.status === "draft" || o.status === "confirmed",
 );

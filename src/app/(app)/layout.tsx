@@ -1,15 +1,16 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { AuthGuard } from "@/components/auth/auth-guard";
+import { AccessGate } from "@/components/auth/access-gate";
 
 /**
- * The app is for signed-in corporate employees. Sign in with the company email
- * and password and every screen below is already priced against the company's
- * program — nothing about identity is asked again at checkout.
+ * Anyone with a delivery ZIP can browse, fill a cart and reach checkout — an
+ * account is only required for the screens that are *about* an account, and for
+ * placing the order itself. Corporate employees who signed in arrive with their
+ * subsidy, address and prices already resolved.
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <AuthGuard>
+    <AccessGate>
       <AppShell>{children}</AppShell>
-    </AuthGuard>
+    </AccessGate>
   );
 }

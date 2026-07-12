@@ -113,7 +113,7 @@ function CartEmptyState() {
           <p className="mx-auto mt-1 max-w-sm text-[13px] text-muted-foreground">
             {subsidized ? (
               <>
-                Pick a day and add a meal — {program.company} covers{" "}
+                Pick a day and add a meal. {program.company} covers{" "}
                 {formatCurrency(program.subsidyPerDay)} each service day.
               </>
             ) : (
@@ -175,8 +175,8 @@ export function CartDayList() {
   return (
     <>
       <Notice tone="info">
-        Review every day below. You can edit or remove anything up to the order cutoff —{" "}
-        <strong>payment isn&apos;t taken until 24 hours before delivery.</strong>
+        Review every day below. You can edit or remove anything up to the order cutoff.{" "}
+        <strong>Payment isn&apos;t taken until 24 hours before delivery.</strong>
       </Notice>
 
       {dates.map((date) => {
@@ -228,12 +228,12 @@ export function CartDayList() {
                     {program.showPrices ? (
                       <span className="font-semibold nums">{formatCurrency(line.unitPrice * line.qty)}</span>
                     ) : null}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1 sm:gap-1.5">
                       <button
                         type="button"
                         aria-label={`Decrease ${line.name}`}
                         onClick={() => cart.setQty(line.uid, line.qty - 1)}
-                        className="flex size-8 items-center justify-center rounded-full border border-border bg-card hover:bg-muted"
+                        className="flex size-11 items-center justify-center rounded-full sm:size-8 border border-border bg-card hover:bg-muted"
                       >
                         <Minus className="size-3.5" />
                       </button>
@@ -242,7 +242,7 @@ export function CartDayList() {
                         type="button"
                         aria-label={`Increase ${line.name}`}
                         onClick={() => cart.setQty(line.uid, line.qty + 1)}
-                        className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep"
+                        className="flex size-11 items-center justify-center rounded-full sm:size-8 bg-primary text-primary-foreground hover:bg-teal-deep"
                       >
                         <Plus className="size-3.5" />
                       </button>
@@ -250,7 +250,7 @@ export function CartDayList() {
                         type="button"
                         aria-label={`Remove ${line.name}`}
                         onClick={() => cart.remove(line.uid)}
-                        className="flex size-8 items-center justify-center rounded-full border border-border bg-card text-danger hover:bg-danger-bg"
+                        className="flex size-11 items-center justify-center rounded-full sm:size-8 border border-border bg-card text-danger hover:bg-danger-bg"
                       >
                         <Trash2 className="size-3.5" />
                       </button>
@@ -609,11 +609,11 @@ function MissingMealsModal({
           </div>
         </div>
 
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="ghost" onClick={onProceedAnyway}>
-            Proceed to checkout anyway
+        <div className="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <Button variant="ghost" size="lg" block onClick={onProceedAnyway}>
+            Checkout anyway
           </Button>
-          <Button variant="warning" onClick={onSelectMeals}>
+          <Button variant="warning" size="lg" block onClick={onSelectMeals}>
             <UtensilsCrossed className="size-4" /> Select meals
           </Button>
         </div>

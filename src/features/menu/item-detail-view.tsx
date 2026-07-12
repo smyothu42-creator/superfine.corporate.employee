@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle, ArrowLeftRight, Check, ExternalLink, Users } from "lucide-react";
+import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle, ArrowLeftRight, Check, Users } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { Badge } from "@/components/ui/badge";
@@ -150,21 +150,10 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
             </div>
             {allergenHit ? (
               <Notice tone="warning">
-                <AlertTriangle className="inline size-3.5" /> Heads up — this item lists an allergen on your
+                <AlertTriangle className="inline size-3.5" /> Heads up: this item lists an allergen on your
                 profile (<strong>{me.allergens.join(", ")}</strong>). Check the ingredients below.
               </Notice>
             ) : null}
-            {/* Full macros live on Superfine Kitchen's nutrition page rather than
-                inline — a small link keeps the card focused on the meal itself. */}
-            <a
-              href={`https://superfinekitchen.com/nutrition/${item.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[13px] font-semibold text-primary hover:underline"
-            >
-              Nutritional info
-              <ExternalLink className="size-3.5" />
-            </a>
           </CardBody>
         </Card>
 

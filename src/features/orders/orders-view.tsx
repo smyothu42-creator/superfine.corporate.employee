@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CalendarOff,
+  CalendarRange,
   XCircle,
   Pencil,
   ChevronRight,
@@ -18,6 +19,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { ThemeSelect } from "@/components/ui/theme-select";
+import { DateRangeModal } from "@/features/menu/date-range-modal";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { OrderTimeline } from "@/components/orders/order-status";
@@ -29,6 +31,7 @@ import { program } from "@/data/program";
 import { useChangeOrder } from "./use-change-order";
 import { useUiStore } from "@/store/use-ui-store";
 import { useCartStore } from "@/store/use-cart-store";
+import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
 import { useOOOStore } from "@/store/use-ooo-store";
@@ -74,39 +77,27 @@ function sortOrders(list: Order[], sort: SortKey): Order[] {
 export function OrdersView() {
   const [tab, setTab] = React.useState("upcoming");
   const [sort, setSort] = React.useState<SortKey>("date-desc");
-  const [dateFilter, setDateFilter] = React.useState("all");
+  // Inclusive delivery-date range filter (Ant Design RangePicker style): pick a
+  // start and end day; orders whose primary date falls inside are kept.
+  const [range, setRange] = React.useState<{ start: string; end: string } | null>(null);
+  const [rangeOpen, setRangeOpen] = React.useState(false);
   const ooo = useOOOStore();
   const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
   const baseList = tab === "upcoming" ? upcoming : tab === "past" ? past : cancelled;
 
-  // Month options for the date filter, derived from the active tab's orders
-  // (newest month first). Filtering by an order's primary delivery date.
-  const monthOptions = React.useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const o of baseList) {
-      const key = o.date.slice(0, 7); // YYYY-MM
-      if (!seen.has(key)) {
-        seen.set(
-          key,
-          fromISODate(`${key}-01`).toLocaleDateString("en-US", { month: "short", year: "numeric" }),
-        );
-      }
-    }
-    return [...seen.entries()]
-      .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([value, label]) => ({ value, label }));
-  }, [baseList]);
-
-  const dateOptions = [{ value: "all", label: "All dates" }, ...monthOptions];
-
-  // Reset the month filter when switching tabs (each tab has its own months).
-  React.useEffect(() => setDateFilter("all"), [tab]);
+  // Reset the date range when switching tabs (each tab spans its own dates).
+  React.useEffect(() => setRange(null), [tab]);
 
   const list = React.useMemo(() => {
-    const filtered =
-      dateFilter === "all" ? baseList : baseList.filter((o) => o.date.slice(0, 7) === dateFilter);
+    const filtered = range
+      ? baseList.filter((o) => o.date >= range.start && o.date <= range.end)
+      : baseList;
     return sortOrders(filtered, sort);
-  }, [baseList, dateFilter, sort]);
+  }, [baseList, range, sort]);
+
+  const rangeFmt = (iso: string) =>
+    fromISODate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const rangeLabel = range ? `${rangeFmt(range.start)} – ${rangeFmt(range.end)}` : "All dates";
 
   // Landing on My Orders always exits any in-progress "change a meal" flow.
   React.useEffect(() => clearEditingOrder(), [clearEditingOrder]);
@@ -117,16 +108,19 @@ export function OrdersView() {
         <Notice tone="warning">
           <CalendarOff className="inline size-3.5" /> <strong>You&apos;re out of office</strong> on{" "}
           {ooo.dates.map((d) => formatDay(fromISODate(d))).join(", ")}. Auto-orders are paused on{" "}
-          {ooo.dates.length === 1 ? "this day" : "these days"} —{" "}
+          {ooo.dates.length === 1 ? "this day" : "these days"}.{" "}
           <button type="button" onClick={ooo.clear} className="font-semibold underline">
-            turn off
+            Turn off
           </button>
           .
         </Notice>
       ) : null}
 
-      <div className="sticky top-16 z-20 -mx-4 flex items-center justify-between gap-3 bg-background px-4 py-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="min-w-0 flex-1 overflow-x-auto">
+      {/* flex-wrap: on phones the tab strip and the date/sort controls can't
+          share 390px, so the controls drop to a second row instead of crushing
+          the tabs into a clipped scroller. */}
+      <div className="sticky top-16 z-20 -mx-4 flex flex-wrap items-center justify-between gap-2 bg-background px-4 py-2 sm:-mx-6 sm:gap-3 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="min-w-0 max-w-full overflow-x-auto">
           <Tabs
             tabs={[
               { id: "upcoming", label: `Upcoming (${upcoming.length})` },
@@ -139,16 +133,32 @@ export function OrdersView() {
         </div>
         {baseList.length > 0 ? (
           <div className="flex shrink-0 items-center gap-2">
-            <ThemeSelect
-              value={dateFilter}
-              onValueChange={setDateFilter}
-              options={dateOptions}
-              size="sm"
-              align="right"
-              aria-label="Filter orders by month"
-              className="w-auto"
-              triggerClassName="h-10"
-            />
+            {/* Date-range filter — opens a start/end calendar picker. Styled to
+                match the sort ThemeSelect's box trigger so the two are the same
+                height and weight. */}
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() => setRangeOpen(true)}
+                className={cn(
+                  "flex h-10 items-center gap-1.5 rounded-full border bg-card pl-3.5 pr-3.5 text-[13px] font-semibold text-teal-deep shadow-sm outline-none transition-colors hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30",
+                  range ? "border-primary" : "border-border hover:border-primary/40",
+                )}
+              >
+                <CalendarRange className="size-4 text-primary" />
+                <span className="truncate">{rangeLabel}</span>
+              </button>
+              {range ? (
+                <button
+                  type="button"
+                  onClick={() => setRange(null)}
+                  aria-label="Clear date range"
+                  className="ml-1 rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="size-3.5" />
+                </button>
+              ) : null}
+            </div>
             <ThemeSelect
               value={sort}
               onValueChange={(v) => setSort(v as SortKey)}
@@ -168,10 +178,10 @@ export function OrdersView() {
           <CardBody className="py-14 text-center text-[13px] text-muted-foreground">
             {baseList.length > 0 ? (
               <>
-                No orders in this month.{" "}
+                No orders in this date range.{" "}
                 <button
                   type="button"
-                  onClick={() => setDateFilter("all")}
+                  onClick={() => setRange(null)}
                   className="font-semibold text-primary underline underline-offset-2"
                 >
                   Show all dates
@@ -197,6 +207,22 @@ export function OrdersView() {
           ))}
         </div>
       )}
+
+      {/* Date-range picker. Every day is selectable here (this filters past and
+          upcoming orders alike), so override the ordering calendar's default
+          past/weekend disabling via dayInfo. */}
+      {rangeOpen ? (
+        <DateRangeModal
+          initialStart={range?.start}
+          initialEnd={range?.end}
+          dayInfo={() => ({ selectable: true, cutoff: false, reason: "" })}
+          onClose={() => setRangeOpen(false)}
+          onApply={(start, end) => {
+            setRange({ start, end });
+            setRangeOpen(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -204,6 +230,8 @@ export function OrdersView() {
 function OrderCard({ order }: { order: Order }) {
   const router = useRouter();
   const cart = useCartStore();
+  // Individuals pay retail — no subsidy, no auto-order.
+  const corporate = isSubsidized(useSessionStore((s) => s.account));
   const href = `/orders/${order.id}`;
   const items = order.days.flatMap((d) => d.items);
   const active = ["draft", "confirmed"].includes(order.status);
@@ -288,7 +316,7 @@ function OrderCard({ order }: { order: Order }) {
             >
               {order.id}
             </span>
-            {order.source === "auto" ? (
+            {corporate && order.source === "auto" ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-teal/20 bg-card px-2.5 py-1 text-xs font-semibold text-teal-deep shadow-sm">
                 <Repeat className="size-3.5" /> Auto-order
               </span>
@@ -326,7 +354,7 @@ function OrderCard({ order }: { order: Order }) {
           </div>
         ) : active && order.locked ? (
           <span
-            aria-label="Editing closed — this order can no longer be changed"
+            aria-label="Editing closed. This order can no longer be changed"
             className="inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1.5 text-2xs font-semibold text-muted-foreground opacity-60"
           >
             <Lock className="size-3.5" /> Editing closed
@@ -396,7 +424,10 @@ function OrderCard({ order }: { order: Order }) {
             <MapPin className="size-3.5" /> {order.address}
           </span>
           <span className="text-[13px] font-semibold nums">
-            {order.employeePaid > 0 ? (
+            {!corporate ? (
+              // Individuals have no subsidy — they always pay the full total.
+              <>You paid {formatCurrency(order.subtotal)}</>
+            ) : order.employeePaid > 0 ? (
               <>You paid {formatCurrency(order.employeePaid)}</>
             ) : (
               <span className="text-success">Fully covered</span>
@@ -431,7 +462,7 @@ function OrderCard({ order }: { order: Order }) {
 
         {order.locked && active ? (
           <Notice tone="locked" className="text-xs">
-            Past the change window — this order is locked in for delivery.
+            Past the change window. This order is locked in for delivery.
           </Notice>
         ) : null}
       </CardBody>
@@ -491,7 +522,7 @@ function ReOrderModal({
       />
       <div
         className={cn(
-          "relative flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-200 sm:rounded-3xl",
+          "relative flex max-h-[85dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-200 sm:rounded-3xl",
           shown ? "translate-y-0 sm:scale-100 sm:opacity-100" : "translate-y-full sm:translate-y-0 sm:scale-95 sm:opacity-0",
         )}
       >
@@ -506,7 +537,7 @@ function ReOrderModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
