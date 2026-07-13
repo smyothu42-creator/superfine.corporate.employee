@@ -41,11 +41,16 @@ function LoginCard() {
   return (
     <div className="w-full max-w-lg">
       <div className="rounded-3xl border border-border bg-card p-7 shadow-card sm:p-9">
-        {/* Nobody arriving through this form meets the menu's location gate. A
-            new individual gives a ZIP on the last step of sign-up; a returning
-            one answered when they registered; a corporate employee delivers to
-            a contract address. Only browsing without an account is still asked. */}
-        <AuthPanel initialMode={initialMode} onDone={() => router.push("/menu")} />
+        {/* This door isn't behind the menu's location gate, so someone signing in
+            here hasn't answered "where" yet. `resetLocation` clears any stale ZIP
+            as they land, so the menu's dialog asks a new individual for their
+            delivery area — whether they used the form or Google/Microsoft. A
+            corporate employee is exempt: their orders go to a contract address. */}
+        <AuthPanel
+          initialMode={initialMode}
+          resetLocation
+          onDone={() => router.push("/menu")}
+        />
 
         {/* An individual who landed here by habit needs the door they actually
             wanted to be legible without being a second card competing with the

@@ -13,9 +13,17 @@ import type { Account } from "@/store/use-session-store";
  */
 export function AuthPanel({
   initialMode = "signin",
+  /**
+   * Forwarded to {@link IdentityFlow}: whether a new individual should be asked
+   * for their delivery location on the menu after signing in. `/login` sets it
+   * (that door isn't behind the location gate); the guest sign-in wall leaves it
+   * off (its users are already on the menu with a ZIP answered).
+   */
+  resetLocation = false,
   onDone,
 }: {
   initialMode?: AuthMode;
+  resetLocation?: boolean;
   onDone?: (account: Account) => void;
 }) {
   const [mode, setMode] = React.useState<AuthMode>(initialMode);
@@ -37,6 +45,7 @@ export function AuthPanel({
         key={mode}
         mode={mode}
         showModeSwitch={false}
+        resetLocation={resetLocation}
         onModeChange={setMode}
         onDone={onDone}
       />

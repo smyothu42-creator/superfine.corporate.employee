@@ -43,11 +43,23 @@ export function IdentityFlow({
   mode: initialMode = "signin",
   /** Off where the parent already renders a sign-in / sign-up control. */
   showModeSwitch = true,
+  /**
+   * Whether a newly signed-in individual should be asked for their delivery
+   * location on the menu. False everywhere the user is already past the location
+   * gate — the checkout modal and the guest sign-in wall both sit on top of a
+   * page they only reached with a serviceable ZIP, so re-asking is the friction
+   * we set out to remove. True on `/login`, the one front door that isn't behind
+   * the gate: someone signing in there hasn't answered "where", so we drop any
+   * stale ZIP and let the menu ask. Corporate employees are never asked either
+   * way — their orders go to a contract-locked address.
+   */
+  resetLocation = false,
   onModeChange,
   onDone,
 }: {
   mode?: AuthMode;
   showModeSwitch?: boolean;
+  resetLocation?: boolean;
   /** Told when the flow switches mode itself, so a parent's tabs can follow. */
   onModeChange?: (mode: AuthMode) => void;
   onDone?: (account: Account) => void;
@@ -105,10 +117,13 @@ export function IdentityFlow({
 
   /**
    * The address is now proved. A contracted domain becomes a corporate employee;
-   * everyone else is an individual and goes straight to the menu — no name/phone/
-   * ZIP screen. The menu's location dialog settles their delivery area, phone and
-   * address are collected at checkout, and the account is seeded with a
-   * system-derived name they can rename in Account & Profile.
+   * everyone else is an individual. Whether that individual is asked for their
+   * delivery area next is `resetLocation`'s call: from the checkout modal or the
+   * guest sign-in wall they already answered on the menu, so we keep the ZIP and
+   * don't re-ask; from `/login` they haven't, so we clear any stale ZIP and let
+   * the menu's dialog settle it. Phone and address are collected at checkout, and
+   * the account is seeded with a system-derived name they can rename in Account &
+   * Profile.
    */
   function resolveVerified(proved: string) {
     const corporate = corporateSession(proved);
@@ -117,7 +132,7 @@ export function IdentityFlow({
       return;
     }
     const address = proved.trim().toLowerCase();
-    clearZip();
+    if (resetLocation) clearZip();
     complete({ kind: "individual", email: address, name: defaultNameFromEmail(address) });
   }
 
