@@ -22,9 +22,15 @@ import { useSessionStore } from "@/store/use-session-store";
 export function useBrowseFlow() {
   const router = useRouter();
   const clearZip = useSessionStore((s) => s.clearZip);
+  const signOut = useSessionStore((s) => s.signOut);
 
   return {
     browse: () => {
+      // "Browse without signing up" is an explicit request to be a guest, so it
+      // drops any lingering account (a persisted session from a previous sign-in
+      // would otherwise leave the sidebar showing a profile instead of "Sign
+      // in") — browsing this way is never a real sign-in.
+      signOut();
       clearZip();
       router.push("/menu");
     },
