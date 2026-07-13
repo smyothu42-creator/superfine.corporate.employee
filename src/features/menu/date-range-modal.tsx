@@ -3,33 +3,11 @@
 import * as React from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CutoffDayTooltip } from "@/components/cutoff/cutoff-day-tooltip";
 import { cn } from "@/lib/utils";
 import { addDays, fromISODate, toISODate, sameDay, startOfToday, isServiceDay, formatDay, weekdayOffset } from "@/lib/dates";
 
 const COLS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-
-/**
- * Bubble explaining why a day is closed. Lives on the (enabled) cell wrapper so
- * it reveals on group-hover even over a disabled day button.
- *
- * `open` is the touch path: a finger has no hover, and a disabled button fires
- * no click, so the wrapper takes the tap and pins the bubble open. Without it
- * the reason a day can't be picked is simply unreadable on a phone.
- */
-function DayTooltip({ reason, open }: { reason: string; open: boolean }) {
-  return (
-    <span
-      role="tooltip"
-      className={cn(
-        "pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 w-40 -translate-x-1/2 rounded-lg bg-foreground px-2.5 py-1.5 text-center text-2xs font-medium leading-snug text-background shadow-raised group-hover:block",
-        open ? "block" : "hidden",
-      )}
-    >
-      {reason}
-      <span className="absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-foreground" />
-    </span>
-  );
-}
 
 interface DateRangeModalProps {
   initialStart?: string;
@@ -219,7 +197,7 @@ export function DateRangeModal({
                 )}
               >
                 {disabled && info?.reason ? (
-                  <DayTooltip reason={info.reason} open={revealed === iso} />
+                  <CutoffDayTooltip reason={info.reason} cutoff={cutoffClosed} open={revealed === iso} />
                 ) : null}
                 {/* Continuous range band — never drawn on weekends, so a range
                     that spans Sat/Sun visibly skips them. */}

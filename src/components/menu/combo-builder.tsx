@@ -61,10 +61,25 @@ export function useComboBuilder(item: MenuItem, omitGroup?: (g: AddOnGroup) => b
   const rows = combos.length;
   const meals = combos.reduce((sum, c) => sum + c.qty, 0);
 
-  /** Append a fresh set of questions. */
-  const addCombo = React.useCallback(() => {
-    setCombos((prev) => [...prev, emptyCombo()]);
-  }, [emptyCombo]);
+  /**
+   * Append another customization. With no argument it's a fresh, empty set of
+   * questions ("Customize a new one"); given an index it's an independent copy of
+   * that customization's current choices ("Repeat previous choices") that the
+   * user can then tweak on its own — distinct from the quantity stepper, which
+   * makes locked-identical packages of a single customization.
+   */
+  const addCombo = React.useCallback(
+    (copyFrom?: number) => {
+      setCombos((prev) => {
+        const source = copyFrom != null ? prev[copyFrom] : undefined;
+        const picked = source
+          ? Object.fromEntries(Object.entries(source.picked).map(([id, opts]) => [id, [...opts]]))
+          : Object.fromEntries(groups.map((g) => [g.id, []]));
+        return [...prev, { picked, qty: 1 }];
+      });
+    },
+    [groups],
+  );
 
   /**
    * How many identical packages of one combo. Dropping to zero removes the row —
@@ -197,7 +212,7 @@ export function ComboBlock({
         </span>
 
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-          <span className="block text-[13px] font-semibold">Combo {index + 1}</span>
+          <span className="block text-[13px] font-semibold">Customization {index + 1}</span>
           {/* Every choice, named. "Chicken · Italian · Fries" is what the person
               is buying; a truncated line makes them open the combo to check. */}
           <span className="block text-2xs leading-relaxed text-muted-foreground">
@@ -215,7 +230,7 @@ export function ComboBlock({
             <button
               type="button"
               onClick={onOpen}
-              aria-label={`Edit combo ${index + 1}`}
+              aria-label={`Edit customization ${index + 1}`}
               className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <Pencil className="size-3.5" />
@@ -223,7 +238,7 @@ export function ComboBlock({
           </div>
           <QtyStepper
             qty={built.qty}
-            label={`combo ${index + 1}`}
+            label={`customization ${index + 1}`}
             onChange={onSetQty}
           />
         </div>
@@ -248,7 +263,7 @@ export function ComboBlock({
           >
             {built.complete ? <Check className="size-3.5" /> : index + 1}
           </span>
-          <h3 className="truncate font-display text-sm font-semibold tracking-tight">Combo {index + 1}</h3>
+          <h3 className="truncate font-display text-sm font-semibold tracking-tight">Customization {index + 1}</h3>
           <span className="shrink-0 text-2xs text-muted-foreground">Packed separately</span>
         </div>
         {/* Two icon actions instead of a text button: a tick to confirm the combo
@@ -260,7 +275,7 @@ export function ComboBlock({
             type="button"
             onClick={onSave}
             disabled={!built.complete}
-            aria-label={`Save combo ${index + 1}`}
+            aria-label={`Save customization ${index + 1}`}
             className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep disabled:pointer-events-none disabled:opacity-40"
           >
             <Check className="size-4" />
@@ -268,7 +283,7 @@ export function ComboBlock({
           <button
             type="button"
             onClick={onDelete}
-            aria-label={`Delete combo ${index + 1}`}
+            aria-label={`Delete customization ${index + 1}`}
             className="flex size-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Trash2 className="size-4" />

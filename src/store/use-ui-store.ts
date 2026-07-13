@@ -68,6 +68,15 @@ interface UiState {
   subsidyModalOpen: boolean;
   closeSubsidyModal: () => void;
   /**
+   * Feedback form shown from the floating action button (and anywhere else that
+   * wants the general "rate a meal" form). `feedbackModalOrder` optionally
+   * pre-fills the order number, mirroring the `/feedback?order=` deep link.
+   */
+  feedbackModalOpen: boolean;
+  feedbackModalOrder: string | null;
+  openFeedbackModal: (order?: string | null) => void;
+  closeFeedbackModal: () => void;
+  /**
    * Sign-in wall for guests reaching an account-only screen. `signInPromptNext`
    * remembers where they were headed so we can land them there once signed in.
    */
@@ -107,6 +116,10 @@ export const useUiStore = create<UiState>((set) => ({
     })),
   subsidyModalOpen: false,
   closeSubsidyModal: () => set({ subsidyModalOpen: false }),
+  feedbackModalOpen: false,
+  feedbackModalOrder: null,
+  openFeedbackModal: (order = null) => set({ feedbackModalOpen: true, feedbackModalOrder: order }),
+  closeFeedbackModal: () => set({ feedbackModalOpen: false, feedbackModalOrder: null }),
   signInPromptOpen: false,
   signInPromptNext: null,
   openSignInPrompt: (next = null) => set({ signInPromptOpen: true, signInPromptNext: next }),

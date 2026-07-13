@@ -50,6 +50,24 @@ export const addresses: Address[] = [
   },
 ];
 
+/**
+ * Where to route someone who needs an order placed *after* the normal cutoff —
+ * a same-day or rush order, most often a family-style one (which locks a full 72
+ * hours out). The kitchen can sometimes still fit these in by phone, so the
+ * closed-day tooltip links here.
+ *
+ * NOTE: placeholder demo values — swap `phone`/`phoneHref` for the real ordering
+ * line and `contactUrl` for the kitchen's main contact page before shipping.
+ */
+export const support = {
+  /** Display form, e.g. shown on the "Call" button. */
+  phone: "(555) 012-3456",
+  /** `tel:` target — digits only, with country code, so it dials on a phone. */
+  phoneHref: "tel:+15550123456",
+  /** Main contact page opened by the "Contact page" link. */
+  contactUrl: "https://superfinekitchen.example/contact",
+};
+
 export function getAddress(id: string) {
   return addresses.find((a) => a.id === id) ?? addresses[0];
 }

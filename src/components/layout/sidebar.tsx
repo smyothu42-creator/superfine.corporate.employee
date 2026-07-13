@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, LogIn } from "lucide-react";
+import { LogOut, LogIn, Apple } from "lucide-react";
 import { NAV_ITEMS, isActive, visibleNav, requiresAccount } from "@/lib/nav";
 import { useUiStore } from "@/store/use-ui-store";
 import { useSessionStore } from "@/store/use-session-store";
@@ -82,6 +82,19 @@ function Sidebar({ onNavigate }: SidebarProps) {
           );
         })}
       </nav>
+
+      {/* Secondary site links — kept quiet at the foot of the rail. Nutrition
+          lookup lives here (not beside the Menu title) because pulling accurate
+          figures for some meals is hard, so we don't want to over-promise it. */}
+      <div className="px-4 pb-1 pt-2">
+        <Link
+          href="/nutrition"
+          onClick={onNavigate}
+          className="flex items-center gap-2 py-1 text-2xs font-medium text-sidebar-muted transition-colors hover:text-white"
+        >
+          <Apple className="size-3.5 shrink-0" /> Check the nutrition information
+        </Link>
+      </div>
 
       {/* Profile — moved down from the topbar into the rail */}
       <div className="border-t border-sidebar-active/50 p-3">

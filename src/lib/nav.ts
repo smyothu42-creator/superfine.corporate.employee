@@ -5,7 +5,6 @@ import {
   Bell,
   UserCog,
   ShoppingBag,
-  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
 import { isSubsidized, type Account } from "@/store/use-session-store";
@@ -32,7 +31,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Auto-Order draws from a company subsidy, so it's corporate-only.
   { label: "Auto-Order", href: "/auto-order", icon: Repeat, corporateOnly: true },
   { label: "Notifications", href: "/notifications", icon: Bell },
-  { label: "Feedback", href: "/feedback", icon: MessageSquare },
+  // Feedback is no longer a rail item — it lives on the floating action button
+  // (see {@link FeedbackLauncher}). The `/feedback` route still exists for the
+  // "Leave feedback" deep link from a past order.
   { label: "Account & Profile", href: "/account", icon: UserCog },
 ];
 

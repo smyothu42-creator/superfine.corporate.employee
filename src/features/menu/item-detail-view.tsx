@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Leaf, Wheat, ShieldCheck, Plus, AlertTriangle, ArrowLeftRight, Check, Users } from "lucide-react";
+import { ArrowLeft, Leaf, Wheat, ShieldCheck, AlertTriangle, ArrowLeftRight, Check } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { Badge } from "@/components/ui/badge";
@@ -19,9 +19,11 @@ import {
 } from "@/data/menu";
 import { OptionGroups, useItemOptions } from "@/components/menu/option-groups";
 import { FamilyStyleModal } from "@/components/menu/family-style-modal";
+import { AddOnModal } from "@/components/menu/add-on-modal";
+import { type BuiltCombo } from "@/components/menu/combo-builder";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
-import { useCartStore } from "@/store/use-cart-store";
+import { useCartStore, type CartServing } from "@/store/use-cart-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { toast } from "@/store/use-toast-store";
 import { confirm } from "@/store/use-confirm-store";
@@ -107,6 +109,44 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
     router.push("/menu");
   }
 
+  /** Add the built customizations (each its own packed meal) — the embedded
+   *  individual configurator's confirm, mirroring the menu's popup. */
+  function confirmIndividual(combos: BuiltCombo[]) {
+    for (const combo of combos) {
+      cart.add({
+        date: activeDate,
+        itemId: item.id,
+        name: item.name,
+        basePrice: item.price,
+        qty: combo.qty,
+        addOns: combo.addOns,
+        unitPrice: combo.unitPrice,
+        type: item.type,
+      });
+    }
+    toast.success(`${item.name} added`, `For ${formatDay(fromISODate(activeDate))}`);
+    router.push("/menu");
+  }
+
+  /** The embedded family configurator's confirm — one package line carrying its
+   *  headcount + serving split. */
+  function confirmFamily(guests: number, servings: CartServing[], totalPrice: number) {
+    cart.add({
+      date: activeDate,
+      itemId: item.id,
+      name: item.name,
+      basePrice: totalPrice,
+      qty: 1,
+      addOns: [],
+      unitPrice: totalPrice,
+      type: item.type,
+      guests,
+      servings,
+    });
+    toast.success(`${item.name} added`, `For ${guests} guests on ${formatDay(fromISODate(activeDate))}.`);
+    router.push("/menu");
+  }
+
   return (
     <div className="space-y-5">
       <Link href="/menu" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-primary hover:underline">
@@ -136,73 +176,104 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
                 </span>
               ) : null}
             </div>
-            <p className="text-sm leading-relaxed text-muted-foreground">{item.description}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {item.tags.map((tag) => {
-                const Icon = TAG_ICON[tag];
-                return (
-                  <Badge key={tag} tone="brand" className="gap-1">
-                    {Icon ? <Icon className="size-3" /> : null}
-                    {tag}
-                  </Badge>
-                );
-              })}
+            {/* Prominent description — larger, black — with what's included right
+                beneath it, so the sides are visible before any scrolling. */}
+            <p className="text-lg font-medium leading-relaxed text-foreground">{item.description}</p>
+
+            {family && item.includedItems?.length ? (
+              <div className="rounded-2xl border border-border bg-muted/40 p-3.5">
+                <div className="text-overline">Included with every package</div>
+                <ul className="mt-2 space-y-1.5">
+                  {item.includedItems.map((inc) => (
+                    <li key={inc.name} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <Check className="size-4 shrink-0 translate-y-0.5 text-primary" />
+                        <span className="font-medium text-foreground">{inc.name}</span>
+                      </span>
+                      {inc.note ? (
+                        <span className="shrink-0 text-2xs text-muted-foreground">{inc.note}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {/* Dietary restrictions and allergens, merged into one section. */}
+            <div>
+              <div className="text-overline">Dietary &amp; allergens</div>
+              {item.tags.length ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {item.tags.map((tag) => {
+                    const Icon = TAG_ICON[tag];
+                    return (
+                      <Badge key={tag} tone="brand" className="gap-1">
+                        {Icon ? <Icon className="size-3" /> : null}
+                        {tag}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {item.allergens ? (
+                <p className="mt-2 text-[13px] text-muted-foreground">
+                  <span className="font-semibold text-foreground">Contains:</span> {item.allergens}
+                </p>
+              ) : null}
             </div>
+
             {allergenHit ? (
               <Notice tone="warning">
                 <AlertTriangle className="inline size-3.5" /> Heads up: this item lists an allergen on your
-                profile (<strong>{me.allergens.join(", ")}</strong>). Check the ingredients below.
+                profile (<strong>{me.allergens.join(", ")}</strong>). See the allergens above.
               </Notice>
             ) : null}
           </CardBody>
         </Card>
 
         <div className="space-y-5">
-          {item.ingredients ? (
-            <Card>
-              <CardBody>
-                <div className="text-overline">Ingredients</div>
-                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{item.ingredients}</p>
-                <div className="text-overline mt-3">Allergens</div>
-                <p className="mt-1 text-[13px] text-muted-foreground">{item.allergens}</p>
-              </CardBody>
-            </Card>
-          ) : null}
-
-          {/* Options + add */}
+          {/* Options + add — the full configurator inline (same as the popup),
+              except while editing a placed order, which is a simple swap. */}
           <Card>
             <CardBody className="space-y-3">
               {editing ? (
-                <p className="text-[13px] text-muted-foreground">
-                  Changing your meal for{" "}
-                  <strong className="text-foreground">{editingOrder!.dateLabel}</strong>.
-                </p>
-              ) : null}
-
-              {family ? (
-                <FamilyStylePreview item={item} />
-              ) : customizable && groups.length > 0 ? (
-                <OptionGroups groups={groups} picked={picked} onToggle={toggle} className="pb-1" />
-              ) : null}
-
-              <Button block size="lg" disabled={!activeDate || (!family && !valid)} onClick={addToOrder}>
-                {!family && !valid ? (
-                  `Choose ${missingLabel}`
-                ) : editing ? (
-                  <>
-                    <ArrowLeftRight className="size-4" /> Change to this meal
-                  </>
-                ) : family ? (
-                  <>
-                    <Users className="size-4" /> Set guests &amp; quantities
-                  </>
-                ) : (
-                  <>
-                    <Plus className="size-4" /> Add to order
-                    {program.showPrices ? ` · ${formatCurrency(unitPrice)}` : ""}
-                  </>
-                )}
-              </Button>
+                <>
+                  <p className="text-[13px] text-muted-foreground">
+                    Changing your meal for{" "}
+                    <strong className="text-foreground">{editingOrder!.dateLabel}</strong>.
+                  </p>
+                  {family ? (
+                    <FamilyStylePreview item={item} />
+                  ) : customizable && groups.length > 0 ? (
+                    <OptionGroups groups={groups} picked={picked} onToggle={toggle} className="pb-1" />
+                  ) : null}
+                  <Button block size="lg" disabled={!activeDate || (!family && !valid)} onClick={addToOrder}>
+                    {!family && !valid ? (
+                      `Choose ${missingLabel}`
+                    ) : (
+                      <>
+                        <ArrowLeftRight className="size-4" /> Change to this meal
+                      </>
+                    )}
+                  </Button>
+                </>
+              ) : family ? (
+                <FamilyStyleModal
+                  embedded
+                  item={item}
+                  dateLabel={activeDate ? formatDay(fromISODate(activeDate)) : ""}
+                  onClose={() => {}}
+                  onConfirm={confirmFamily}
+                />
+              ) : (
+                <AddOnModal
+                  embedded
+                  item={item}
+                  dateLabel={activeDate ? formatDay(fromISODate(activeDate)) : ""}
+                  onClose={() => {}}
+                  onConfirm={confirmIndividual}
+                />
+              )}
             </CardBody>
           </Card>
         </div>
@@ -237,33 +308,15 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
 }
 
 /**
- * What a family package looks like before you open the configurator: what
- * always comes with it, and which groups you'll be asked to split. The actual
+ * Which groups a family package will ask you to split at checkout. What's
+ * *included* with every package (the sides) now lives up top with the
+ * description; this preview is only the choices still to make. The actual
  * quantities are set in the modal, where the headcount is known.
  */
 function FamilyStylePreview({ item }: { item: MenuItem }) {
   const groups = item.servingGroups ?? [];
   return (
     <div className="space-y-3">
-      {item.includedItems?.length ? (
-        <div>
-          <div className="text-overline">Included with every package</div>
-          <ul className="mt-1.5 space-y-1">
-            {item.includedItems.map((inc) => (
-              <li key={inc.name} className="flex items-baseline justify-between gap-3 text-[13px]">
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <Check className="size-3.5 shrink-0 translate-y-0.5 text-primary" />
-                  <span className="truncate">{inc.name}</span>
-                </span>
-                {inc.note ? (
-                  <span className="shrink-0 text-2xs text-muted-foreground">{inc.note}</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
       {groups.length ? (
         <div>
           <div className="text-overline">You&apos;ll choose quantities for</div>

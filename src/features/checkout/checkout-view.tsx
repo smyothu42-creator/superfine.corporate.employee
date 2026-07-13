@@ -305,7 +305,7 @@ export function CheckoutView() {
                   they overflow the card at 375px. */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <span className="flex items-center gap-2 whitespace-nowrap font-display text-base font-semibold tracking-tight">
-                  <CalendarDays className="size-4 text-primary" /> Delivery windows
+                  <CalendarDays className="size-4 text-primary" /> Delivery time
                 </span>
                 {me.permissions.flexibleDelivery ? (
                   // w-52 fits "12:00 PM – 12:30 PM" without truncating.
@@ -314,7 +314,7 @@ export function CheckoutView() {
                       value={commonWindow}
                       onValueChange={applyCommonWindow}
                       options={program.deliveryWindows.map((w) => ({ value: w, label: w }))}
-                      aria-label="Delivery window for all days"
+                      aria-label="Delivery time for all days"
                       size="sm"
                       align="right"
                     />
@@ -327,7 +327,7 @@ export function CheckoutView() {
               </div>
               {me.permissions.flexibleDelivery && dates.length > 1 ? (
                 <Button size="sm" variant="ghost" onClick={() => setTimeModalOpen(true)}>
-                  <CalendarDays className="size-3.5" /> Set delivery window per day
+                  <CalendarDays className="size-3.5" /> Set delivery time per day
                 </Button>
               ) : null}
             </div>
@@ -924,7 +924,7 @@ function PerDayTimeModal({
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
             <h3 className="font-display text-lg font-semibold tracking-tight">Delivery time per day</h3>
-            <p className="text-[13px] text-muted-foreground">Pick a window for each delivery day.</p>
+            <p className="text-[13px] text-muted-foreground">Pick a time for each delivery day.</p>
           </div>
           <button
             type="button"
@@ -953,7 +953,7 @@ function PerDayTimeModal({
                     value={win}
                     onValueChange={(v) => cart.setWindow(date, v)}
                     options={program.deliveryWindows.map((w) => ({ value: w, label: w }))}
-                    aria-label={`Delivery window for ${formatDay(fromISODate(date))}`}
+                    aria-label={`Delivery time for ${formatDay(fromISODate(date))}`}
                     align="right"
                   />
                 </div>

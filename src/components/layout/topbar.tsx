@@ -14,7 +14,6 @@ import {
   Ban,
   BookOpen,
   ArrowLeftRight,
-  Apple,
 } from "lucide-react";
 import { NAV_ITEMS, isActive } from "@/lib/nav";
 import { companyCovers, employeeCovers, budgetRemaining } from "@/lib/subsidy";
@@ -75,7 +74,6 @@ function Topbar() {
   const onOrders = pathname === "/orders";
   const onCheckout = pathname === "/checkout";
   const onNotifications = pathname === "/notifications";
-  const onMenu = pathname === "/menu";
   // Pages where the subsidy + cart header actions don't apply.
   const hideHeaderActions =
     pathname === "/account" || pathname === "/cart" || pathname === "/feedback";
@@ -95,15 +93,6 @@ function Topbar() {
           <Menu className="size-5" />
         </button>
         <h1 className="truncate font-display text-lg font-semibold tracking-tight">{title}</h1>
-        {/* Nutrition lookup — a quiet link beside the Menu title. */}
-        {onMenu ? (
-          <Link
-            href="/nutrition"
-            className="hidden items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-2xs font-semibold text-primary transition-colors hover:bg-teal-wash sm:inline-flex"
-          >
-            <Apple className="size-3.5" /> Look up nutrition info
-          </Link>
-        ) : null}
         {onAutoOrder && autoHeader ? (
           <span className="hidden items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-2xs font-semibold text-foreground sm:flex">
             <Repeat className="size-3.5 text-primary" />

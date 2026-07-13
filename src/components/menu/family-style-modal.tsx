@@ -21,6 +21,9 @@ type Quantities = Record<string, Record<string, number>>;
 interface FamilyStyleModalProps {
   item: MenuItem;
   dateLabel: string;
+  /** Render inline (no overlay/header/close) for the meal detail page's right
+   *  column — same configurator + action bar as the popup. */
+  embedded?: boolean;
   onClose: () => void;
   onConfirm: (
     guests: number,
@@ -54,6 +57,7 @@ function seedQuantities(groups: ServingGroup[]): Quantities {
 export function FamilyStyleModal({
   item,
   dateLabel,
+  embedded = false,
   onClose,
   onConfirm,
 }: FamilyStyleModalProps) {
@@ -141,6 +145,13 @@ export function FamilyStyleModal({
   const valid = unbalanced.length === 0;
   const total = familyStyleTotal(item, guests, quantities);
 
+  // Scroll the blocked CTA's target group into view — the same "the button is a
+  // signpost, never a dead end" pattern the individual-meal sheet uses.
+  const groupRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+  function scrollToGroup(id: string) {
+    groupRefs.current[id]?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   function confirm() {
     const servings: CartServing[] = groups.flatMap((group) =>
       group.options
@@ -157,41 +168,11 @@ export function FamilyStyleModal({
     onConfirm(guests, servings, total);
   }
 
-  if (typeof document === "undefined") return null;
-
-  // Portalled to <body> so a transformed/overflow ancestor in the menu tree can't
-  // become the containing block for this `fixed` overlay and clip its top edge.
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Configure ${item.name} for ${dateLabel}`}
-    >
-      <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl">
-        <div className="flex items-start justify-between gap-3 border-b border-border p-5">
-          <div className="min-w-0">
-            <h2 className="font-display text-lg font-semibold tracking-tight">
-              {item.name}
-            </h2>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">
-              {item.description}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 space-y-6 overflow-y-auto p-5">
-          {/* Headcount sets the price and every serving total below it. */}
-          <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3">
+  // Shared between the popup and the embedded (detail-page) render.
+  const configBody = (
+    <>
+      {/* Headcount sets the price and every serving total below it. */}
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3">
             <div className="min-w-0">
               <h3 className="font-display text-sm font-semibold tracking-tight">
                 Quantity
@@ -232,68 +213,123 @@ export function FamilyStyleModal({
           ) : null}
 
           {required.map((group) => (
-            <ServingGroupPicker
-              key={group.id}
-              group={group}
-              guests={guests}
-              quantities={quantities[group.id] ?? {}}
-              assigned={assignedIn(group)}
-              onSetQty={(optionId, qty) => setQty(group.id, optionId, qty)}
-            />
+            <div key={group.id} ref={(el) => { groupRefs.current[group.id] = el; }}>
+              <ServingGroupPicker
+                group={group}
+                guests={guests}
+                quantities={quantities[group.id] ?? {}}
+                assigned={assignedIn(group)}
+                onSetQty={(optionId, qty) => setQty(group.id, optionId, qty)}
+              />
+            </div>
           ))}
 
           {extras.map((group) => (
-            <ServingGroupPicker
-              key={group.id}
-              group={group}
-              guests={guests}
-              quantities={quantities[group.id] ?? {}}
-              assigned={assignedIn(group)}
-              onSetQty={(optionId, qty) => setQty(group.id, optionId, qty)}
-            />
+            <div key={group.id} ref={(el) => { groupRefs.current[group.id] = el; }}>
+              <ServingGroupPicker
+                group={group}
+                guests={guests}
+                quantities={quantities[group.id] ?? {}}
+                assigned={assignedIn(group)}
+                onSetQty={(optionId, qty) => setQty(group.id, optionId, qty)}
+              />
+            </div>
           ))}
 
-          {!groups.length ? (
-            <p className="text-[13px] text-muted-foreground">
-              Ready to serve. Just set the headcount and add it.
-            </p>
-          ) : null}
+      {!groups.length ? (
+        <p className="text-[13px] text-muted-foreground">
+          Ready to serve. Just set the headcount and add it.
+        </p>
+      ) : null}
+    </>
+  );
+
+  const footerBar = (
+    <>
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <span className="text-[13px] text-muted-foreground">
+          {guests} × {formatCurrency(perGuest)}
+        </span>
+        <span className="font-display text-lg font-semibold nums">
+          {formatCurrency(total)}
+        </span>
+      </div>
+      {/* Name the groups that don't balance. A greyed-out button with no
+          reason sends the user hunting up the sheet for the one chip that
+          isn't green. */}
+      {!valid ? (
+        <p className="mb-3 text-2xs font-medium text-coral-deep">
+          {unbalanced
+            .map((g) => `${g.name} (${assignedIn(g)}/${servingsRequired(g, guests)})`)
+            .join(", ")}{" "}
+          {unbalanced.length === 1 ? "still needs" : "still need"} balancing.
+        </p>
+      ) : null}
+      {/* Same button treatment as the individual-meal sheet: coral when it's
+          ready to add, and a tappable ghost signpost — not a dead greyed
+          button — while a group still needs balancing, jumping to that group. */}
+      <Button
+        block
+        size="lg"
+        variant={valid ? "default" : "ghost"}
+        onClick={() => (valid ? confirm() : scrollToGroup(unbalanced[0].id))}
+      >
+        {valid ? `Add to order · ${formatCurrency(total)}` : `Balance ${unbalanced[0].name}`}
+      </Button>
+    </>
+  );
+
+  // Inline on the meal detail page: no overlay/header/close — the page already
+  // shows the name, photo and description. Same configurator + action bar.
+  if (embedded) {
+    return (
+      <div className="space-y-6">
+        {configBody}
+        <div className="border-t border-border pt-4">{footerBar}</div>
+      </div>
+    );
+  }
+
+  if (typeof document === "undefined") return null;
+
+  // Portalled to <body> so a transformed/overflow ancestor in the menu tree can't
+  // become the containing block for this `fixed` overlay and clip its top edge.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Configure ${item.name} for ${dateLabel}`}
+    >
+      <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
+      <div className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl">
+        <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+          <div className="min-w-0">
+            <h2 className="font-display text-lg font-semibold tracking-tight">{item.name}</h2>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">{item.description}</p>
+            {/* What comes with every package — one quiet line so it's known
+                without competing with the headcount and entree choices below.
+                (The full-page detail view shows it in more detail up top.) */}
+            {item.includedItems?.length ? (
+              <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">
+                <span className="font-semibold text-foreground">Also included:</span>{" "}
+                {item.includedItems.map((inc) => inc.name).join(" · ")}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
         </div>
 
-        <div className="border-t border-border p-4">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
-            <span className="text-[13px] text-muted-foreground">
-              {guests} × {formatCurrency(perGuest)}
-            </span>
-            <span className="font-display text-lg font-semibold nums">
-              {formatCurrency(total)}
-            </span>
-          </div>
-          {/* Name the groups that don't balance. A greyed-out button with no
-              reason sends the user hunting up the sheet for the one chip that
-              isn't green. */}
-          {!valid ? (
-            <p className="mb-3 text-2xs font-medium text-coral-deep">
-              {unbalanced
-                .map(
-                  (g) =>
-                    `${g.name} (${assignedIn(g)}/${servingsRequired(g, guests)})`,
-                )
-                .join(", ")}{" "}
-              {unbalanced.length === 1 ? "still needs" : "still need"}{" "}
-              balancing.
-            </p>
-          ) : null}
-          <Button
-            block
-            size="lg"
-            variant="teal"
-            disabled={!valid}
-            onClick={confirm}
-          >
-            Add to order · {formatCurrency(total)}
-          </Button>
-        </div>
+        <div className="flex-1 space-y-6 overflow-y-auto p-5">{configBody}</div>
+
+        <div className="border-t border-border p-4">{footerBar}</div>
       </div>
     </div>,
     document.body,

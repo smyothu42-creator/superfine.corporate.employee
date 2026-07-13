@@ -4,6 +4,7 @@ import { Topbar } from "./topbar";
 import { MobileDrawer, MobileTabBar } from "./mobile-nav";
 import { CartPanel } from "./cart-panel";
 import { SubsidyModelModal } from "./subsidy-model-modal";
+import { FeedbackLauncher } from "./feedback-launcher";
 import { SignInModal } from "@/components/auth/sign-in-modal";
 import { Toaster } from "@/components/ui/toaster";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -58,6 +59,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile bottom tab bar — first-class phone navigation */}
       <MobileTabBar />
+
+      {/* Floating feedback button (post-login) + its modal */}
+      <FeedbackLauncher />
 
       <Toaster />
       <ConfirmDialog />

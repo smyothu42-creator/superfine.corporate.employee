@@ -29,6 +29,7 @@ import { MenuItemCard } from "@/components/menu/menu-item-card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { AddOnModal } from "@/components/menu/add-on-modal";
 import { FamilyStyleModal } from "@/components/menu/family-style-modal";
+import { CutoffDayTooltip } from "@/components/cutoff/cutoff-day-tooltip";
 import { DateRangeModal } from "@/features/menu/date-range-modal";
 import {
   menuFor,
@@ -167,32 +168,13 @@ export function MenuView() {
     setRangeStart(week[0] ?? "");
     setRangeEnd(week[week.length - 1] ?? "");
 
-    // Editing a placed order takes precedence: focus one-day mode on the edited
-    // day so the "Select from full menu" hand-off lands on the right menu.
+    // The menu always opens in its default state — individual meals, single day.
+    // Editing a placed order still focuses that order's day (mode is already
+    // "single"), so the "Select from full menu" hand-off lands on the right menu.
     const editing = useUiStore.getState().editingOrder;
     if (editing) {
-      setMode("single");
       setSelectedDate(editing.date);
       setActiveDate(editing.date);
-    } else {
-      // Keep multi-day mode active if a multi-day plan is in flight: resume the
-      // day-by-day plan (and its "days remaining" prompt) spanning the planned
-      // days, instead of resetting to one-day mode on every return to /menu. The
-      // plan is the union of any days the cart already holds and the planned days
-      // published by the store — so days picked but not yet filled survive too.
-      const ui = useUiStore.getState();
-      const planDays = Array.from(
-        new Set([...useCartStore.getState().dates(), ...ui.plannedDays]),
-      ).sort();
-      if (planDays.length > 1) {
-        setMode("multi");
-        setRangeChosen(true);
-        setRangeStart(planDays[0]);
-        setRangeEnd(planDays[planDays.length - 1]);
-        // Focus the day the user asked to order for (e.g. from an empty cart day),
-        // falling back to the first planned day.
-        setActiveDate(planDays.includes(ui.activeOrderDate) ? ui.activeOrderDate : planDays[0]);
-      }
     }
     setMounted(true);
   }, []);
@@ -1288,23 +1270,6 @@ function calMatrix(year: number, month: number): (Date | null)[] {
 }
 
 /**
- * Hover bubble explaining why a calendar day is closed (e.g. "Order cutoff
- * passed…"). Rendered inside a `group` cell wrapper so it reveals on hover even
- * though the day button itself is disabled (disabled buttons don't fire hover).
- */
-function DayTooltip({ reason }: { reason: string }) {
-  return (
-    <span
-      role="tooltip"
-      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-40 -translate-x-1/2 rounded-lg bg-foreground px-2.5 py-1.5 text-center text-2xs font-medium leading-snug text-background shadow-raised group-hover:block"
-    >
-      {reason}
-      <span className="absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-foreground" />
-    </span>
-  );
-}
-
-/**
  * Unified delivery-date picker — a single dropdown that handles BOTH modes.
  *
  * An in-menu "Single day / Date range" toggle switches the calendar between:
@@ -1360,6 +1325,9 @@ function UnifiedDatePicker({
   const [dStart, setDStart] = React.useState(rangeStart);
   const [dEnd, setDEnd] = React.useState(rangeEnd);
   const [hovered, setHovered] = React.useState("");
+  /** ISO of the closed day whose reason bubble is pinned open by a tap (touch
+   *  has no hover, so the contact links would otherwise be unreachable). */
+  const [revealed, setRevealed] = React.useState("");
   const [cursor, setCursor] = React.useState(() => {
     const a = fromISODate(selectedDate || rangeStart || toISODate(startOfToday()));
     return { y: a.getFullYear(), m: a.getMonth() };
@@ -1378,6 +1346,7 @@ function UnifiedDatePicker({
     setDStart(rangeStart);
     setDEnd(rangeEnd);
     setHovered("");
+    setRevealed("");
     const a = fromISODate((mode === "single" ? selectedDate : rangeStart) || toISODate(startOfToday()));
     setCursor({ y: a.getFullYear(), m: a.getMonth() });
     if (triggerRef.current && window.matchMedia("(max-width: 639px)").matches) {
@@ -1567,6 +1536,9 @@ function UnifiedDatePicker({
                 return (
                   <div
                     key={iso}
+                    // The disabled button below is `pointer-events-none`, so a tap
+                    // on a closed day lands here and pins its reason bubble open.
+                    onClick={() => opt?.disabled && opt.reason && setRevealed((r) => (r === iso ? "" : iso))}
                     className={cn(
                       "relative flex items-center justify-center py-0.5",
                       // Disabled buttons don't fire hover, so the reason tooltip
@@ -1574,7 +1546,9 @@ function UnifiedDatePicker({
                       opt?.disabled && opt.reason && "group",
                     )}
                   >
-                    {opt?.disabled && opt.reason ? <DayTooltip reason={opt.reason} /> : null}
+                    {opt?.disabled && opt.reason ? (
+                      <CutoffDayTooltip reason={opt.reason} cutoff={cutoffClosed} open={revealed === iso} />
+                    ) : null}
                     <button
                       type="button"
                       disabled={!selectable}
@@ -1592,6 +1566,9 @@ function UnifiedDatePicker({
                       }}
                       className={cn(
                         "flex size-9 items-center justify-center rounded-full text-sm transition-colors",
+                        // Let taps fall through to the wrapper so the reason +
+                        // contact links can pin open on touch.
+                        !selectable && "pointer-events-none",
                         active
                           ? "bg-primary font-semibold text-primary-foreground"
                           : selectable
@@ -1620,12 +1597,17 @@ function UnifiedDatePicker({
               return (
                 <div
                   key={iso}
+                  // Disabled range days are `pointer-events-none`, so the tap
+                  // lands here and pins the reason bubble open (touch).
+                  onClick={() => disabled && info.reason && setRevealed((r) => (r === iso ? "" : iso))}
                   className={cn(
                     "relative flex items-center justify-center py-0.5",
                     disabled && info.reason && "group",
                   )}
                 >
-                  {disabled && info.reason ? <DayTooltip reason={info.reason} /> : null}
+                  {disabled && info.reason ? (
+                    <CutoffDayTooltip reason={info.reason} cutoff={cutoffClosed} open={revealed === iso} />
+                  ) : null}
                   {/* Continuous band — skipped on weekends so a range visibly hops them. */}
                   {inMiddle && !disabled ? <span className="absolute inset-y-0.5 inset-x-0 bg-teal-wash" /> : null}
                   {isStart && hasRange ? <span className="absolute inset-y-0.5 left-1/2 right-0 bg-teal-wash" /> : null}
@@ -1640,6 +1622,8 @@ function UnifiedDatePicker({
                     }
                     className={cn(
                       "relative z-10 flex size-9 items-center justify-center rounded-full text-sm transition-colors",
+                      // Taps fall through to the wrapper for the pinned bubble.
+                      disabled && "pointer-events-none",
                       isEndpoint
                         ? "bg-primary font-semibold text-primary-foreground"
                         : cutoffClosed
@@ -1663,7 +1647,7 @@ function UnifiedDatePicker({
             <p className="mt-2 text-2xs text-muted-foreground">
               Grey = closed.{" "}
               <span className="rounded bg-danger/10 px-1 font-semibold text-danger">Red</span> = cutoff passed
-              (hover to see why).
+              (hover or tap for contact options).
             </p>
           ) : (
             <>
