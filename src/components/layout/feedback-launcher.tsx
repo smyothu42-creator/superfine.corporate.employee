@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 function FeedbackLauncher() {
   const account = useSessionStore((s) => s.account);
   const open = useUiStore((s) => s.openFeedbackModal);
+  const cartOpen = useUiStore((s) => s.cartOpen);
   const pathname = usePathname();
 
   // Only after login, and never on the full-page feedback route (where the FAB
@@ -26,27 +27,31 @@ function FeedbackLauncher() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => open()}
-        aria-label="Share your feedback"
-        title="Share your feedback"
-        className={cn(
-          "group above-tab-bar fixed right-4 z-40 flex h-14 items-center justify-center rounded-full px-4 sm:right-6",
-          // A little depth: teal gradient, a hairline white ring to lift it off
-          // the content, and a soft coloured shadow.
-          "bg-gradient-to-br from-primary to-teal-deep text-primary-foreground ring-1 ring-white/20 shadow-lg shadow-teal-deep/30",
-          // Lifts and deepens its shadow on hover; presses back down on tap.
-          "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        )}
-      >
-        <MessageSquareHeart className="size-6 shrink-0" />
-        {/* Collapsed to an icon by default; slides out a label on hover (desktop). */}
-        <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm font-semibold opacity-0 transition-all duration-300 group-hover:ml-2 group-hover:max-w-[6rem] group-hover:opacity-100">
-          Feedback
-        </span>
-      </button>
+      {/* Hidden while the cart side panel is open — the FAB sits in the same
+          bottom-right corner as the cart's Checkout button and would cover it. */}
+      {!cartOpen ? (
+        <button
+          type="button"
+          onClick={() => open()}
+          aria-label="Share your feedback"
+          title="Share your feedback"
+          className={cn(
+            "group above-tab-bar fixed right-4 z-40 flex h-14 items-center justify-center rounded-full px-4 sm:right-6",
+            // A little depth: teal gradient, a hairline white ring to lift it off
+            // the content, and a soft coloured shadow.
+            "bg-gradient-to-br from-primary to-teal-deep text-primary-foreground ring-1 ring-white/20 shadow-lg shadow-teal-deep/30",
+            // Lifts and deepens its shadow on hover; presses back down on tap.
+            "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          )}
+        >
+          <MessageSquareHeart className="size-6 shrink-0" />
+          {/* Collapsed to an icon by default; slides out a label on hover (desktop). */}
+          <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm font-semibold opacity-0 transition-all duration-300 group-hover:ml-2 group-hover:max-w-[6rem] group-hover:opacity-100">
+            Feedback
+          </span>
+        </button>
+      ) : null}
       <FeedbackModal />
     </>
   );
