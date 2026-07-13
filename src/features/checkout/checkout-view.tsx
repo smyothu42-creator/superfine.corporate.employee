@@ -11,6 +11,7 @@ import {
   CalendarDays,
   Lock,
   Mail,
+  LogIn,
   ShoppingBag,
   X,
   Pencil,
@@ -294,7 +295,7 @@ export function CheckoutView() {
             /* Locked until we have an email. A corporate employee who types their
                address here would have it thrown away the moment they verify and
                the order snaps to the contract site — so don't invite the work. */
-            <IndividualAddressCard locked={!account} onUnlock={() => setIdentityOpen(true)} />
+            <IndividualAddressCard locked={!account} />
           )}
 
           {/* Delivery time — one common time for all days, editable per day in a modal */}
@@ -485,7 +486,7 @@ export function CheckoutView() {
                 disabled={!account || (!corporate && !deliveryComplete(delivery))}
               >
                 {!account
-                  ? "Add your email to continue"
+                  ? "Sign in to continue"
                   : !corporate && !deliveryComplete(delivery)
                     ? "Add a delivery address to continue"
                     : "Place order"}
@@ -530,10 +531,8 @@ export function CheckoutView() {
  */
 function IndividualAddressCard({
   locked,
-  onUnlock,
 }: {
   locked: boolean;
-  onUnlock: () => void;
 }) {
   const delivery = useSessionStore((s) => s.delivery);
   const setDelivery = useSessionStore((s) => s.setDelivery);
@@ -551,25 +550,10 @@ function IndividualAddressCard({
       <CardHeader>
         <CardTitle>Delivery address</CardTitle>
         <span className="text-2xs text-muted-foreground">
-          {locked ? "Available once we have your email" : "Where should we bring it?"}
+          {locked ? "Available once you sign in" : "Where should we bring it?"}
         </span>
       </CardHeader>
       <CardBody className="space-y-4">
-        {locked ? (
-          <Notice tone="locked">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>Add your email above to fill in a delivery address.</span>
-              <button
-                type="button"
-                onClick={onUnlock}
-                className="font-semibold text-primary underline underline-offset-2"
-              >
-                Add email
-              </button>
-            </div>
-          </Notice>
-        ) : null}
-
         {/* One `disabled` on the wrapper rather than on each control: a fieldset
             takes its whole subtree out of the tab order, so a locked form can't
             be reached by keyboard even though it's still on screen. */}
@@ -781,20 +765,20 @@ function IdentityGate({ onOpen }: { onOpen: () => void }) {
       <CardBody className="space-y-4">
         <div className="flex items-start gap-3">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-teal-wash text-primary">
-            <Mail className="size-5" />
+            <LogIn className="size-5" />
           </span>
           <div className="min-w-0">
             <h2 className="font-display text-xl font-semibold tracking-tight">
-              Where should we send the receipt?
+              Sign in to continue checkout
             </h2>
             <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-              Add your email to continue. If your company covers lunch, verifying a work address
-              unlocks the subsidy before you pay.
+              Sign in or create an account to place your order. If your company covers lunch,
+              signing in with your work email unlocks the subsidy before you pay.
             </p>
           </div>
         </div>
         <Button block size="lg" onClick={onOpen}>
-          Add your email <ArrowRight className="size-4" />
+          Sign in to continue <ArrowRight className="size-4" />
         </Button>
       </CardBody>
     </Card>

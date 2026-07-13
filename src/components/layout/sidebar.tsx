@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, LogIn } from "lucide-react";
-import { NAV_ITEMS, isActive, visibleNav } from "@/lib/nav";
+import { NAV_ITEMS, isActive, visibleNav, requiresAccount } from "@/lib/nav";
 import { useUiStore } from "@/store/use-ui-store";
 import { useSessionStore } from "@/store/use-session-store";
 import { Logo } from "@/components/brand/logo";
@@ -25,6 +25,7 @@ function Sidebar({ onNavigate }: SidebarProps) {
 
   const account = useSessionStore((s) => s.account);
   const signOut = useSessionStore((s) => s.signOut);
+  const openSignInPrompt = useUiStore((s) => s.openSignInPrompt);
 
   async function handleLogout() {
     const ok = await confirm({
@@ -53,11 +54,20 @@ function Sidebar({ onNavigate }: SidebarProps) {
         {visibleNav(NAV_ITEMS, account).map((item) => {
           const active = isActive(pathname, item) && !(editing && item.href === "/menu");
           const Icon = item.icon;
+          // A guest reaching for an account-only screen gets the sign-in prompt
+          // in place — no navigation to a page there's nothing to show them on.
+          const gated = !account && requiresAccount(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
-              onClick={onNavigate}
+              onClick={(e) => {
+                if (gated) {
+                  e.preventDefault();
+                  openSignInPrompt(item.href);
+                }
+                onNavigate?.();
+              }}
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-full px-4 py-2.5 text-sm font-semibold transition-colors",
@@ -104,13 +114,16 @@ function Sidebar({ onNavigate }: SidebarProps) {
             </button>
           </div>
         ) : (
-          <Link
-            href="/login"
-            onClick={onNavigate}
-            className="flex items-center justify-center gap-2 rounded-full bg-sidebar-active/40 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sidebar-active"
+          <button
+            type="button"
+            onClick={() => {
+              openSignInPrompt();
+              onNavigate?.();
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-sidebar-active/40 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sidebar-active"
           >
             <LogIn className="size-4" /> Sign in
-          </Link>
+          </button>
         )}
       </div>
     </div>

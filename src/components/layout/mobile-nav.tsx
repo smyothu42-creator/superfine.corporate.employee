@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
-import { MOBILE_NAV, isActive, visibleNav } from "@/lib/nav";
+import { MOBILE_NAV, isActive, visibleNav, requiresAccount } from "@/lib/nav";
 import { Sidebar } from "./sidebar";
 import { useUiStore } from "@/store/use-ui-store";
 import { useSessionStore } from "@/store/use-session-store";
@@ -51,6 +51,7 @@ function MobileDrawer() {
 function MobileTabBar() {
   const pathname = usePathname();
   const account = useSessionStore((s) => s.account);
+  const openSignInPrompt = useUiStore((s) => s.openSignInPrompt);
   // Auto-Order is corporate-only, so individuals get a 4-tab bar, not 5.
   const items = visibleNav(MOBILE_NAV, account);
   return (
@@ -65,10 +66,21 @@ function MobileTabBar() {
       {items.map((item) => {
         const active = isActive(pathname, item);
         const Icon = item.icon;
+        // Guests get the sign-in prompt in place rather than a page there's
+        // nothing to render for them.
+        const gated = !account && requiresAccount(item.href);
         return (
           <Link
             key={item.href}
             href={item.href}
+            onClick={
+              gated
+                ? (e) => {
+                    e.preventDefault();
+                    openSignInPrompt(item.href);
+                  }
+                : undefined
+            }
             aria-current={active ? "page" : undefined}
             className={cn(
               // min-h-[3.25rem] + the icon puck clears Apple's 44px target.

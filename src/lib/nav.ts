@@ -54,6 +54,27 @@ export function visibleNav(items: NavItem[], account: Account | null): NavItem[]
   return items.filter((item) => !item.corporateOnly || isSubsidized(account));
 }
 
+/**
+ * Routes that are *about* an account — an order history, a saved profile, a
+ * notification feed, a feedback thread. A guest reaching for one is shown a
+ * sign-in prompt instead. The menu, cart and checkout are deliberately absent:
+ * browsing needs a delivery area, not an identity, and checkout asks who you
+ * are at the moment it finally needs to know.
+ */
+export const ACCOUNT_ROUTES = [
+  "/account",
+  "/orders",
+  "/auto-order",
+  "/plan",
+  "/notifications",
+  "/feedback",
+];
+
+/** Whether a path sits behind the sign-in wall (see {@link ACCOUNT_ROUTES}). */
+export function requiresAccount(href: string): boolean {
+  return ACCOUNT_ROUTES.some((r) => href === r || href.startsWith(r + "/"));
+}
+
 export function isActive(pathname: string, item: NavItem) {
   if (pathname === item.href) return true;
   if (pathname.startsWith(item.href + "/")) {

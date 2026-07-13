@@ -130,27 +130,32 @@ export function LocationDialog({
             </div>
 
             {/* The browser's own prompt opens from this click, so it arrives
-                after the user has already agreed to the idea. */}
-            <Button block size="lg" disabled={locating} onClick={onAllow}>
-              {locating ? (
-                <>
-                  <LoaderCircle className="size-4 animate-spin" /> Finding you…
-                </>
-              ) : (
-                <>
-                  <Navigation className="size-4" /> Use my current location
-                </>
-              )}
-            </Button>
+                after the user has already agreed to the idea. The two buttons
+                share a tighter group so they read as a pair. */}
+            <div className="space-y-3">
+              <Button block size="lg" disabled={locating} onClick={onAllow}>
+                {locating ? (
+                  <>
+                    <LoaderCircle className="size-4 animate-spin" /> Finding you…
+                  </>
+                ) : (
+                  <>
+                    <Navigation className="size-4" /> Use my current location
+                  </>
+                )}
+              </Button>
 
-            <button
-              type="button"
-              disabled={locating}
-              onClick={() => setState("zip")}
-              className="block w-full text-center text-[13px] font-semibold text-primary hover:underline disabled:opacity-50"
-            >
-              Enter a ZIP code instead
-            </button>
+              <Button
+                type="button"
+                variant="outline"
+                block
+                size="lg"
+                disabled={locating}
+                onClick={() => setState("zip")}
+              >
+                Enter a ZIP code instead
+              </Button>
+            </div>
           </div>
         ) : state === "unserviceable" ? (
           <div className="space-y-5">

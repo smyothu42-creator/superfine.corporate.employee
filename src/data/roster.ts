@@ -37,3 +37,7 @@ export const demoCorporateEmail = "maya.chen@neptunecorp.com";
 
 /** Demo affordance: what the Google OAuth round trip hands back — no contract. */
 export const demoGoogleEmail = "alex.morgan@gmail.com";
+
+/** Demo affordance: what the Microsoft OAuth round trip hands back — a personal
+ *  outlook address, so it resolves to an individual, not a company. */
+export const demoMicrosoftEmail = "jordan.lee@outlook.com";

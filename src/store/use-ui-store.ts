@@ -67,6 +67,14 @@ interface UiState {
   /** Explainer modal shown when the model is switched. */
   subsidyModalOpen: boolean;
   closeSubsidyModal: () => void;
+  /**
+   * Sign-in wall for guests reaching an account-only screen. `signInPromptNext`
+   * remembers where they were headed so we can land them there once signed in.
+   */
+  signInPromptOpen: boolean;
+  signInPromptNext: string | null;
+  openSignInPrompt: (next?: string | null) => void;
+  closeSignInPrompt: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -99,4 +107,8 @@ export const useUiStore = create<UiState>((set) => ({
     })),
   subsidyModalOpen: false,
   closeSubsidyModal: () => set({ subsidyModalOpen: false }),
+  signInPromptOpen: false,
+  signInPromptNext: null,
+  openSignInPrompt: (next = null) => set({ signInPromptOpen: true, signInPromptNext: next }),
+  closeSignInPrompt: () => set({ signInPromptOpen: false, signInPromptNext: null }),
 }));

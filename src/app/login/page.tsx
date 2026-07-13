@@ -6,9 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { LoaderCircle, UtensilsCrossed, KeyRound } from "lucide-react";
 import { AuthLayout } from "@/components/brand/auth-hero";
 import { Button } from "@/components/ui/button";
-import { IdentityFlow, type AuthMode } from "@/features/auth/identity-flow";
+import { AuthPanel } from "@/features/auth/auth-panel";
+import type { AuthMode } from "@/features/auth/identity-flow";
 import { useBrowseFlow } from "@/features/location/use-browse-flow";
-import { cn } from "@/lib/utils";
 
 /**
  * Sign in and sign up, on one screen.
@@ -35,36 +35,17 @@ export default function LoginPage() {
 function LoginCard() {
   const router = useRouter();
   const params = useSearchParams();
-  const [mode, setMode] = React.useState<AuthMode>(
-    params.get("mode") === "signup" ? "signup" : "signin",
-  );
+  const initialMode: AuthMode = params.get("mode") === "signup" ? "signup" : "signin";
   const { browse, locating, dialogNode } = useBrowseFlow();
 
   return (
     <div className="w-full max-w-lg">
       <div className="rounded-3xl border border-border bg-card p-7 shadow-card sm:p-9">
-        <div className="mb-6 flex rounded-full border border-border bg-muted/60 p-1">
-          <ModeTab active={mode === "signin"} onClick={() => setMode("signin")}>
-            Sign in
-          </ModeTab>
-          <ModeTab active={mode === "signup"} onClick={() => setMode("signup")}>
-            Sign up
-          </ModeTab>
-        </div>
-
-        {/* Remounting on mode change resets a half-typed password — the toggle is
-            a change of intent, and carrying the old state across it reads as a bug. */}
         {/* Nobody arriving through this form meets the menu's location gate. A
             new individual gives a ZIP on the last step of sign-up; a returning
             one answered when they registered; a corporate employee delivers to
             a contract address. Only browsing without an account is still asked. */}
-        <IdentityFlow
-          key={mode}
-          mode={mode}
-          showModeSwitch={false}
-          onModeChange={setMode}
-          onDone={() => router.push("/menu")}
-        />
+        <AuthPanel initialMode={initialMode} onDone={() => router.push("/menu")} />
 
         {/* An individual who landed here by habit needs the door they actually
             wanted to be legible without being a second card competing with the
@@ -107,29 +88,5 @@ function LoginCard() {
 
       {dialogNode}
     </div>
-  );
-}
-
-function ModeTab({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex-1 rounded-full px-4 py-2 text-[13px] font-semibold transition-colors",
-        active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
   );
 }

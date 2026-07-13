@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { LocationDialog, type LocationPhase } from "@/features/location/location-dialog";
-import { requestLocation } from "@/lib/geolocation";
 import { checkZip } from "@/data/service-areas";
 import { useSessionStore } from "@/store/use-session-store";
 
@@ -61,27 +60,20 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
     }
   }, [hydrated, savedZip, zipStatus]);
 
-  /** Ask the browser. Called from the dialog's button, so the prompt is allowed. */
+  /**
+   * "Use my current location". In this demo the kitchen only cooks in San
+   * Francisco and there's no real GPS to place a reviewer inside it, so the
+   * button always resolves to a location outside the zone and shows the "not in
+   * our service area" message — from there "Try a different ZIP code" reaches a
+   * serviceable ZIP (e.g. 94105). A production build would branch on the real
+   * result (located / outside-zone / denied / unavailable) instead; the brief
+   * wait here stands in for that lookup.
+   */
   async function allow() {
     setLocating(true);
-    const result = await requestLocation();
+    await new Promise((resolve) => window.setTimeout(resolve, 800));
     setLocating(false);
-
-    switch (result.status) {
-      case "located":
-        // `settled` flips with the store, and this gate stops gating.
-        useSessionStore.getState().setZip(result.zip, "serviceable");
-        setPhase(null);
-        return;
-      case "outside-zone":
-        // We know where they are and it isn't in the zone. Say so directly
-        // rather than making them type a ZIP to be told the same thing.
-        setPhase("unserviceable");
-        return;
-      case "denied":
-      case "unavailable":
-        setPhase("zip");
-    }
+    setPhase("unserviceable");
   }
 
   /**

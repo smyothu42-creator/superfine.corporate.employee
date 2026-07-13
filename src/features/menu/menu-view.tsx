@@ -45,7 +45,6 @@ import {
 import { program } from "@/data/program";
 import { useSessionStore } from "@/store/use-session-store";
 import { useProfileStore } from "@/store/use-profile-store";
-import { CorporatePrompt } from "@/components/auth/corporate-prompt";
 import { useCartStore } from "@/store/use-cart-store";
 import { useUiStore } from "@/store/use-ui-store";
 import {
@@ -538,10 +537,6 @@ export function MenuView() {
     // Extra room on phones for the floating "Review cart" bar, which sits above
     // the tab bar and would otherwise cover the last menu card.
     <div className="space-y-5 pb-16 lg:pb-4">
-      {/* Lets a corporate employee who came in through the general flow claim
-          their subsidy before they judge the menu on retail prices. */}
-      <CorporatePrompt />
-
       {/* Start an order — date selection. The sticky wrapper pins flush to the
           topbar with a solid background so nothing shows through the float gap,
           while the inner card sits below it with a shadow (floating look). */}

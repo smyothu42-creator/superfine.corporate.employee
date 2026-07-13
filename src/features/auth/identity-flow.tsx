@@ -4,18 +4,20 @@ import * as React from "react";
 import Link from "next/link";
 import {
   Mail,
+  MailCheck,
   KeyRound,
   ArrowRight,
   ArrowLeft,
   Building2,
   Send,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Field } from "@/components/ui/input";
-import { lookupCorporate, demoCorporateEmail, demoGoogleEmail } from "@/data/roster";
+import { lookupCorporate, demoCorporateEmail, demoGoogleEmail, demoMicrosoftEmail } from "@/data/roster";
 import { useSessionStore, type Account } from "@/store/use-session-store";
 
-type Step = "form" | "exists" | "forgot" | "reset-sent";
+type Step = "form" | "verify" | "exists" | "forgot" | "reset-sent";
 
 export type AuthMode = "signin" | "signup";
 
@@ -25,8 +27,11 @@ export type AuthMode = "signin" | "signup";
  * corporate employee and sees their subsidy from that moment on; everyone else
  * is an individual and gives us a name and a number.
  *
- * Both prove the address the same way: a password on the form. There's no
- * email-confirmation round trip — submitting resolves the session straight away.
+ * An individual proves the address twice: a password on the form, then a
+ * confirmation link we email to that address, which they open to create the
+ * account — the same "is this inbox really yours" check any consumer sign-up
+ * runs. Signing in skips it (the account already exists), and OAuth skips it
+ * (the provider proved the address).
  *
  * A corporate employee never registers. Their account is provisioned from the
  * contract, so a sign-up attempt on a contracted domain is someone who already
@@ -55,6 +60,8 @@ export function IdentityFlow({
   const [password, setPassword] = React.useState("");
   /** Sign up only — a typo in a password you can't see is a locked-out account. */
   const [confirm, setConfirm] = React.useState("");
+  /** Whether the "resend" affordance on the confirmation step was just used. */
+  const [resent, setResent] = React.useState(false);
 
   function complete(account: Account) {
     signIn(account);
@@ -74,17 +81,26 @@ export function IdentityFlow({
   }
 
   /**
-   * The password is the proof — we resolve the session straight from the form,
-   * with no email-confirmation round trip. A contracted domain never registers,
-   * though — it already has an account — so sign up on one is sent to "exists".
+   * Leaving the credentials form. A contracted domain never registers — it
+   * already has an account — so sign up on one is sent to "exists". A new
+   * individual goes to the email-confirmation step before the account is made.
+   * Signing in has nothing to confirm, so it resolves straight from the form.
    */
   function submitForm(e: React.FormEvent) {
     e.preventDefault();
     if (mode === "signup" && lookupCorporate(email)) {
       setStep("exists");
+    } else if (mode === "signup") {
+      setResent(false);
+      setStep("verify");
     } else {
       resolveVerified(email);
     }
+  }
+
+  /** "Resend" — stands in for mailing a fresh confirmation link. */
+  function resendEmail() {
+    setResent(true);
   }
 
   /**
@@ -110,6 +126,7 @@ export function IdentityFlow({
     setMode(next);
     setPassword("");
     setConfirm("");
+    setResent(false);
     setStep("form");
     onModeChange?.(next);
   }
@@ -125,10 +142,53 @@ export function IdentityFlow({
   function continueWithProvider(provider: "google" | "microsoft") {
     // Stands in for the OAuth round trip. The provider returns a proved address,
     // so there is nothing left for a verification email to establish — a work
-    // domain becomes corporate, anyone else goes straight to the menu.
-    const returned = provider === "microsoft" ? demoCorporateEmail : demoGoogleEmail;
+    // domain becomes corporate, anyone else goes straight to the menu. Both demo
+    // providers hand back a personal address, so each resolves to an individual.
+    const returned = provider === "microsoft" ? demoMicrosoftEmail : demoGoogleEmail;
     setEmail(returned);
     resolveVerified(returned);
+  }
+
+  /**
+   * Email confirmation — the individual sign-up gate. We email a confirmation
+   * link to the address; opening it from the inbox proves the inbox is theirs
+   * and creates the account. The demo button below stands in for that click —
+   * in production the link lands back here already verified.
+   */
+  if (step === "verify") {
+    const shownEmail = email.trim().toLowerCase();
+    return (
+      <div className="space-y-5">
+        <Header
+          icon={<MailCheck className="size-5" />}
+          title="Confirm your email"
+          subtitle={`We sent a confirmation link to ${shownEmail}. Open that email and tap Confirm to finish creating your account.`}
+        />
+        {resent ? (
+          <p className="flex items-center gap-2 rounded-xl border border-border bg-teal-wash px-4 py-3 text-[13px] font-medium text-teal-deep">
+            <Check className="size-4 shrink-0" /> A fresh confirmation link is on its way to {shownEmail}.
+          </p>
+        ) : null}
+        {/* Demo affordance: stands in for opening the email and tapping its
+            Confirm button. Clicking it proves the address and creates the
+            account, just as opening the real link would. */}
+        <Button block size="lg" onClick={() => resolveVerified(email)}>
+          <MailCheck className="size-4" /> Open the confirmation link (demo)
+        </Button>
+        {/* Two ways out: get another email, or fix a mistyped address. */}
+        <div className="flex items-center justify-center gap-1.5 text-[13px]">
+          <span className="text-muted-foreground">Didn&apos;t get it?</span>
+          <button
+            type="button"
+            onClick={resendEmail}
+            className="font-semibold text-primary underline underline-offset-2 hover:text-teal-deep"
+          >
+            Resend email
+          </button>
+        </div>
+        <BackLink onClick={() => setStep("form")}>Use a different email</BackLink>
+      </div>
+    );
   }
 
   /**
@@ -321,8 +381,9 @@ export function IdentityFlow({
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      {/* A work account already signed into Microsoft is still the shortest path
-          a corporate employee has to their subsidy — just not the first one. */}
+      {/* OAuth for anyone who'd rather not type a password. In the demo both
+          providers return a personal address, so each signs in as an individual;
+          a corporate employee proves their work address on the form above. */}
       <div className="space-y-2">
         <ProviderButton onClick={() => continueWithProvider("google")} icon={<GoogleMark />}>
           Continue with Google
