@@ -59,13 +59,18 @@ export function OrderTimeline({
   }
   const current = STATUS_INDEX[status];
   return (
-    <div className="flex items-center gap-3">
+    // Extra bottom room on phones for the labels, which stack *under* each circle
+    // (absolute, so they don't shift the row); no extra room needed at sm+, where
+    // the label sits beside the circle.
+    <div className="flex items-center gap-3 pb-6 sm:pb-0">
       {TIMELINE.map((step, i) => {
         const done = i < current;
         const active = i === current;
+        const isFirst = i === 0;
+        const isLast = i === TIMELINE.length - 1;
         return (
           <React.Fragment key={step.label}>
-            <div className="flex items-center gap-2">
+            <div className="relative flex items-center gap-2">
               <span
                 className={cn(
                   "flex size-7 shrink-0 items-center justify-center rounded-full text-2xs font-bold transition-colors",
@@ -74,13 +79,17 @@ export function OrderTimeline({
                   !done && !active && "border border-border text-muted-foreground",
                 )}
               >
-                {done ? <Check className="size-3.5" /> : i + 1}
+                {done ? <Check className="size-4" strokeWidth={3} /> : i + 1}
               </span>
               <span
                 className={cn(
-                  "text-[13px] font-semibold transition-colors",
+                  "font-semibold transition-colors",
                   active ? "text-teal-deep" : done ? "text-foreground" : "text-muted-foreground",
-                  active ? "inline" : "hidden sm:inline",
+                  // Phones: centred under the circle (edge steps align to their
+                  // circle's edge so nothing clips). sm+: inline beside the circle.
+                  "absolute top-full mt-1 whitespace-nowrap text-2xs",
+                  isFirst ? "left-0" : isLast ? "right-0" : "left-1/2 -translate-x-1/2",
+                  "sm:static sm:left-auto sm:right-auto sm:top-auto sm:mt-0 sm:translate-x-0 sm:text-[13px]",
                 )}
               >
                 {step.label}

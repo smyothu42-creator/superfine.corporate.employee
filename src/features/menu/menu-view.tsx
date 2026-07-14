@@ -9,7 +9,6 @@ import {
   ChevronRight,
   ChevronLeft,
   ChevronDown,
-  ShoppingBag,
   CalendarRange,
   CalendarDays,
   Replace,
@@ -400,9 +399,7 @@ export function MenuView() {
     );
   }
 
-  const cartCount = cart.count();
   const cartTotal = cart.subtotal();
-  const cartOwed = cart.totalEmployeePaid();
 
   // Real-time day classification shared by both calendar tabs. Weekends and
   // holidays are *structural* closures (greyed). A weekday whose order cutoff
@@ -516,9 +513,7 @@ export function MenuView() {
   );
 
   return (
-    // Extra room on phones for the floating "Review cart" bar, which sits above
-    // the tab bar and would otherwise cover the last menu card.
-    <div className="space-y-5 pb-16 lg:pb-4">
+    <div className="space-y-5 pb-4">
       {/* Start an order — date selection. The sticky wrapper pins flush to the
           topbar with a solid background so nothing shows through the float gap,
           while the inner card sits below it with a shadow (floating look). */}
@@ -555,7 +550,10 @@ export function MenuView() {
                 Fresh, globally inspired lunches delivered daily.
               </p>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2.5 md:flex-nowrap md:justify-end">
+            {/* On phones this may wrap: single-day (short label) fits beside the
+                tabs on one line, while the wider multi-day range pill drops to
+                its own line so nothing overflows. Single line again at sm+. */}
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:flex-nowrap sm:gap-2.5 md:justify-end">
               <Tabs
                 tabs={[
                   { id: "individual", label: "Individual" },
@@ -575,7 +573,7 @@ export function MenuView() {
             to a sliver. Search takes its own row and the pills scroll under it.
             From `sm` up, `sm:contents` dissolves the wrapper and it's the
             one-line bar with dividers the design intends. */}
-        <div className="mt-4 flex flex-col gap-2 rounded-3xl border border-border bg-card p-1.5 shadow-sm sm:flex-row sm:items-center sm:gap-1 sm:rounded-full">
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-border bg-card p-1.5 shadow-sm sm:flex-row sm:items-center sm:gap-1 sm:rounded-full">
           <div className="relative flex min-w-0 flex-1 items-center">
             <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
             <input
@@ -587,11 +585,11 @@ export function MenuView() {
               className="h-10 w-full rounded-full bg-transparent pl-9 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground/70 sm:h-9 sm:text-sm"
             />
           </div>
-          {/* flex-wrap, not overflow-x-auto: a scroll container clips the
+          {/* flex-nowrap (not overflow-x-auto): a scroll container clips the
               pills' absolutely-positioned dropdown panels on both axes, so
-              they'd open invisibly on phones. The three pills fit one row at
-              390px and wrap gracefully below that. */}
-          <div className="flex flex-wrap items-center gap-1 sm:contents">
+              they'd open invisibly on phones. The pills shrink on phones (see
+              their own sm: breakpoints) so all three stay on one row. */}
+          <div className="flex flex-nowrap items-center gap-1 sm:contents">
             <div className="hidden h-6 w-px shrink-0 bg-border sm:block" />
             <MultiSelectFilter
               label="Allergens"
@@ -716,28 +714,6 @@ export function MenuView() {
           No items match your filters for this day. Try clearing filters or pick another day.
         </div>
       )}
-
-      {/* Sticky review-cart bar — mobile only (desktop uses the topbar cart) */}
-      {cartCount > 0 && !editingOrder ? (
-        <div className="above-tab-bar pointer-events-none fixed inset-x-0 z-30 px-4 lg:hidden">
-          <div className="pointer-events-auto mx-auto flex max-w-[1100px] items-center justify-between gap-3 rounded-full border border-teal-deep bg-sidebar px-4 py-2.5 text-sidebar-foreground shadow-raised">
-            <span className="flex items-center gap-2 text-[13px] font-semibold">
-              <ShoppingBag className="size-4" />
-              {cartCount} {cartCount === 1 ? "item" : "items"} ·{" "}
-              {cart.dates().length} {cart.dates().length === 1 ? "day" : "days"}
-              <span className="hidden text-sidebar-muted sm:inline">
-                {cartOwed > 0 ? `· you pay ${formatCurrency(cartOwed)}` : "· fully covered"}
-              </span>
-            </span>
-            <Link
-              href="/cart"
-              className="flex items-center gap-1 rounded-full bg-yellow px-4 py-1.5 text-[13px] font-bold text-teal-deep transition-colors hover:bg-yellow-deep"
-            >
-              Review cart <ChevronRight className="size-4" />
-            </Link>
-          </div>
-        </div>
-      ) : null}
 
       {customizing ? (
         <AddOnModal
@@ -1132,7 +1108,9 @@ function PromoCard({ promo }: { promo: Promo }) {
         <span className="inline-flex w-fit items-center rounded-full bg-coral px-2.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-white shadow-sm">
           {promo.tag}
         </span>
-        <h3 className="mt-0.5 line-clamp-1 font-display text-lg font-bold leading-tight tracking-tight text-teal-deep sm:text-xl">
+        {/* Phones: no clamp + smaller font so the whole title shows (no "…");
+            single-line clamp at the original size from sm+. */}
+        <h3 className="mt-0.5 font-display text-sm font-bold leading-tight tracking-tight text-teal-deep sm:line-clamp-1 sm:text-xl">
           {promo.title}
         </h3>
         <p className="line-clamp-2 text-[13px] leading-snug text-teal-deep/75">{promo.body}</p>
@@ -1144,8 +1122,9 @@ function PromoCard({ promo }: { promo: Promo }) {
         </Link>
       </div>
 
-      {/* Full-bleed real food photo on the right, fading into the card gradient. */}
-      <div className="relative hidden w-[40%] max-w-[220px] shrink-0 self-stretch sm:block">
+      {/* Full-bleed real food photo on the right, fading into the card gradient.
+          Shown on every size — including mobile, where the card is a single box. */}
+      <div className="relative block w-[38%] max-w-[220px] shrink-0 self-stretch">
         <FoodPhoto src={promo.image} alt={promo.alt} className="size-full" iconClassName="size-10" />
         <div className="pointer-events-none absolute inset-y-0 left-0 w-14 bg-gradient-to-r from-teal-wash to-transparent" />
       </div>
@@ -1159,9 +1138,25 @@ function PromoCard({ promo }: { promo: Promo }) {
  * different promotions.
  */
 function PromoBanner() {
-  const perPage = 2;
+  // One card per page on mobile (a single full-width box, not two stacked),
+  // two on sm+. Mirrors the (max-width: 639px) breakpoint used elsewhere here.
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const perPage = isMobile ? 1 : 2;
   const pageCount = Math.ceil(PROMOS.length / perPage);
   const [page, setPage] = React.useState(0);
+
+  // Keep the page in range when perPage flips across the breakpoint.
+  React.useEffect(() => {
+    setPage((p) => Math.min(p, pageCount - 1));
+  }, [pageCount]);
 
   const canLeft = page > 0;
   const canRight = page < pageCount - 1;
@@ -1428,22 +1423,31 @@ function UnifiedDatePicker({
         className={cn(
           // py matches the Individual/Family toggle height (its p-1 + border add
           // ~10px around an identically-padded button), keeping the same pill style.
-          "flex max-w-full items-center gap-1.5 rounded-full px-3 py-[11px] text-[13px] font-semibold text-teal-deep transition-colors",
+          // Shrinks on phones so the tabs + date sit on one line; restored at sm+.
+          "flex max-w-full items-center gap-1 rounded-full px-2.5 py-2 text-xs font-semibold text-teal-deep transition-colors sm:gap-1.5 sm:px-3 sm:py-[11px] sm:text-[13px]",
           open ? "bg-teal-soft" : "bg-teal-wash hover:bg-teal-soft",
         )}
       >
         {mode === "single" ? (
           <>
             <CalendarDays className="size-4 shrink-0 text-primary" />
-            <span className="truncate">{formatDayLong(fromISODate(selectedDate))}</span>
+            {/* Short weekday/month on phones ("Wed, Jul 15"); full label at sm+. */}
+            <span className="truncate sm:hidden">{formatDay(fromISODate(selectedDate))}</span>
+            <span className="hidden truncate sm:inline">{formatDayLong(fromISODate(selectedDate))}</span>
           </>
         ) : (
           <>
             <CalendarRange className="size-4 shrink-0 text-primary" />
-            <span className="truncate">{formatDay(fromISODate(rangeStart))}</span>
-            <ArrowRight className="size-3.5 shrink-0 text-primary/60" />
-            <span className="truncate">{formatDay(fromISODate(rangeEnd))}</span>
-            <span className="ml-0.5 shrink-0 rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-teal-deep shadow-sm">
+            {/* Drop the weekday on phones ("Jul 15") so the range + count fit;
+                full "Wed, Jul 15" at sm+. */}
+            <span className="truncate sm:hidden">{formatShort(fromISODate(rangeStart))}</span>
+            <span className="hidden truncate sm:inline">{formatDay(fromISODate(rangeStart))}</span>
+            <ArrowRight className="size-3 shrink-0 text-primary/60 sm:size-3.5" />
+            <span className="truncate sm:hidden">{formatShort(fromISODate(rangeEnd))}</span>
+            <span className="hidden truncate sm:inline">{formatDay(fromISODate(rangeEnd))}</span>
+            {/* Day-count badge is hidden on phones (the count also shows in the
+                plan roll-up below the header); visible from sm+. */}
+            <span className="ml-0.5 hidden shrink-0 rounded-full bg-card px-1.5 py-0.5 text-[11px] font-bold text-teal-deep shadow-sm sm:inline-block sm:px-2">
               {rangeDays.length} {rangeDays.length === 1 ? "day" : "days"}
             </span>
           </>

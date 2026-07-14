@@ -80,7 +80,7 @@ export function ThemeSelect({
                 "w-full rounded-full border border-border bg-card shadow-sm hover:border-primary/40 hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30",
                 size === "sm" ? "h-8 pl-3.5 pr-2.5 text-[13px]" : "h-11 pl-4 pr-3 text-sm",
               )
-            : "h-9 max-w-[9rem] rounded-full bg-transparent pl-3 pr-2 text-[13px] hover:bg-teal-wash focus-visible:bg-teal-wash",
+            : "h-8 max-w-[9rem] rounded-full bg-transparent pl-2.5 pr-2 text-xs hover:bg-teal-wash focus-visible:bg-teal-wash sm:h-9 sm:pl-3 sm:text-[13px]",
           triggerClassName,
         )}
       >

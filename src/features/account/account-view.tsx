@@ -161,7 +161,10 @@ export function AccountView() {
           everyone. */}
       <div
         className={cn(
-          "grid grid-cols-1 gap-3 sm:grid-cols-2",
+          // Two-up on phones too (was stacked): pairs the subsidy + meals tiles
+          // on one row and the two cutoff tiles on the next. Tablet/desktop
+          // unchanged.
+          "grid grid-cols-2 gap-3 sm:grid-cols-2",
           corporate ? "lg:grid-cols-4" : "lg:grid-cols-2",
         )}
       >

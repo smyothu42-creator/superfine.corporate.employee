@@ -4,7 +4,7 @@ import {
   Repeat,
   Bell,
   UserCog,
-  ShoppingBag,
+  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import { isSubsidized, type Account } from "@/store/use-session-store";
@@ -43,7 +43,7 @@ export const NAV_ITEMS: NavItem[] = [
  */
 export const MOBILE_NAV: NavItem[] = [
   { label: "Menu", href: "/menu", icon: UtensilsCrossed },
-  { label: "Cart", href: "/cart", icon: ShoppingBag, match: ["/checkout"] },
+  { label: "Cart", href: "/cart", icon: ShoppingCart, match: ["/checkout"] },
   { label: "Orders", href: "/orders", icon: ClipboardList },
   { label: "Auto", href: "/auto-order", icon: Repeat, corporateOnly: true },
   { label: "Account", href: "/account", icon: UserCog },

@@ -80,7 +80,7 @@ export function MultiSelectFilter({
         aria-expanded={open}
         onClick={toggleOpen}
         className={cn(
-          "flex h-9 items-center gap-1.5 rounded-full pl-3.5 pr-2.5 text-[13px] font-semibold text-teal-deep transition-colors",
+          "flex h-8 items-center gap-1 rounded-full pl-2.5 pr-2 text-xs font-semibold text-teal-deep transition-colors sm:h-9 sm:gap-1.5 sm:pl-3.5 sm:pr-2.5 sm:text-[13px]",
           count > 0 ? "bg-teal-wash" : "hover:bg-teal-wash",
         )}
       >

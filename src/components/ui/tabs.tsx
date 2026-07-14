@@ -24,7 +24,7 @@ function Tabs({ tabs, value, onValueChange, className }: TabsProps) {
             aria-selected={active}
             onClick={() => onValueChange(tab.id)}
             className={cn(
-              "whitespace-nowrap rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors",
+              "whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold transition-colors sm:px-4 sm:py-1.5 sm:text-[13px]",
               active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >

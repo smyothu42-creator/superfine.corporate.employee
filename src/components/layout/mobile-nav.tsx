@@ -8,6 +8,7 @@ import { MOBILE_NAV, isActive, visibleNav, requiresAccount } from "@/lib/nav";
 import { Sidebar } from "./sidebar";
 import { useUiStore } from "@/store/use-ui-store";
 import { useSessionStore } from "@/store/use-session-store";
+import { useCartStore } from "@/store/use-cart-store";
 import { cn } from "@/lib/utils";
 
 /** Slide-in drawer (full nav) used on tablet/mobile. */
@@ -52,12 +53,16 @@ function MobileTabBar() {
   const pathname = usePathname();
   const account = useSessionStore((s) => s.account);
   const openSignInPrompt = useUiStore((s) => s.openSignInPrompt);
+  // Total items in the cart — drives the count badge on the Cart tab, matching
+  // the header cart's coral badge.
+  const cartCount = useCartStore((s) => s.items.reduce((n, i) => n + i.qty, 0));
   // Auto-Order is corporate-only, so individuals get a 4-tab bar, not 5.
   const items = visibleNav(MOBILE_NAV, account);
   return (
-    // `pb-safe` keeps the labels off the home indicator, which otherwise draws
-    // straight through them on any modern iPhone.
+    // Normal edge-to-edge bottom bar. `pb-safe` keeps the labels off the iPhone
+    // home indicator, which otherwise draws straight through them.
     <nav
+      aria-label="Primary"
       className={cn(
         "pb-safe fixed inset-x-0 bottom-0 z-30 grid border-t border-border bg-card/95 backdrop-blur lg:hidden",
         items.length === 5 ? "grid-cols-5" : "grid-cols-4",
@@ -82,19 +87,31 @@ function MobileTabBar() {
                 : undefined
             }
             aria-current={active ? "page" : undefined}
+            aria-label={
+              item.href === "/cart" && cartCount > 0
+                ? `${item.label}, ${cartCount} items`
+                : undefined
+            }
             className={cn(
-              // min-h-[3.25rem] + the icon puck clears Apple's 44px target.
-              "flex min-h-[3.25rem] flex-col items-center justify-center gap-1 py-2.5 text-2xs font-semibold transition-colors",
+              // min-h clears Apple's 44px touch target, with a little extra
+              // breathing room top and bottom.
+              "flex min-h-[3.75rem] flex-col items-center justify-center gap-1 py-3 text-2xs font-semibold transition-colors",
               active ? "text-primary" : "text-muted-foreground",
             )}
           >
-            <span
-              className={cn(
-                "flex size-9 items-center justify-center rounded-full transition-colors",
-                active ? "bg-yellow text-teal-deep" : "bg-transparent",
-              )}
-            >
-              <Icon className="size-5" />
+            {/* Active tab = a coloured, slightly larger icon (no background puck),
+                matching the reference. The Cart tab carries a coral count badge
+                when there's anything in the cart, like the header cart. */}
+            <span className="relative">
+              <Icon className={cn("size-[22px] transition-transform", active && "scale-110")} />
+              {item.href === "/cart" && cartCount > 0 ? (
+                <span
+                  aria-hidden
+                  className="absolute -right-2.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-coral px-1 text-[10px] font-bold leading-none text-white"
+                >
+                  {cartCount}
+                </span>
+              ) : null}
             </span>
             {item.label}
           </Link>

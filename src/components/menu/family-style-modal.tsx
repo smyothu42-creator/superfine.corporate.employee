@@ -307,14 +307,27 @@ export function FamilyStyleModal({
           <div className="min-w-0">
             <h2 className="font-display text-lg font-semibold tracking-tight">{item.name}</h2>
             <p className="mt-0.5 text-[13px] text-muted-foreground">{item.description}</p>
-            {/* What comes with every package — one quiet line so it's known
-                without competing with the headcount and entree choices below.
-                (The full-page detail view shows it in more detail up top.) */}
+            {/* What comes with every package. Small check-marked chips so the
+                sides read as "in the box" at a glance, without competing with
+                the headcount and entree choices below. (The full-page detail
+                view shows it in more detail up top.) */}
             {item.includedItems?.length ? (
-              <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">
-                <span className="font-semibold text-foreground">Also included:</span>{" "}
-                {item.includedItems.map((inc) => inc.name).join(" · ")}
-              </p>
+              <div className="mt-2">
+                <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Also included
+                </span>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {item.includedItems.map((inc) => (
+                    <span
+                      key={inc.name}
+                      className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-2xs font-medium text-foreground"
+                    >
+                      <Check className="size-3 shrink-0 text-primary" />
+                      {inc.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
             ) : null}
           </div>
           <button

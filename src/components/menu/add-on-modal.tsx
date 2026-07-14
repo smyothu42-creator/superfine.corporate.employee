@@ -255,9 +255,15 @@ export function AddOnModal({
         ) : null}
         {meals > 1 ? (
           <p className="text-2xs text-muted-foreground">
-            {rows === 1
-              ? `These choices apply to all ${meals} meals, each packed separately.`
-              : "Each customization is packed as its own meal, with its own choices."}
+            {rows === 1 ? (
+              <>
+                These choices apply to{" "}
+                <span className="font-semibold text-foreground">all {meals} meals</span>, each
+                packed separately.
+              </>
+            ) : (
+              "Each customization is packed as its own meal, with its own choices."
+            )}
           </p>
         ) : null}
         <div className="space-y-3">{optionsBody}</div>
@@ -286,9 +292,15 @@ export function AddOnModal({
             <p className="mt-0.5 text-[13px] text-muted-foreground">{item.description}</p>
             {meals > 1 ? (
               <p className="mt-1.5 text-2xs text-muted-foreground">
-                {rows === 1
-                  ? `These choices apply to all ${meals} meals, each packed separately.`
-                  : "Each customization is packed as its own meal, with its own choices."}
+                {rows === 1 ? (
+                  <>
+                    These choices apply to{" "}
+                    <span className="font-semibold text-foreground">all {meals} meals</span>, each
+                    packed separately.
+                  </>
+                ) : (
+                  "Each customization is packed as its own meal, with its own choices."
+                )}
               </p>
             ) : null}
             {footnote ? (
