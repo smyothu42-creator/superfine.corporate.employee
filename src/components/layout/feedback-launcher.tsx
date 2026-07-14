@@ -10,10 +10,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * The everyday way into feedback: a floating action button pinned to the
- * bottom-right, shown once someone is signed in. It replaces the old "Feedback"
- * rail item — tucked out of the primary nav, always within reach. Tapping it
- * opens the general feedback form as a modal (the same form the `/feedback`
- * route renders full-page).
+ * bottom-right, shown only on the Menu page for a signed-in user. It replaces
+ * the old "Feedback" rail item — tucked out of the primary nav, but right where
+ * people browse meals. Tapping it opens the general feedback form as a modal
+ * (the same form the `/feedback` route renders full-page).
  */
 function FeedbackLauncher() {
   const account = useSessionStore((s) => s.account);
@@ -21,9 +21,9 @@ function FeedbackLauncher() {
   const cartOpen = useUiStore((s) => s.cartOpen);
   const pathname = usePathname();
 
-  // Only after login, and never on the full-page feedback route (where the FAB
-  // would just open a modal copy of the page the user is already on).
-  if (!account || pathname === "/feedback") return null;
+  // Signed in, and only on the Menu page — the FAB (and the modal it owns) don't
+  // appear anywhere else.
+  if (!account || pathname !== "/menu") return null;
 
   return (
     <>
