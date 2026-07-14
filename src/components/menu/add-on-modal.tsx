@@ -8,6 +8,7 @@ import { useComboBuilder, ComboBlock, type BuiltCombo } from "@/components/menu/
 import { formatCurrency } from "@/lib/utils";
 import { program } from "@/data/program";
 import type { MenuItem, AddOnGroup } from "@/data/types";
+import type { CartAddOn } from "@/store/use-cart-store";
 
 interface AddOnModalProps {
   item: MenuItem;
@@ -20,6 +21,9 @@ interface AddOnModalProps {
   omitGroup?: (g: AddOnGroup) => boolean;
   /** Optional note under the header, e.g. "Add sides & drinks later at review." */
   footnote?: string;
+  /** Pre-select these add-ons on the first combo — opens the sheet on an existing
+   *  customization to edit, rather than blank. */
+  initialAddOns?: CartAddOn[];
   /** Render inline (no overlay/header/close) for the meal detail page's right
    *  column — same options + action bar as the popup, just placed in a card. */
   embedded?: boolean;
@@ -52,6 +56,7 @@ export function AddOnModal({
   showQuantity = true,
   omitGroup,
   footnote,
+  initialAddOns,
   embedded = false,
   onClose,
   onConfirm,
@@ -68,7 +73,7 @@ export function AddOnModal({
     total,
     firstIncomplete,
     valid,
-  } = useComboBuilder(item, omitGroup);
+  } = useComboBuilder(item, omitGroup, initialAddOns);
   /**
    * One *configuration* — regardless of how many packages of it. It stays as the
    * clean list of questions with a quantity stepper in the footer; the numbered

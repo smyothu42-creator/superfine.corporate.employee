@@ -26,7 +26,7 @@ import { OrderTimeline } from "@/components/orders/order-status";
 import { FeedbackModal } from "@/components/orders/feedback-modal";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
-import { orders } from "@/data/orders";
+import { orders, orderPayment } from "@/data/orders";
 import { program } from "@/data/program";
 import { useChangeOrder } from "./use-change-order";
 import { useUiStore } from "@/store/use-ui-store";
@@ -424,13 +424,11 @@ function OrderCard({ order }: { order: Order }) {
             <MapPin className="size-3.5" /> {order.address}
           </span>
           <span className="text-[13px] font-semibold nums">
-            {!corporate ? (
-              // Individuals have no subsidy — they always pay the full total.
-              <>You paid {formatCurrency(order.subtotal)}</>
-            ) : order.employeePaid > 0 ? (
-              <>You paid {formatCurrency(order.employeePaid)}</>
-            ) : (
+            {corporate && order.employeePaid === 0 ? (
               <span className="text-success">Fully covered</span>
+            ) : (
+              // Tax-inclusive total, matching the order-detail payment breakdown.
+              <>You paid {formatCurrency(orderPayment(order, corporate).total)}</>
             )}
           </span>
         </div>

@@ -1,4 +1,20 @@
 import type { Order } from "./types";
+import { program } from "./program";
+
+const round = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Breaks a placed order into what the employee actually pays. Tax follows the
+ * same rule as the cart and checkout — {@link program.taxRate} on the
+ * *employee-paid portion only* (so a fully company-covered order is taxed $0).
+ * Corporate viewers are taxed on their out-of-pocket share (`employeePaid`);
+ * individuals, who get no subsidy, on the full `subtotal`.
+ */
+export function orderPayment(order: Order, corporate: boolean) {
+  const share = corporate ? order.employeePaid : order.subtotal;
+  const tax = round(share * program.taxRate);
+  return { share, tax, total: round(share + tax) };
+}
 
 /**
  * The employee's own orders. Statuses use the simple, customer-facing lifecycle:
@@ -73,7 +89,7 @@ export const orders: Order[] = [
             itemId: "chicken-shawarma",
             name: "Chicken Shawarma Wrap",
             qty: 1,
-            addOns: ["Medium", "Sumac fries"],
+            addOns: ["Chicken", "Ranch"],
             price: 18.0,
           },
         ],
@@ -101,7 +117,7 @@ export const orders: Order[] = [
         date: "2026-07-01",
         deliveryWindow: "12:00 PM – 12:30 PM",
         items: [
-          { itemId: "quinoa-salad", name: "Quinoa Harvest Salad", qty: 1, addOns: ["Crispy tofu"], price: 16.5 },
+          { itemId: "quinoa-salad", name: "Quinoa Harvest Salad", qty: 1, addOns: ["Tofu", "Caesar Dressing"], price: 16.5 },
         ],
       },
     ],

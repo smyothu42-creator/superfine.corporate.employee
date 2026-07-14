@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { X, ArrowLeftRight, Trash2, SlidersHorizontal, ChevronLeft, Check } from "lucide-react";
+import { X, ArrowLeftRight, Trash2, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FoodPhoto } from "@/components/menu/food-photo";
-import { getItem, buildCombos, comboAddOnLabels } from "@/data/menu";
-import { formatCurrency, cn } from "@/lib/utils";
-import type { Order, MenuCombo } from "@/data/types";
+import { AddOnModal } from "@/components/menu/add-on-modal";
+import { getItem, buildCombos, cleanOptionName } from "@/data/menu";
+import { cn } from "@/lib/utils";
+import type { Order, MenuItem } from "@/data/types";
+import type { CartAddOn } from "@/store/use-cart-store";
 
 export type OrderLineItem = Order["days"][number]["items"][number];
 
@@ -21,13 +23,33 @@ export interface AppliedCustomization {
 }
 
 /**
+ * Reverse a line item's resolved add-on labels back into selectable options, so
+ * the customizer can open pre-filled on the meal's current choices instead of
+ * blank. Labels are stored as cleaned option names (see combo-builder), which is
+ * what we match on.
+ */
+function addOnsFromLabels(item: MenuItem | undefined, labels: string[]): CartAddOn[] {
+  if (!item) return [];
+  const wanted = new Set(labels);
+  const picked: CartAddOn[] = [];
+  for (const g of item.addOns ?? []) {
+    for (const o of g.options) {
+      const name = cleanOptionName(o.name);
+      if (wanted.has(name)) picked.push({ groupId: g.id, optionId: o.id, name, price: o.price });
+    }
+  }
+  return picked;
+}
+
+/**
  * The change-order popup shown from My Orders. Each meal in the order carries its
  * own actions:
  *  - "Pick from menu" — hand off to the full menu page in editing mode for that meal.
  *  - "Remove" — drop that meal. Hidden when the order has a single meal (there'd
  *    be nothing left to keep) and always replaced by "Customize" on auto-orders.
- *  - "Customize" (auto-orders only) — swap this dialog in place to the meal's
- *    combo options; picking one applies it and fires a confirmation toast.
+ *  - "Customize" (auto-orders only) — opens the same individual-style AddOnModal
+ *    used in Auto-Order setup, pre-filled with the meal's current choices so it's
+ *    an edit, not a fresh start; confirming applies it and fires a toast.
  */
 export function ChangeOrderDialog({
   items,
@@ -48,8 +70,8 @@ export function ChangeOrderDialog({
   onClose: () => void;
 }) {
   const [shown, setShown] = React.useState(false);
-  // When set, the dialog swaps its list for that meal's combo options in place.
-  const [customizing, setCustomizing] = React.useState<{ item: OrderLineItem; idx: number } | null>(null);
+  // When set, the AddOnModal opens over the dialog to edit that meal's options.
+  const [customizing, setCustomizing] = React.useState<OrderLineItem | null>(null);
   // Bumped after an applied customization so the (mutated) line item re-renders.
   const [, force] = React.useReducer((n: number) => n + 1, 0);
 
@@ -60,7 +82,7 @@ export function ChangeOrderDialog({
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        // Escape backs out of the combo view first, then closes the dialog.
+        // Escape backs out of the customizer first, then closes the dialog.
         if (customizing) setCustomizing(null);
         else onClose();
       }
@@ -72,64 +94,41 @@ export function ChangeOrderDialog({
   // Only a single meal left → removing it would empty the order, so hide Remove.
   const canRemove = items.length > 1;
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
-      />
-      <div
-        className={cn(
-          "relative flex max-h-[80dvh] w-full max-w-[460px] flex-col rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
-          shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",
-        )}
-      >
-        <div className="shrink-0 px-4 pt-3">
-          <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-border sm:hidden" />
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-2">
-              {customizing ? (
-                <button
-                  type="button"
-                  onClick={() => setCustomizing(null)}
-                  aria-label="Back"
-                  className="-ml-1 mt-0.5 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
-                >
-                  <ChevronLeft className="size-4" />
-                </button>
-              ) : null}
-              <div>
-                <h3 className="font-display text-lg font-semibold leading-tight">
-                  {customizing ? "Customize meal" : "Change your order"}
-                </h3>
-                <p className="text-[13px] text-muted-foreground">
-                  {customizing ? customizing.item.name : dateLabel}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
+  const custMenuItem = customizing ? getItem(customizing.itemId) : undefined;
 
-        {customizing ? (
-          <CustomizePanel
-            item={customizing.item}
-            onApply={(choice) => {
-              onCustomize?.(customizing.item, choice);
-              force();
-              setCustomizing(null);
-            }}
-          />
-        ) : (
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+        />
+        <div
+          className={cn(
+            "relative flex max-h-[80dvh] w-full max-w-[460px] flex-col rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
+            shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",
+          )}
+        >
+          <div className="shrink-0 px-4 pt-3">
+            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-border sm:hidden" />
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-display text-lg font-semibold leading-tight">Change your order</h3>
+                <p className="text-[13px] text-muted-foreground">{dateLabel}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </div>
+
           <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-5">
             {items.map((it, idx) => {
               const menuItem = getItem(it.itemId);
@@ -165,7 +164,7 @@ export function ChangeOrderDialog({
                         size="sm"
                         variant="outline"
                         className="flex-1"
-                        onClick={() => setCustomizing({ item: it, idx })}
+                        onClick={() => setCustomizing(it)}
                       >
                         <SlidersHorizontal className="size-3.5" /> Customize
                       </Button>
@@ -184,93 +183,35 @@ export function ChangeOrderDialog({
               );
             })}
           </div>
-        )}
+        </div>
       </div>
-    </div>
-  );
-}
 
-/**
- * In-place combo picker swapped into the change dialog for an auto-order meal.
- * Selecting a combo applies it immediately (and closes back to the list) — the
- * current add-ons are pre-selected so the user sees where they are starting from.
- */
-function CustomizePanel({
-  item,
-  onApply,
-}: {
-  item: OrderLineItem;
-  onApply: (choice: AppliedCustomization) => void;
-}) {
-  const menuItem = getItem(item.itemId);
-  const combos = React.useMemo(() => (menuItem ? buildCombos(menuItem) : []), [menuItem]);
-  // Pre-select the combo matching the meal's current add-ons, else the first.
-  const currentKey = [...item.addOns].sort().join("|");
-  const initial =
-    combos.find((c) => comboAddOnLabels(c).sort().join("|") === currentKey)?.id ?? combos[0]?.id ?? "";
-  const [comboId, setComboId] = React.useState(initial);
-
-  const basePrice = menuItem?.price ?? item.price;
-  const selected = combos.find((c) => c.id === comboId) ?? combos[0];
-
-  function apply(c: MenuCombo) {
-    onApply({
-      addOns: comboAddOnLabels(c),
-      price: basePrice + c.upcharge,
-      comboLabel: c.name,
-    });
-  }
-
-  return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4">
-        <div className="text-overline">Choose your options</div>
-        {combos.map((c) => {
-          const checked = c.id === comboId;
-          return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setComboId(c.id)}
-              className={cn(
-                "flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
-                checked ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
-              )}
-            >
-              <span className="flex min-w-0 items-start gap-2.5">
-                <span
-                  className={cn(
-                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
-                    checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
-                  )}
-                >
-                  {checked ? <Check className="size-3.5" /> : null}
-                </span>
-                <span className="min-w-0">
-                  <span className="font-medium">{c.name}</span>
-                  <span className="mt-1 block space-y-0.5">
-                    {c.includes.map((inc) => (
-                      <span key={inc.group} className="block text-2xs text-muted-foreground">
-                        <span className="font-semibold text-foreground/70">{inc.group}:</span> {inc.item}
-                      </span>
-                    ))}
-                  </span>
-                </span>
-              </span>
-              {c.upcharge > 0 ? (
-                <span className="shrink-0 font-semibold nums">+{formatCurrency(c.upcharge)}</span>
-              ) : (
-                <span className="shrink-0 text-2xs text-muted-foreground">included</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      <div className="shrink-0 border-t border-border p-4">
-        <Button block size="lg" disabled={!selected} onClick={() => selected && apply(selected)}>
-          Apply customization
-        </Button>
-      </div>
-    </div>
+      {/* The very same customization sheet as Auto-Order setup, opened pre-filled
+          on this meal's current choices — an edit, not a fresh build. Quantity /
+          "add another" are off: we're editing one existing order line, not
+          adding meals. */}
+      {customizing && custMenuItem ? (
+        <AddOnModal
+          item={custMenuItem}
+          dateLabel={dateLabel}
+          confirmLabel="Save customization"
+          showQuantity={false}
+          initialAddOns={addOnsFromLabels(custMenuItem, customizing.addOns)}
+          onClose={() => setCustomizing(null)}
+          onConfirm={(combos) => {
+            const c = combos[0];
+            if (c) {
+              onCustomize?.(customizing, {
+                addOns: c.addOns.map((a) => a.name),
+                price: c.unitPrice,
+                comboLabel: c.summary || customizing.name,
+              });
+              force();
+            }
+            setCustomizing(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }

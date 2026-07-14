@@ -45,7 +45,11 @@ export interface BuiltCombo {
   missingLabel: string;
 }
 
-export function useComboBuilder(item: MenuItem, omitGroup?: (g: AddOnGroup) => boolean) {
+export function useComboBuilder(
+  item: MenuItem,
+  omitGroup?: (g: AddOnGroup) => boolean,
+  initialAddOns?: CartAddOn[],
+) {
   const groups = React.useMemo(
     () => (item.addOns ?? []).filter((g) => !omitGroup?.(g)),
     [item.addOns, omitGroup],
@@ -56,7 +60,20 @@ export function useComboBuilder(item: MenuItem, omitGroup?: (g: AddOnGroup) => b
     [groups],
   );
 
-  const [combos, setCombos] = React.useState<ComboState[]>(() => [emptyCombo()]);
+  // The first combo can open pre-filled — used when *editing* an existing
+  // customization (e.g. My Orders) so the sheet starts on the current choices
+  // instead of blank. Only options that still exist in a shown group are seeded;
+  // any later "add another" combo always starts empty via emptyCombo().
+  const [combos, setCombos] = React.useState<ComboState[]>(() => {
+    const first = emptyCombo();
+    for (const a of initialAddOns ?? []) {
+      const group = groups.find((g) => g.id === a.groupId);
+      if (group && group.options.some((o) => o.id === a.optionId)) {
+        first.picked[a.groupId] = [...(first.picked[a.groupId] ?? []), a.optionId];
+      }
+    }
+    return [first];
+  });
   /** Rows, not packages. Two of Combo 1 is one row. */
   const rows = combos.length;
   const meals = combos.reduce((sum, c) => sum + c.qty, 0);

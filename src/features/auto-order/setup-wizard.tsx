@@ -16,12 +16,15 @@ import { Button } from "@/components/ui/button";
 import { ThemeSelect } from "@/components/ui/theme-select";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
+import { AddOnModal } from "@/components/menu/add-on-modal";
 import {
   menuCategory,
   categoriesForType,
   allergenOptions,
   dietaryPreferences,
   itemHasAnyAllergen,
+  hasRequiredAddOns,
+  hasOptionalAddOns,
 } from "@/data/menu";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
@@ -86,6 +89,10 @@ export function SetupWizard({
   const [customizations, setCustomizations] =
     React.useState<Record<string, CartAddOn[]>>(initialCustomizations);
   const [soldOut, setSoldOut] = React.useState<SoldOutBehavior>(initialSoldOut);
+  // The meal whose customization popup is open, if any. Auto-order is
+  // individual-style only (the pool excludes family-style), so this is always
+  // the individual AddOnModal — never the family-style configurator.
+  const [customizing, setCustomizing] = React.useState<MenuItem | null>(null);
   // Favorites filters — mirror the Menu page (search + allergens + dietary +
   // price + category tags).
   const [query, setQuery] = React.useState("");
@@ -103,17 +110,34 @@ export function SetupWizard({
     if (addOns.length) setCustomizations((prev) => ({ ...prev, [id]: addOns }));
   }
 
+  /** Drop a meal from the rotation, along with any customization saved for it. */
+  function removeFav(id: string) {
+    setFavorites((prev) => prev.filter((x) => x !== id));
+    setCustomizations((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
   /**
-   * Picking a meal is a straight toggle — no add-on step. Add-ons (sides,
-   * drinks, options) are chosen later when you review each day's draft, so
-   * tapping a card just adds or removes the meal from the rotation.
+   * Picking a meal opens the very same individual-style AddOnModal the Menu uses
+   * — identical options, quantity stepper and "add another" — so the choices are
+   * captured up front and repeated on every future draft. Same open-condition as
+   * the Menu: any add-on group (required or optional) gets the popup; a meal with
+   * none is added straight to the rotation. Tapping an already-picked meal removes it.
    */
   function pickFav(item: MenuItem) {
     if (favorites.includes(item.id)) {
-      setFavorites((prev) => prev.filter((x) => x !== item.id));
+      removeFav(item.id);
       return;
     }
     if (favorites.length >= MAX_FAVORITES) return;
+    if (hasRequiredAddOns(item) || hasOptionalAddOns(item)) {
+      setCustomizing(item);
+      return;
+    }
     addFav(item.id);
   }
 
@@ -286,6 +310,26 @@ export function SetupWizard({
           </Button>
         </div>
       </div>
+
+      {/* Customization popup — the individual-style AddOnModal from the Menu,
+          with the same option groups. Quantity and "add a different
+          customization" are off here (showQuantity={false}): a pool meal is one
+          slot with one set of choices, not a multi-combo order line. Auto-order
+          never carries family-style meals, so this is always the individual
+          sheet, never the family-style configurator. */}
+      {customizing ? (
+        <AddOnModal
+          item={customizing}
+          dateLabel="auto-order"
+          confirmLabel="Add to auto order"
+          showQuantity={false}
+          onClose={() => setCustomizing(null)}
+          onConfirm={(combos) => {
+            addFav(customizing.id, combos[0]?.addOns ?? []);
+            setCustomizing(null);
+          }}
+        />
+      ) : null}
 
       {/* One quick rule — opened from Continue. */}
       {rulesOpen ? (

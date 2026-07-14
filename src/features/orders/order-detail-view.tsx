@@ -22,6 +22,7 @@ import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
 import { useChangeOrder } from "./use-change-order";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
+import { orderPayment } from "@/data/orders";
 import { program } from "@/data/program";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
@@ -42,6 +43,8 @@ export function OrderDetailView({ order }: { order: Order }) {
   const editable = active && !order.locked;
   // Individuals pay retail — no subsidy line, and "covered" never applies.
   const corporate = isSubsidized(useSessionStore((s) => s.account));
+  // Tax on the employee-paid portion + the true total, in sync with the cart/checkout.
+  const pay = orderPayment(order, corporate);
   // Same change-order popup + "Select from full menu" hand-off as the list page.
   const { startChange, sheets } = useChangeOrder(order);
 
@@ -166,18 +169,20 @@ export function OrderDetailView({ order }: { order: Order }) {
                   <div className="space-y-1 pt-1 text-[13px]">
                     <Row label="Meals total" value={formatCurrency(order.subtotal)} />
                     <Row label="Company pays" value={`−${formatCurrency(order.subsidy)}`} tone="success" />
+                    <Row label="Tax" value={formatCurrency(pay.tax)} />
                     <div className="flex items-center justify-between border-t border-border pt-1.5 font-semibold">
                       <span>You paid</span>
-                      <span className="nums">{formatCurrency(order.employeePaid)}</span>
+                      <span className="nums">{formatCurrency(pay.total)}</span>
                     </div>
                   </div>
                 ) : (
-                  // Individuals: no subsidy, so a single "You paid" line at the
-                  // full meals total.
-                  <div className="pt-1 text-[13px]">
-                    <div className="flex items-center justify-between font-semibold">
+                  // Individuals: no subsidy, so meals total + tax = what you paid.
+                  <div className="space-y-1 pt-1 text-[13px]">
+                    <Row label="Meals total" value={formatCurrency(order.subtotal)} />
+                    <Row label="Tax" value={formatCurrency(pay.tax)} />
+                    <div className="flex items-center justify-between border-t border-border pt-1.5 font-semibold">
                       <span>You paid</span>
-                      <span className="nums">{formatCurrency(order.subtotal)}</span>
+                      <span className="nums">{formatCurrency(pay.total)}</span>
                     </div>
                   </div>
                 )
