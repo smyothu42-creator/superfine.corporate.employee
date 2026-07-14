@@ -175,8 +175,8 @@ export function CartDayList() {
   return (
     <>
       <Notice tone="info">
-        Review every day below. You can edit or remove anything up to the order cutoff.{" "}
-        <strong>Payment isn&apos;t taken until 24 hours before delivery.</strong>
+        Check each day before you check out. You can change or remove a meal any time before its
+        order cutoff. <strong>You&apos;re only charged 24 hours before delivery.</strong>
       </Notice>
 
       {dates.map((date) => {
