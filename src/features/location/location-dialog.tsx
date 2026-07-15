@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { MapPin, X, ArrowRight, Check, Mail, Navigation, LoaderCircle } from "lucide-react";
+import { MapPin, X, ArrowRight, Check, Navigation, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Field } from "@/components/ui/input";
 import { checkZip, neighborhoodFor } from "@/data/service-areas";
@@ -59,7 +59,6 @@ export function LocationDialog({
   const setZip = useSessionStore((s) => s.setZip);
   const [value, setValue] = React.useState("");
   const [state, setState] = React.useState<LocationPhase>(phase);
-  const [notified, setNotified] = React.useState(false);
 
   // The caller's phase is the opening position; after that the dialog drives
   // itself, so re-syncing on every render would trap the user on one screen.
@@ -67,7 +66,6 @@ export function LocationDialog({
     if (open) {
       setState(phase);
       setValue(detectedZip ?? "");
-      setNotified(false);
     }
   }, [open, phase, detectedZip]);
 
@@ -173,49 +171,18 @@ export function LocationDialog({
               </p>
             </div>
 
-            {notified ? (
-              <p className="flex items-center gap-2 rounded-xl border border-border bg-teal-wash px-4 py-3 text-[13px] font-medium text-teal-deep">
-                <Check className="size-4 shrink-0" /> We&apos;ll email you the day we reach{" "}
-                {value.trim()}.
-              </p>
-            ) : (
-              <form
-                className="space-y-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setNotified(true);
-                }}
-              >
-                <Field>
-                  <Label htmlFor="notify-email">Tell me when you deliver here</Label>
-                  <div className="relative">
-                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="notify-email"
-                      type="email"
-                      required
-                      placeholder="you@example.com"
-                      className="pl-10"
-                      autoComplete="email"
-                    />
-                  </div>
-                </Field>
-                <Button block size="lg" variant="ghost" type="submit">
-                  Notify me
-                </Button>
-              </form>
-            )}
-
-            <button
+            <Button
               type="button"
+              variant="outline"
+              block
+              size="lg"
               onClick={() => {
                 setValue("");
                 setState("zip");
               }}
-              className="block w-full text-center text-[13px] font-semibold text-primary hover:underline"
             >
               Try a different ZIP code
-            </button>
+            </Button>
           </div>
         ) : (
           <form className="space-y-5" onSubmit={submit}>
@@ -256,14 +223,14 @@ export function LocationDialog({
                   <button
                     type="button"
                     onClick={() => {
-                      // Remember the miss — it's what a "we've launched" email
-                      // keys off — then show the notify form.
+                      // Record the out-of-zone ZIP (the app gates on it), then
+                      // show the "where we deliver" explainer.
                       setZip(value.trim(), "unserviceable");
                       setState("unserviceable");
                     }}
                     className="font-semibold text-primary hover:underline"
                   >
-                    Notify me when we do
+                    See where we deliver
                   </button>
                 </p>
               ) : (

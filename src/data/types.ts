@@ -288,6 +288,32 @@ export interface MealProgram {
   pricingTier: string;
   /** Menu categories excluded from this company's contract. */
   excludedCategories?: string[];
+  /** Reusable-packaging program offered to individual orders at checkout. */
+  reusablePackaging: ReusablePackaging;
+}
+
+/** One reusable-packaging fee band: a container-count range → a flat fee. */
+export interface ReusableFeeTier {
+  /** Inclusive lower bound of the range. */
+  min: number;
+  /** Inclusive upper bound, or null for the open-ended top tier. */
+  max: number | null;
+  /** Flat packaging fee charged for any quantity in this range. */
+  fee: number;
+  /** Short human label, e.g. "Up to 75 meals". */
+  label: string;
+}
+
+/**
+ * Admin-configured reusable-packaging program. Pickup during an included window
+ * is free; a pickup outside them costs a ZIP-based fee. The packaging itself
+ * costs a flat fee that scales with how many containers the order needs.
+ */
+export interface ReusablePackaging {
+  /** Preset pickup windows included at no extra charge. */
+  includedPickupWindows: string[];
+  /** Flat packaging fee by container count (meals, or family-style guests). */
+  feeTiers: ReusableFeeTier[];
 }
 
 /** A line on a placed/draft order, including resolved add-ons. */

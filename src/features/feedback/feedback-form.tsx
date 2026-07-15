@@ -2,26 +2,27 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Star, ImagePlus, Send, X, PartyPopper, BadgeCheck } from "lucide-react";
+import { Send, PartyPopper, BadgeCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Label } from "@/components/ui/input";
 import { useFeedbackStore, type FeedbackEntry } from "@/store/use-feedback-store";
 import { cn } from "@/lib/utils";
 
-const RATING_WORDS = ["", "Poor", "Fair", "Good", "Great", "Loved it"];
-
 /**
- * The general "rate a meal" feedback form — a star rating (required), an
- * optional order number, review and photo. Shared by the full `/feedback` route
- * and the floating-button modal so both stay in lock-step.
+ * The general feedback form — a single free-text field, plus an optional order
+ * number for feedback that's about a specific order. No ratings, no meal
+ * reviews, no photo attachments: just a simple, generic way to tell us
+ * something. Shared by the full `/feedback` route and the floating-button modal
+ * so both stay in lock-step.
  *
  * A blank or unrecognised order number is still accepted (recorded as unverified
- * for the kitchen); a valid one links the review and marks it verified.
+ * for the kitchen); a valid one links the feedback and marks it verified.
  *
  * `initialOrder` pre-fills the order number (the `/feedback?order=ORD-2891` deep
- * link, or the FAB opened from an order). `onDone`, when provided, is called from
- * the confirmation screen's primary button — the modal uses it to close itself;
- * the standalone page omits it and offers a "Browse the menu" link instead.
+ * link, or the FAB opened from an order) and starts the form in "about an order"
+ * mode. `onDone`, when provided, is called from the confirmation screen's
+ * primary button — the modal uses it to close itself; the standalone page omits
+ * it and offers a "Browse the menu" link instead.
  */
 export function FeedbackForm({
   initialOrder = "",
@@ -32,44 +33,20 @@ export function FeedbackForm({
 }) {
   const submitFeedback = useFeedbackStore((s) => s.submit);
 
+  const [relatedToOrder, setRelatedToOrder] = React.useState(initialOrder.trim().length > 0);
   const [orderNumber, setOrderNumber] = React.useState(initialOrder);
-  const [rating, setRating] = React.useState(0);
-  const [hover, setHover] = React.useState(0);
-  const [review, setReview] = React.useState("");
-  const [photo, setPhoto] = React.useState<{ url: string; name: string } | null>(null);
+  const [message, setMessage] = React.useState("");
   const [submitted, setSubmitted] = React.useState<FeedbackEntry | null>(null);
-  const fileRef = React.useRef<HTMLInputElement>(null);
 
-  // Free the object URL when the preview changes or the form unmounts.
-  React.useEffect(() => {
-    return () => {
-      if (photo) URL.revokeObjectURL(photo.url);
-    };
-  }, [photo]);
-
-  const shownStars = hover || rating;
-  const canSubmit = rating > 0;
-
-  function pickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (photo) URL.revokeObjectURL(photo.url);
-    setPhoto({ url: URL.createObjectURL(file), name: file.name });
-    e.target.value = "";
-  }
-
-  function removePhoto() {
-    if (photo) URL.revokeObjectURL(photo.url);
-    setPhoto(null);
-  }
+  const canSubmit = message.trim().length > 0;
 
   function submit() {
     if (!canSubmit) return;
     const entry = submitFeedback({
-      orderNumber,
-      rating,
-      review,
-      photoName: photo?.name ?? null,
+      // Only send the order number when the feedback is about an order.
+      orderNumber: relatedToOrder ? orderNumber : "",
+      message,
+      relatedToOrder,
       source: "public",
     });
     setSubmitted(entry);
@@ -79,101 +56,66 @@ export function FeedbackForm({
 
   return (
     <div className="space-y-5">
-      {/* Star rating (required) */}
+      {/* Is this about an order? (Yes/No) */}
       <div>
-        <Label>Your rating</Label>
-        <div className="flex items-center gap-1" onMouseLeave={() => setHover(0)}>
-          {[1, 2, 3, 4, 5].map((n) => (
+        <Label>Is your feedback about an order?</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { label: "Yes", value: true },
+            { label: "No", value: false },
+          ].map((opt) => (
             <button
-              key={n}
+              key={opt.label}
               type="button"
-              aria-label={`${n} star${n === 1 ? "" : "s"}`}
-              aria-pressed={rating === n}
-              onMouseEnter={() => setHover(n)}
-              onClick={() => setRating(n)}
-              className="rounded-full p-2 transition-transform hover:scale-110 sm:p-1"
+              aria-pressed={relatedToOrder === opt.value}
+              onClick={() => setRelatedToOrder(opt.value)}
+              className={cn(
+                "rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors",
+                relatedToOrder === opt.value
+                  ? "border-primary bg-teal-wash text-teal-deep"
+                  : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+              )}
             >
-              <Star
-                className={cn(
-                  "size-8 transition-colors",
-                  n <= shownStars ? "fill-yellow text-yellow" : "fill-transparent text-muted-foreground/40",
-                )}
-              />
+              {opt.label}
             </button>
           ))}
-          <span className="ml-2 text-[13px] font-semibold text-muted-foreground">
-            {RATING_WORDS[shownStars] ?? ""}
-          </span>
         </div>
       </div>
 
-      {/* Order number (optional) */}
-      <div>
-        <Label htmlFor="fb-order">
-          Order number{" "}
-          <span className="font-normal normal-case text-muted-foreground">(optional)</span>
-        </Label>
-        <Input
-          id="fb-order"
-          value={orderNumber}
-          onChange={(e) => setOrderNumber(e.target.value)}
-          placeholder="e.g. ORD-2891, from your receipt or delivery label"
-          autoComplete="off"
-        />
-      </div>
+      {/* Order number (optional) — only relevant when it's about an order */}
+      {relatedToOrder ? (
+        <div>
+          <Label htmlFor="fb-order">
+            Order number{" "}
+            <span className="font-normal normal-case text-muted-foreground">(optional)</span>
+          </Label>
+          <Input
+            id="fb-order"
+            value={orderNumber}
+            onChange={(e) => setOrderNumber(e.target.value)}
+            placeholder="e.g. ORD-2891, from your receipt or delivery label"
+            autoComplete="off"
+          />
+        </div>
+      ) : null}
 
-      {/* Written review / details */}
+      {/* Free-text feedback */}
       <div>
-        <Label htmlFor="fb-review">
-          Your review{" "}
-          <span className="font-normal normal-case text-muted-foreground">(optional)</span>
-        </Label>
+        <Label htmlFor="fb-message">Your feedback</Label>
         <Textarea
-          id="fb-review"
-          value={review}
-          onChange={(e) => setReview(e.target.value)}
-          placeholder="What did you think of the meal, portion, freshness or delivery?"
+          id="fb-message"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Tell us what's on your mind."
           maxLength={800}
         />
-      </div>
-
-      {/* Photo upload (optional) */}
-      <div>
-        <Label>
-          Photo{" "}
-          <span className="font-normal normal-case text-muted-foreground">(optional)</span>
-        </Label>
-        <input ref={fileRef} type="file" accept="image/*" onChange={pickPhoto} className="hidden" />
-        {photo ? (
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photo.url} alt="Selected meal" className="size-14 shrink-0 rounded-lg object-cover" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{photo.name}</span>
-            <button
-              type="button"
-              onClick={removePhoto}
-              aria-label="Remove photo"
-              className="shrink-0 rounded-full border border-border bg-card p-1.5 text-muted-foreground hover:bg-muted hover:text-danger"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-card px-3 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-muted/50 hover:text-foreground"
-          >
-            <ImagePlus className="size-4" /> Add a photo
-          </button>
-        )}
       </div>
 
       <Button block size="lg" disabled={!canSubmit} onClick={submit}>
         <Send className="size-4" /> Submit feedback
       </Button>
       {!canSubmit ? (
-        <p className="text-center text-2xs text-muted-foreground">Add a star rating to submit.</p>
+        <p className="text-center text-2xs text-muted-foreground">Add a note to submit.</p>
       ) : null}
     </div>
   );
@@ -190,7 +132,7 @@ function ThankYou({ entry, onDone }: { entry: FeedbackEntry; onDone?: () => void
         Thanks for your feedback
       </h1>
       <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-        Your {entry.rating}-star review was sent to the kitchen. They read every one.
+        Your note was sent to the kitchen. They read every one.
       </p>
 
       {/* A verified order gets a positive confirmation; unverified needs nothing. */}

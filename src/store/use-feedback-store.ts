@@ -4,7 +4,10 @@ import { findOrder } from "@/data/orders";
 /**
  * A single piece of customer feedback, as the kitchen/admin would see it.
  *
- * `verified` is the trust signal the admin dashboard sorts on: a review is
+ * This is a generic feedback form — no ratings, no meal reviews, no photos.
+ * Just a free-text note, optionally tied to an order.
+ *
+ * `verified` is the trust signal the admin dashboard sorts on: feedback is
  * verified only when its order number resolves to a real order (see
  * {@link findOrder}). Feedback with no order number, or an order number that
  * doesn't exist, is still kept — an unhappy guest at a shared family-style
@@ -17,10 +20,10 @@ export interface FeedbackEntry {
   orderId: string | null;
   /** Exactly what the customer typed, kept for the admin even when unresolved. */
   orderNumberEntered: string | null;
-  rating: number;
-  review: string;
-  /** Filename of the attached photo (the file itself stays client-side). */
-  photoName: string | null;
+  /** The free-text feedback the customer wrote. */
+  message: string;
+  /** Whether the customer said this feedback is about an order. */
+  relatedToOrder: boolean;
   /** True only when `orderId` resolved to a real order. */
   verified: boolean;
   /** Where the feedback came in from — a signed-in past order, or the public form. */
@@ -30,9 +33,8 @@ export interface FeedbackEntry {
 
 export interface SubmitFeedbackInput {
   orderNumber?: string | null;
-  rating: number;
-  review?: string;
-  photoName?: string | null;
+  message?: string;
+  relatedToOrder?: boolean;
   source?: FeedbackEntry["source"];
 }
 
@@ -54,9 +56,8 @@ export const useFeedbackStore = create<FeedbackState>((set) => ({
       id: `FB-${Date.now().toString(36)}-${seq++}`,
       orderId: matched?.id ?? null,
       orderNumberEntered: typed,
-      rating: input.rating,
-      review: input.review?.trim() ?? "",
-      photoName: input.photoName ?? null,
+      message: input.message?.trim() ?? "",
+      relatedToOrder: input.relatedToOrder ?? Boolean(typed),
       verified: Boolean(matched),
       source: input.source ?? "public",
       createdAt: new Date().toISOString(),

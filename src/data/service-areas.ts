@@ -69,3 +69,23 @@ export function checkZip(zip: string): ZipStatus | null {
 export function neighborhoodFor(zip: string): string | undefined {
   return serviceableZips[zip.trim()];
 }
+
+/**
+ * Flat delivery / pickup fee by ZIP — the admin-configured ZIP-based fee logic.
+ * Central SF ZIPs are cheaper; anywhere else falls back to the standard fee.
+ * Reused for a reusable-packaging pickup requested outside the included windows.
+ */
+const zipFees: Record<string, number> = {
+  "94105": 4, // Financial District
+  "94103": 4, // SoMa
+  "94111": 5, // Embarcadero
+  "94107": 6, // Potrero Hill
+  "94110": 6, // Mission
+  "94158": 7, // Mission Bay
+};
+
+const STANDARD_ZIP_FEE = 8;
+
+export function deliveryFeeForZip(zip: string): number {
+  return zipFees[zip.trim()] ?? STANDARD_ZIP_FEE;
+}

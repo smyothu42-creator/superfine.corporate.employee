@@ -1,5 +1,7 @@
 import type { Order } from "./types";
 import { program } from "./program";
+import { startOfToday, fromISODate, toISODate, addDays } from "@/lib/dates";
+import { isCutoffPassed } from "@/lib/cutoff";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -19,9 +21,10 @@ export function orderPayment(order: Order, corporate: boolean) {
 /**
  * The employee's own orders. Statuses use the simple, customer-facing lifecycle:
  * Placed → Confirmed → Delivered (a locked, past-cutoff order shows as "Locked
- * for changes"). Dates are anchored around late June 2026 (demo "today" is Sun Jun 28).
+ * for changes"). Dates below are authored around the demo anchor (Sun Jun 28,
+ * 2026) and then re-anchored to the real calendar at load — see `orders` below.
  */
-export const orders: Order[] = [
+const seedOrders: Order[] = [
   {
     // Multi-meal order — three meals on the same day.
     id: "ORD-2891",
@@ -222,6 +225,31 @@ export const orders: Order[] = [
     placedAt: "2026-07-04 11:10 AM",
   },
   {
+    // Auto-Order draft awaiting review — still before cutoff, so it's editable now.
+    id: "ORD-2901",
+    date: "2026-07-06",
+    type: "individual",
+    days: [
+      {
+        date: "2026-07-06",
+        deliveryWindow: "12:00 PM – 12:30 PM",
+        items: [
+          { itemId: "margherita-flatbread", name: "Margherita Flatbread", qty: 1, addOns: [], price: 15.0 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 15.0,
+    subsidy: 15.0,
+    employeePaid: 0,
+    payment: "covered",
+    status: "draft",
+    locked: false,
+    placedAt: "2026-07-05 4:00 PM (auto)",
+    source: "auto",
+    reviewBy: "Today, 4:00 PM",
+  },
+  {
     id: "ORD-2870",
     date: "2026-06-19",
     type: "individual",
@@ -390,6 +418,43 @@ export const orders: Order[] = [
     source: "auto",
   },
 ];
+
+/** The demo anchor the seed dates were authored against (Sunday). */
+const DEMO_ANCHOR = "2026-06-28";
+
+/**
+ * How far to slide every seed date so the whole set sits around *today's* real
+ * calendar instead of late June 2026. Rounded to whole weeks so each delivery
+ * keeps its original weekday — service days must stay Mon–Fri, holidays aside.
+ * Recomputed from the real clock on every load, so the app is never "stuck" in
+ * the demo's past.
+ */
+const SHIFT_DAYS = Math.round(
+  (startOfToday().getTime() - fromISODate(DEMO_ANCHOR).getTime()) / 86_400_000 / 7,
+) * 7;
+
+const shiftISO = (iso: string) => toISODate(addDays(fromISODate(iso), SHIFT_DAYS));
+/** "2026-06-27 4:12 PM" → shift the date token, keep the time text. */
+const shiftPlacedAt = (placedAt: string) => {
+  const [date, ...rest] = placedAt.split(" ");
+  return [shiftISO(date), ...rest].join(" ");
+};
+
+/**
+ * The orders as the app uses them: seed data re-anchored to the real date, with
+ * `locked` recomputed from the live cutoff so editability tracks the real clock
+ * (an order is locked exactly when its change cutoff has passed).
+ */
+export const orders: Order[] = seedOrders.map((o) => {
+  const date = shiftISO(o.date);
+  return {
+    ...o,
+    date,
+    days: o.days.map((d) => ({ ...d, date: shiftISO(d.date) })),
+    placedAt: shiftPlacedAt(o.placedAt),
+    locked: isCutoffPassed(date, o.type),
+  };
+});
 
 export function getOrder(id: string) {
   return orders.find((o) => o.id === id);

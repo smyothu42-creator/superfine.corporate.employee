@@ -3,30 +3,24 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Leaf, Wheat, ShieldCheck, AlertTriangle, ArrowLeftRight, Check } from "lucide-react";
+import { ArrowLeft, Leaf, Wheat, ShieldCheck, AlertTriangle, Check } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import {
-  hasRequiredAddOns,
-  hasOptionalAddOns,
   menuCategory,
   isFamilyStyle,
   minGuestsFor,
   pricePerGuestFor,
 } from "@/data/menu";
-import { OptionGroups, useItemOptions } from "@/components/menu/option-groups";
 import { FamilyStyleModal } from "@/components/menu/family-style-modal";
 import { AddOnModal } from "@/components/menu/add-on-modal";
 import { type BuiltCombo } from "@/components/menu/combo-builder";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
 import { useCartStore, type CartServing } from "@/store/use-cart-store";
-import { useUiStore } from "@/store/use-ui-store";
 import { toast } from "@/store/use-toast-store";
-import { confirm } from "@/store/use-confirm-store";
 import { nextServiceDays, startOfToday, toISODate, fromISODate, formatDay, WEEKDAY_SHORT } from "@/lib/dates";
 import { formatCurrency } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
@@ -41,37 +35,13 @@ const TAG_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 export function ItemDetailView({ item }: { item: MenuItem }) {
   const router = useRouter();
   const cart = useCartStore();
-  const editingOrder = useUiStore((s) => s.editingOrder);
-  const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
-  const editing = Boolean(editingOrder);
   const [mounted, setMounted] = React.useState(false);
   const [date, setDate] = React.useState("");
   // Family packages are portioned by headcount, so they can never be added
   // straight from the page — the configurator has to answer for them first.
   const family = isFamilyStyle(item);
-  const [configuring, setConfiguring] = React.useState(false);
-  // The meal's choice groups (protein, sauce, dressing…), shown inline.
-  const { groups, picked, toggle, selections, unitPrice, valid, missingLabel } = useItemOptions(item);
 
-  // While changing a placed order, the day is fixed to the order's day.
-  const activeDate = editingOrder ? editingOrder.date : date;
-
-  // Changing a placed order: confirm the swap, then return to My Orders.
-  async function requestChange() {
-    if (!editingOrder) return;
-    const ok = await confirm({
-      title: "Change your meal?",
-      description: `Change from ${editingOrder.originalItemName} to ${item.name} for ${editingOrder.dateLabel}?`,
-      confirmLabel: "Confirm change",
-    });
-    if (!ok) return;
-    clearEditingOrder();
-    toast.success(
-      "Order updated",
-      `${editingOrder.originalItemName} → ${item.name} for ${editingOrder.dateLabel}.`,
-    );
-    router.push("/orders");
-  }
+  const activeDate = date;
 
   React.useEffect(() => {
     const upcoming = nextServiceDays(startOfToday(), program.serviceDayNums, 8).map(toISODate);
@@ -79,35 +49,11 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
     setMounted(true);
   }, []);
 
-  const customizable = hasRequiredAddOns(item) || hasOptionalAddOns(item);
   const allergenHit =
     me.allergens.length > 0 &&
     me.allergens.some((a) =>
       `${item.allergens} ${item.ingredients ?? ""}`.toLowerCase().includes(a.toLowerCase()),
     );
-
-  function addToOrder() {
-    if (editingOrder) {
-      requestChange();
-      return;
-    }
-    if (family) {
-      setConfiguring(true);
-      return;
-    }
-    cart.add({
-      date,
-      itemId: item.id,
-      name: item.name,
-      basePrice: item.price,
-      qty: 1,
-      addOns: selections,
-      unitPrice,
-      type: item.type,
-    });
-    toast.success(`${item.name} added`, `For ${formatDay(fromISODate(date))}`);
-    router.push("/menu");
-  }
 
   /** Add the built customizations (each its own packed meal) — the embedded
    *  individual configurator's confirm, mirroring the menu's popup. */
@@ -232,32 +178,10 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
         </Card>
 
         <div className="space-y-5">
-          {/* Options + add — the full configurator inline (same as the popup),
-              except while editing a placed order, which is a simple swap. */}
+          {/* Options + add — the full configurator inline (same as the popup). */}
           <Card>
             <CardBody className="space-y-3">
-              {editing ? (
-                <>
-                  <p className="text-[13px] text-muted-foreground">
-                    Changing your meal for{" "}
-                    <strong className="text-foreground">{editingOrder!.dateLabel}</strong>.
-                  </p>
-                  {family ? (
-                    <FamilyStylePreview item={item} />
-                  ) : customizable && groups.length > 0 ? (
-                    <OptionGroups groups={groups} picked={picked} onToggle={toggle} className="pb-1" />
-                  ) : null}
-                  <Button block size="lg" disabled={!activeDate || (!family && !valid)} onClick={addToOrder}>
-                    {!family && !valid ? (
-                      `Choose ${missingLabel}`
-                    ) : (
-                      <>
-                        <ArrowLeftRight className="size-4" /> Change to this meal
-                      </>
-                    )}
-                  </Button>
-                </>
-              ) : family ? (
+              {family ? (
                 <FamilyStyleModal
                   embedded
                   item={item}
@@ -278,67 +202,6 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
           </Card>
         </div>
       </div>
-
-      {configuring ? (
-        <FamilyStyleModal
-          item={item}
-          dateLabel={activeDate ? formatDay(fromISODate(activeDate)) : ""}
-          onClose={() => setConfiguring(false)}
-          onConfirm={(guests, servings, totalPrice) => {
-            cart.add({
-              date: activeDate,
-              itemId: item.id,
-              name: item.name,
-              basePrice: totalPrice,
-              qty: 1,
-              addOns: [],
-              unitPrice: totalPrice,
-              type: item.type,
-              guests,
-              servings,
-            });
-            setConfiguring(false);
-            toast.success(`${item.name} added`, `For ${guests} guests on ${formatDay(fromISODate(activeDate))}.`);
-            router.push("/menu");
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * Which groups a family package will ask you to split at checkout. What's
- * *included* with every package (the sides) now lives up top with the
- * description; this preview is only the choices still to make. The actual
- * quantities are set in the modal, where the headcount is known.
- */
-function FamilyStylePreview({ item }: { item: MenuItem }) {
-  const groups = item.servingGroups ?? [];
-  return (
-    <div className="space-y-3">
-      {groups.length ? (
-        <div>
-          <div className="text-overline">You&apos;ll choose quantities for</div>
-          <ul className="mt-1.5 space-y-1.5">
-            {groups.map((g) => (
-              <li key={g.id} className="rounded-xl border border-border p-2.5 text-[13px]">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{g.name}</span>
-                  <span className="shrink-0 text-2xs text-muted-foreground">
-                    {g.perGuest > 0
-                      ? `${g.perGuest} per guest`
-                      : "Optional extra"}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-2xs text-muted-foreground">
-                  {g.options.map((o) => o.name).join(" · ")}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </div>
   );
 }

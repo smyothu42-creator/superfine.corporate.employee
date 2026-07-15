@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   X,
@@ -359,6 +360,9 @@ export function AccountView() {
           />
         </CardBody>
       </Card>
+
+      {/* Delete account — the last, most destructive action on the page. */}
+      <DeleteAccountCard />
     </div>
   );
 }
@@ -864,6 +868,111 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           </Button>
           <Button type="submit" disabled={!ready}>
             Change password
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/**
+ * "Delete account" card — the last, most destructive action on the page. Opens a
+ * modal that requires the account password before the account is removed.
+ */
+function DeleteAccountCard() {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Delete account</CardTitle>
+      </CardHeader>
+      <CardBody className="space-y-3">
+        <p className="text-[13px] text-muted-foreground">
+          Permanently delete your account and all associated data — your profile, saved addresses and
+          preferences. This can&apos;t be undone.
+        </p>
+        <Button variant="ghost" className="text-danger hover:bg-danger-bg" onClick={() => setOpen(true)}>
+          <Trash2 className="size-4" /> Delete account
+        </Button>
+      </CardBody>
+      {open ? <DeleteAccountModal onClose={() => setOpen(false)} /> : null}
+    </Card>
+  );
+}
+
+/** Confirm deletion by re-entering the account password, then sign out. */
+function DeleteAccountModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const signOut = useSessionStore((s) => s.signOut);
+  const [password, setPassword] = React.useState("");
+  const ready = password.trim().length > 0;
+
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ready) return;
+    signOut();
+    toast.success("Account deleted", "Your account and its data have been removed.");
+    onClose();
+    router.push("/login");
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Delete account"
+    >
+      <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
+      <form
+        onSubmit={submit}
+        className="relative z-10 flex max-h-[90dvh] w-full flex-col rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+          <h2 className="font-display text-lg font-semibold tracking-tight">Delete account</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          <p className="rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] font-medium text-danger">
+            This permanently deletes your account and all its data — your profile, saved addresses and
+            preferences. This can&apos;t be undone.
+          </p>
+          <div>
+            <Label htmlFor="del-password">Enter your password to confirm</Label>
+            <Input
+              id="del-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border p-5">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="danger" disabled={!ready}>
+            <Trash2 className="size-4" /> Delete account
           </Button>
         </div>
       </form>

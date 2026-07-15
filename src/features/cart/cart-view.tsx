@@ -4,22 +4,20 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
-import { Plus, Minus, Trash2, CalendarDays, ShoppingBag, ArrowRight, ArrowDown, CalendarPlus, Pencil, Check, UtensilsCrossed, Clock, Lock, AlertTriangle } from "lucide-react";
+import { Plus, Minus, Trash2, CalendarDays, ShoppingBag, ArrowRight, CalendarPlus, UtensilsCrossed, Clock, Lock, AlertTriangle, X } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FoodPhoto } from "@/components/menu/food-photo";
 import { ServingBreakdown } from "@/components/cart/serving-breakdown";
-import { getItem } from "@/data/menu";
-import type { EditingOrderContext } from "@/store/use-ui-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { useUiStore } from "@/store/use-ui-store";
-import { toast } from "@/store/use-toast-store";
+import { useOrderEditStore } from "@/store/use-order-edit-store";
+import { useOrdersStore } from "@/store/use-orders-store";
+import { useOrderEdit } from "@/features/orders/use-order-edit";
 import { program } from "@/data/program";
 import { fromISODate, formatDay } from "@/lib/dates";
-import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
 import { cutoffInfo } from "@/lib/cutoff-messaging";
 import { subsidyLabel } from "@/lib/subsidy";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
@@ -37,11 +35,13 @@ export function CartView() {
   const mounted = useMounted();
   const cart = useCartStore();
   const plannedDays = useUiStore((s) => s.plannedDays);
+  const editActive = useOrderEditStore((s) => s.active);
 
   if (!mounted) return <CartSkeleton />;
   // Show the day list once any day is committed — either it already holds a meal
-  // or it was picked as part of a multi-day plan (and is still waiting to be filled).
-  if (cart.dates().length === 0 && plannedDays.length === 0) return <CartEmptyState />;
+  // or it was picked as part of a multi-day plan (and is still waiting to be
+  // filled). While actively editing, the order's own days keep it non-empty too.
+  if (cart.dates().length === 0 && plannedDays.length === 0 && !editActive) return <CartEmptyState />;
 
   return (
     <div className="space-y-5">
@@ -63,6 +63,7 @@ export function CartPanelBody() {
   const mounted = useMounted();
   const cart = useCartStore();
   const plannedDays = useUiStore((s) => s.plannedDays);
+  const editActive = useOrderEditStore((s) => s.active);
 
   if (!mounted) {
     return (
@@ -71,7 +72,7 @@ export function CartPanelBody() {
       </div>
     );
   }
-  if (cart.dates().length === 0 && plannedDays.length === 0) {
+  if (cart.dates().length === 0 && plannedDays.length === 0 && !editActive) {
     return (
       <div className="p-4">
         <CartEmptyState />
@@ -156,28 +157,46 @@ function ItemCutoffLine({ date, type }: { date: string; type: OrderType }) {
 export function CartDayList() {
   const cart = useCartStore();
   const plannedDays = useUiStore((s) => s.plannedDays);
-  const editingOrder = useUiStore((s) => s.editingOrder);
+  const editingOrderId = useOrderEditStore((s) => s.editingOrderId);
+  const editActive = useOrderEditStore((s) => s.active);
+  // Only while actively editing do the order's days belong in the cart — a paused
+  // session is a normal new-order cart. Select the order object (stable
+  // reference), then derive its days (a fresh array from the selector re-renders
+  // every tick).
+  const editOrder = useOrdersStore((s) =>
+    editActive && editingOrderId ? s.orders.find((o) => o.id === editingOrderId) : undefined,
+  );
+  const editOrderDays = React.useMemo(() => editOrder?.days.map((d) => d.date) ?? [], [editOrder]);
   // Subscribed, not just read: the cart's own store holds no subsidy state, so
   // these re-render the day totals when the contract is switched, or when a
   // guest verifies into a corporate account.
   const subsidyMode = useUiStore((s) => s.subsidyMode);
   const subsidized = isSubsidized(useSessionStore((s) => s.account));
 
-  // Editing a placed order: show the single meal change (from → to) instead of
-  // the normal per-day cart.
-  if (editingOrder) return <CartEditingSummary editingOrder={editingOrder} />;
-
   // A section for every committed day: days that already hold a meal, plus any
-  // day picked as part of a multi-day plan that's still empty. Empty days render
-  // a prompt so the user knows they can still order for them.
-  const dates = Array.from(new Set([...cart.dates(), ...plannedDays])).sort();
+  // day picked as part of a multi-day plan that's still empty. While editing, the
+  // order's own days are always kept — removing a meal leaves the day box in
+  // place so it's clear the day still needs one. Empty days render a prompt.
+  const dates = Array.from(new Set([...cart.dates(), ...plannedDays, ...editOrderDays])).sort();
 
   return (
     <>
-      <Notice tone="info">
-        Check each day before you check out. You can change or remove a meal any time before its
-        order cutoff. <strong>You&apos;re only charged 24 hours before delivery.</strong>
-      </Notice>
+      {editActive ? (
+        <Notice tone="warning">
+          Editing your {editOrderDays.length > 1 ? "meals" : "meal"} for{" "}
+          <strong>
+            {editOrderDays.length > 1
+              ? `these ${editOrderDays.length} days`
+              : formatDay(fromISODate(editOrderDays[0] ?? dates[0]))}
+          </strong>
+          . <strong>Save and checkout</strong> to keep your changes.
+        </Notice>
+      ) : (
+        <Notice tone="info">
+          Check each day before you check out. You can change or remove a meal any time before its
+          order cutoff. <strong>You&apos;re only charged 24 hours before delivery.</strong>
+        </Notice>
+      )}
 
       {dates.map((date) => {
         const items = cart.itemsForDate(date);
@@ -206,7 +225,9 @@ export function CartDayList() {
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">{line.name}</span>
                       {line.type === "family_style" ? (
-                        <Badge tone="neutral">Family Style · {line.guests} guests</Badge>
+                        <Badge tone="neutral">
+                          Family Style{line.guests ? ` · ${line.guests} guests` : ""}
+                        </Badge>
                       ) : null}
                     </div>
                     {line.addOns.length ? (
@@ -279,7 +300,6 @@ export function CartDayList() {
  */
 function EmptyDayCard({ date }: { date: string }) {
   const router = useRouter();
-  const closeCart = useUiStore((s) => s.closeCart);
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
   const requestFocusDay = useUiStore((s) => s.requestFocusDay);
 
@@ -289,7 +309,9 @@ function EmptyDayCard({ date }: { date: string }) {
     // already mounted (cart opened as a side panel), so navigation alone won't
     // re-run its init effect.
     requestFocusDay(date);
-    closeCart();
+    // Keep the cart open: on the menu it sits beside the grid, so the meal the
+    // user picks lands straight back in this day's card without the cart closing
+    // and reopening. Navigating (or refocusing) scrolls the menu to that day.
     router.push("/menu");
   }
 
@@ -317,80 +339,6 @@ function EmptyDayCard({ date }: { date: string }) {
   );
 }
 
-/** The "from → to" meal change shown in the cart while editing a placed order. */
-function CartEditingSummary({ editingOrder }: { editingOrder: EditingOrderContext }) {
-  const changed = editingOrder.itemId !== editingOrder.originalItemId;
-  const fromItem = getItem(editingOrder.originalItemId);
-  const toItem = getItem(editingOrder.itemId);
-
-  return (
-    <>
-      <Notice tone="info">
-        Changing one meal in <strong>{editingOrder.orderId}</strong>. Pick a new meal from the menu, then
-        Save.
-      </Notice>
-      <Card>
-        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
-          <h3 className="flex items-center gap-2 font-display text-base font-semibold tracking-tight">
-            <CalendarDays className="size-4 text-primary" />
-            {editingOrder.dateLabel}
-          </h3>
-          <Badge tone="brand" className="gap-1">
-            <Pencil className="size-3" /> Editing order
-          </Badge>
-        </div>
-        <CardBody className="space-y-2.5">
-          <CutoffIndicator deliveryISO={editingOrder.date} type="individual" context="edit" variant="inline" />
-          <div className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">From</div>
-          <MealTile name={editingOrder.originalItemName} image={fromItem?.image} muted />
-          <div className="flex items-center justify-center">
-            <span className="flex size-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <ArrowDown className="size-4" />
-            </span>
-          </div>
-          <div className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">To</div>
-          {changed ? (
-            <MealTile name={editingOrder.itemName} image={toItem?.image} highlighted />
-          ) : (
-            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-border bg-muted/30 p-3 text-[13px] text-muted-foreground">
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted">
-                <Plus className="size-5" />
-              </span>
-              Pick a meal from the menu &rarr;
-            </div>
-          )}
-        </CardBody>
-      </Card>
-    </>
-  );
-}
-
-function MealTile({
-  name,
-  image,
-  muted,
-  highlighted,
-}: {
-  name: string;
-  image?: string;
-  muted?: boolean;
-  highlighted?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 rounded-2xl border p-3",
-        highlighted ? "border-primary bg-teal-wash" : "border-border bg-card",
-      )}
-    >
-      <FoodPhoto src={image} alt={name} className="size-12 shrink-0 rounded-xl" iconClassName="size-4" />
-      <p className={cn("min-w-0 flex-1 truncate text-sm font-semibold", muted && "text-muted-foreground line-through")}>
-        {name}
-      </p>
-    </div>
-  );
-}
-
 /** Charges + actions. `bare` drops the Card chrome (used in the pinned footer). */
 function CartSummaryCard({ bare = false }: { bare?: boolean }) {
   const router = useRouter();
@@ -400,10 +348,19 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
   const requestRangePicker = useUiStore((s) => s.requestRangePicker);
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
   const requestFocusDay = useUiStore((s) => s.requestFocusDay);
-  const editingOrder = useUiStore((s) => s.editingOrder);
-  const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
   const subsidyMode = useUiStore((s) => s.subsidyMode);
   const subsidized = isSubsidized(useSessionStore((s) => s.account));
+  // Actively editing a placed order swaps the CTA for "Save and checkout" (the
+  // edit is saved at checkout) and adds a Discard escape hatch. A paused session
+  // falls back to the ordinary new-order controls.
+  const { editingOrderId, editActive, discardEdit } = useOrderEdit();
+  const editOrder = useOrdersStore((s) =>
+    editActive && editingOrderId ? s.orders.find((o) => o.id === editingOrderId) : undefined,
+  );
+  const editOrderDays = React.useMemo(() => editOrder?.days.map((d) => d.date) ?? [], [editOrder]);
+  // Every day the order covers must keep at least one meal — an emptied day still
+  // shows in the list, and Checkout stays blocked until it's filled again.
+  const editHasEmptyDay = editOrderDays.some((d) => cart.itemsForDate(d).length === 0);
   const subtotal = cart.subtotal();
   const subsidy = cart.totalSubsidy();
   const tax = cart.tax();
@@ -453,16 +410,6 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
     router.push("/menu");
   }
 
-  // Editing a placed order: "Save" applies the change and leaves editing mode.
-  function handleSave() {
-    const label = editingOrder?.dateLabel ?? "";
-    if (editingOrder) cart.clearDay(editingOrder.date);
-    clearEditingOrder();
-    closeCart();
-    toast.success("Order updated", `Your ${label} order has been updated.`);
-    router.push("/orders");
-  }
-
   const body = (
     <div className="space-y-3">
       {plannedDays.length > 0 ? (
@@ -502,23 +449,39 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
           <span className="nums text-success">{formatCurrency(0)}</span>
         </div>
       )}
-      <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-between">
-        {editingOrder ? (
-          // Editing a placed order: save the change; no "add another day".
-          <Button size="lg" block onClick={handleSave}>
-            <Check className="size-4" /> Save
+      {editActive ? (
+        // Editing a placed order: proceed to checkout (where the change is saved
+        // onto the order), or discard to leave the order as it was.
+        <div className="space-y-2 pt-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button
+              variant="outline"
+              size="lg"
+              className="border-danger text-danger hover:bg-danger/10"
+              onClick={discardEdit}
+            >
+              <X className="size-4" /> Discard
+            </Button>
+            <Button size="lg" onClick={handleCheckout} disabled={cart.count() === 0 || editHasEmptyDay}>
+              Save and checkout <ArrowRight className="size-4" />
+            </Button>
+          </div>
+          {editHasEmptyDay ? (
+            <p className="text-center text-2xs font-medium text-danger">
+              Add a meal to every day before you can save.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-between">
+          <Button variant="outline" size="lg" onClick={handleAddAnotherDay}>
+            <CalendarPlus className="size-4" /> Add another day
           </Button>
-        ) : (
-          <>
-            <Button variant="outline" size="lg" onClick={handleAddAnotherDay}>
-              <CalendarPlus className="size-4" /> Add another day
-            </Button>
-            <Button size="lg" onClick={handleCheckout}>
-              Checkout <ArrowRight className="size-4" />
-            </Button>
-          </>
-        )}
-      </div>
+          <Button size="lg" onClick={handleCheckout}>
+            Checkout <ArrowRight className="size-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 

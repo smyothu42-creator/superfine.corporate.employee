@@ -54,7 +54,6 @@ function Topbar() {
   const toggleCart = useUiStore((s) => s.toggleCart);
   const cartOpen = useUiStore((s) => s.cartOpen);
   const activeOrderDate = useUiStore((s) => s.activeOrderDate);
-  const editingOrder = useUiStore((s) => s.editingOrder);
   const cart = useCartStore();
   const cartCount = cart.count();
   const autoHeader = useAutoOrderStore((s) => s.header);
@@ -64,14 +63,10 @@ function Topbar() {
   // While picking meals the header carries the "See how it works" tour trigger.
   const inAutoSetup = onAutoOrder && autoInSetup;
   // Auto-order title is contextual (set per view state); fall back to the route default.
-  // Editing a placed order reframes the menu as "Changing Order".
-  const title =
-    editingOrder && pathname === "/menu"
-      ? "Changing Order"
-      : onAutoOrder && autoNavTitle
-        ? autoNavTitle
-        : deriveTitle(pathname);
-  const onOrders = pathname === "/orders";
+  const title = onAutoOrder && autoNavTitle ? autoNavTitle : deriveTitle(pathname);
+  // Both the My Orders list and an individual order's detail page — neither is an
+  // ordering surface, so the header carries no cart or budget.
+  const onOrders = pathname === "/orders" || pathname.startsWith("/orders/");
   const onCheckout = pathname === "/checkout";
   const onNotifications = pathname === "/notifications";
   // Pages where the subsidy + cart header actions don't apply.
@@ -118,7 +113,8 @@ function Topbar() {
             <AutoOrderControls header={autoHeader} />
           ) : null
         ) : onOrders ? (
-          /* Orders: no header action — out-of-office lives in Account & Profile. */
+          /* Orders (list + detail): no header action, no cart — out-of-office
+             lives in Account & Profile. */
           null
         ) : onCheckout ? (
           /* Checkout: no header action — the on-page "Cutoff check" card already
@@ -129,12 +125,10 @@ function Topbar() {
           <NotificationsHeaderControl />
         ) : hideHeaderActions ? null : (
           <>
-            {/* Editing a placed order hides the subsidy + cart entirely — the
-                change is shown in the on-page "Changing order" banner. */}
-            {activeOrderDate && !editingOrder ? <BudgetIndicator dayTotal={dayTotal} /> : null}
+            {activeOrderDate ? <BudgetIndicator dayTotal={dayTotal} /> : null}
 
             {/* Hidden while the cart panel is open — it has its own close control. */}
-            {!editingOrder && !cartOpen ? (
+            {!cartOpen ? (
               <button
                 id="cart-icon"
                 type="button"

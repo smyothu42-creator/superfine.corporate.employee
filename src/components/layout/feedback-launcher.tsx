@@ -110,7 +110,7 @@ function FeedbackModal() {
               Share your feedback
             </h3>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              A quick rating and a few words. The kitchen reads every one.
+              A few words is all it takes. The kitchen reads every one.
             </p>
           </div>
           <button

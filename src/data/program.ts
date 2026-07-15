@@ -27,7 +27,33 @@ export const program: MealProgram = {
   utensilsPolicy: "Optional. You choose per order",
   pricingTier: "L1 Standard",
   excludedCategories: [],
+  // Reusable-packaging program for individual orders. Pickup during any window
+  // below is included; the flat packaging fee scales with container count.
+  reusablePackaging: {
+    includedPickupWindows: [
+      "Wed, 5:00 – 7:00 PM",
+      "Thu, 5:00 – 7:00 PM",
+      "Fri, 5:00 – 7:00 PM",
+    ],
+    feeTiers: [
+      { min: 1, max: 75, fee: 4, label: "Up to 75 meals" },
+      { min: 75, max: 150, fee: 9, label: "75–150 meals" },
+      { min: 150, max: null, fee: 16, label: "150+ meals" },
+    ],
+  },
 };
+
+/**
+ * The flat reusable-packaging fee for an order needing `qty` containers (its
+ * meal count, or family-style guest count). Returns the fee of the first tier
+ * whose upper bound `qty` fits under; 0 for an empty order.
+ */
+export function reusablePackagingFee(qty: number): number {
+  if (qty <= 0) return 0;
+  const tiers = program.reusablePackaging.feeTiers;
+  const tier = tiers.find((t) => qty <= (t.max ?? Number.POSITIVE_INFINITY));
+  return (tier ?? tiers[tiers.length - 1])?.fee ?? 0;
+}
 
 /**
  * Company delivery addresses. These are contract-locked: most employees see

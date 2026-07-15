@@ -20,8 +20,6 @@ interface SidebarProps {
 function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  // While changing a placed order, /menu is a sub-flow — don't light up "Menu".
-  const editing = useUiStore((s) => Boolean(s.editingOrder));
 
   const account = useSessionStore((s) => s.account);
   const signOut = useSessionStore((s) => s.signOut);
@@ -52,7 +50,7 @@ function Sidebar({ onNavigate }: SidebarProps) {
 
       <nav className="flex-1 space-y-2.5 overflow-y-auto px-3 py-1">
         {visibleNav(NAV_ITEMS, account).map((item) => {
-          const active = isActive(pathname, item) && !(editing && item.href === "/menu");
+          const active = isActive(pathname, item);
           const Icon = item.icon;
           // A guest reaching for an account-only screen gets the sign-in prompt
           // in place — no navigation to a page there's nothing to show them on.

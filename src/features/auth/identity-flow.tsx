@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Field } from "@/components/ui/input";
 import { lookupCorporate, demoCorporateEmail, demoGoogleEmail, demoMicrosoftEmail } from "@/data/roster";
 import { useSessionStore, type Account } from "@/store/use-session-store";
+import { useCartStore } from "@/store/use-cart-store";
+import { useOrderEditStore } from "@/store/use-order-edit-store";
 
 type Step = "form" | "verify" | "exists" | "forgot" | "reset-sent";
 
@@ -66,6 +68,8 @@ export function IdentityFlow({
 }) {
   const signIn = useSessionStore((s) => s.signIn);
   const clearZip = useSessionStore((s) => s.clearZip);
+  const clearCart = useCartStore((s) => s.clear);
+  const endEdit = useOrderEditStore((s) => s.end);
   const [mode, setMode] = React.useState<AuthMode>(initialMode);
   const [step, setStep] = React.useState<Step>("form");
   const [email, setEmail] = React.useState("");
@@ -76,6 +80,15 @@ export function IdentityFlow({
   const [resent, setResent] = React.useState(false);
 
   function complete(account: Account) {
+    // Signing in or up at the front door (`/login`) is a clean start: an empty
+    // cart, not whatever a previous guest on this browser left behind, and no
+    // stale edit session. `resetLocation` marks that front door — at checkout and
+    // the guest sign-in wall it's false, so an in-progress cart is kept (the whole
+    // point of deferring identity until checkout).
+    if (resetLocation) {
+      clearCart();
+      endEdit();
+    }
     signIn(account);
     onDone?.(account);
   }

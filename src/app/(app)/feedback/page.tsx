@@ -62,11 +62,11 @@ function FeedbackHero() {
           <MessageSquareHeart className="size-8" />
         </span>
         <h1 className="mt-5 font-display text-4xl font-semibold leading-[1.1] tracking-tight text-teal-deep">
-          Loved it? Tell us.<br />Missed the mark? Tell us too.
+          Got something<br />to tell us?
         </h1>
         <p className="mt-4 text-base leading-relaxed text-teal-deep/80">
-          A quick rating, a few words, maybe a photo. That&apos;s all it takes. Every review lands
-          straight with the chef who made your meal, and we read them all.
+          A few words is all it takes. Whether it&apos;s about an order or anything else, your
+          feedback lands straight with our team, and we read every note.
         </p>
       </div>
       {/* Pinned to the bottom of the panel, as before. */}

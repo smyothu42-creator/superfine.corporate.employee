@@ -19,6 +19,9 @@ import {
   AlertTriangle,
   Tag,
   ArrowRight,
+  Package,
+  Recycle,
+  Info,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +35,8 @@ import { CartDayList } from "@/features/cart/cart-view";
 import { subsidyLabel } from "@/lib/subsidy";
 import { IdentityModal } from "@/components/auth/identity-modal";
 import { useUiStore } from "@/store/use-ui-store";
+import { useOrderEditStore } from "@/store/use-order-edit-store";
+import { useOrderEdit } from "@/features/orders/use-order-edit";
 import {
   useSessionStore,
   isSubsidized,
@@ -40,10 +45,10 @@ import {
 } from "@/store/use-session-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { toast } from "@/store/use-toast-store";
-import { program, addresses, getAddress } from "@/data/program";
-import { checkZip, neighborhoodFor } from "@/data/service-areas";
+import { program, addresses, getAddress, reusablePackagingFee } from "@/data/program";
+import { checkZip, neighborhoodFor, deliveryFeeForZip } from "@/data/service-areas";
 import { me } from "@/data/me";
-import { fromISODate, formatDay } from "@/lib/dates";
+import { fromISODate, formatDay, startOfToday, toISODate } from "@/lib/dates";
 import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { PaymentChoice } from "@/data/types";
@@ -79,6 +84,12 @@ export function CheckoutView() {
   const corporate = isSubsidized(account);
 
   React.useEffect(() => setMounted(true), []);
+
+  // While editing a placed order, checkout is the last step of the edit: the same
+  // review screen, but the CTA saves the changes back onto the order instead of
+  // placing a new one.
+  const editActive = useOrderEditStore((s) => s.active);
+  const { saveEdit } = useOrderEdit();
 
   const [identityOpen, setIdentityOpen] = React.useState(false);
   const autoPrompted = React.useRef(false);
@@ -135,7 +146,13 @@ export function CheckoutView() {
   // Tax applies to the employee-paid portion after any promo (0 when covered).
   const taxable = Math.max(0, owed - discount);
   const tax = Math.round(taxable * program.taxRate * 100) / 100;
-  const finalOwed = taxable + tax;
+  // Reusable packaging (individual orders only): a flat fee by container count,
+  // plus a ZIP-based pickup fee when a special (out-of-window) pickup is chosen.
+  // Both ride on top of the taxed food total — they aren't themselves taxed.
+  const reusable = !corporate && cart.packaging === "reusable";
+  const packagingFee = mounted ? cart.packagingFee() : 0;
+  const pickupFee = reusable && cart.specialPickup ? deliveryFeeForZip(delivery.zip) : 0;
+  const finalOwed = taxable + tax + packagingFee + pickupFee;
 
   if (!mounted) {
     return <Skeleton className="h-96 rounded-2xl" />;
@@ -209,6 +226,12 @@ export function CheckoutView() {
   function placeOrder() {
     const resolvedPayment: PaymentChoice = finalOwed === 0 ? "covered" : payment;
     cart.setPayment(resolvedPayment);
+    // Editing an existing order: write the reviewed cart back onto the order,
+    // restore the pre-edit cart and return to the order — no new order created.
+    if (editActive) {
+      saveEdit();
+      return;
+    }
     toast.success(
       "Order placed",
       finalOwed === 0 ? "Fully covered. Confirmation on its way." : "Confirmation on its way.",
@@ -219,7 +242,7 @@ export function CheckoutView() {
 
   return (
     <div className="space-y-5">
-      <div className="sticky top-16 z-20 -mx-4 bg-background px-4 py-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div className="sticky top-[calc(4rem_+_var(--edit-banner-h,0px))] z-20 -mx-4 bg-background px-4 py-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <Steps current={1} />
       </div>
 
@@ -337,6 +360,9 @@ export function CheckoutView() {
             </div>
           </Card>
 
+          {/* Packaging — individual orders only. Corporate contracts don't offer it. */}
+          {!corporate ? <PackagingCard zip={delivery.zip} /> : null}
+
           {/* Payment */}
           <Card>
             <CardHeader>
@@ -450,6 +476,15 @@ export function CheckoutView() {
                     />
                   ) : null}
                   <SummaryRow label="Tax" value={formatCurrency(tax)} />
+                  {packagingFee > 0 ? (
+                    <SummaryRow
+                      label={`Reusable packaging (${cart.packagingQty()})`}
+                      value={formatCurrency(packagingFee)}
+                    />
+                  ) : null}
+                  {pickupFee > 0 ? (
+                    <SummaryRow label="Custom pickup" value={formatCurrency(pickupFee)} />
+                  ) : null}
                   <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
                     <span>You pay</span>
                     <span className="nums">{formatCurrency(finalOwed)}</span>
@@ -489,7 +524,9 @@ export function CheckoutView() {
                   ? "Sign in to continue"
                   : !corporate && !deliveryComplete(delivery)
                     ? "Add a delivery address to continue"
-                    : "Place order"}
+                    : editActive
+                      ? "Save changes"
+                      : "Place order"}
               </Button>
               <Button asChild variant="ghost" block size="lg">
                 <Link href="/cart">Back to cart</Link>
@@ -1121,6 +1158,281 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
       <span className="text-muted-foreground">{label}</span>
       <span className={cn("font-medium nums", tone === "success" && "text-success")}>{value}</span>
     </div>
+  );
+}
+
+/**
+ * Reusable-vs-disposable packaging selector for an individual order. Reusable
+ * adds a flat fee that scales with container count and asks for a pickup window;
+ * a pickup outside the admin's included windows adds a ZIP-based fee. Every
+ * charge lands in the checkout total — there is no deposit-and-refund.
+ */
+function PackagingCard({ zip }: { zip: string }) {
+  const cart = useCartStore();
+  const windows = program.reusablePackaging.includedPickupWindows;
+  const qty = cart.packagingQty();
+  const fee = reusablePackagingFee(qty);
+  const specialFee = deliveryFeeForZip(zip);
+  const [customOpen, setCustomOpen] = React.useState(false);
+
+  function chooseReusable() {
+    cart.setPackaging("reusable");
+    // Default to the first included (free) window so a pickup is always set.
+    if (!cart.pickupWindow && !cart.specialPickup) cart.setPickupWindow(windows[0] ?? "");
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Packaging</CardTitle>
+      </CardHeader>
+      <CardBody className="space-y-3">
+        {/* Disposable and Reusable sit side by side — one quick either/or choice. */}
+        <div className="grid grid-cols-2 gap-3">
+          <PackOption
+            active={cart.packaging === "disposable"}
+            onClick={() => cart.setPackaging("disposable")}
+            icon={<Package className="size-4 text-muted-foreground" />}
+            title="Disposable"
+            subtitle="Standard recyclable containers. Nothing to return."
+          />
+          <PackOption
+            active={cart.packaging === "reusable"}
+            onClick={chooseReusable}
+            icon={<Recycle className="size-4 text-muted-foreground" />}
+            title="Reusable"
+            subtitle="Returnable containers, collected after your meals."
+          />
+        </div>
+
+        {cart.packaging === "reusable" ? (
+          <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+            <div className="text-overline">Pickup window</div>
+            {windows.map((w) => (
+              <PackOption
+                key={w}
+                active={cart.pickupWindow === w}
+                onClick={() => cart.setPickupWindow(w)}
+                title={w}
+              />
+            ))}
+            <PackOption
+              active={cart.specialPickup}
+              onClick={() => setCustomOpen(true)}
+              title="Custom pickup time"
+              subtitle={
+                cart.specialPickup && cart.pickupWindow
+                  ? cart.pickupWindow
+                  : "Outside the windows above — pick a time that works for you."
+              }
+              trailing={`+${formatCurrency(specialFee)}`}
+            />
+            <Notice tone="info" className="text-xs">
+              <Info className="inline size-3.5" /> Pickup during the windows above is{" "}
+              <strong>free</strong>. A custom pickup time adds a {formatCurrency(specialFee)} fee, based
+              on your delivery ZIP. Reusable packaging is{" "}
+              <strong>{qty > 0 ? formatCurrency(fee) : "free"}</strong> for {qty}{" "}
+              {qty === 1 ? "meal" : "meals"}, added to your total.
+            </Notice>
+          </div>
+        ) : null}
+      </CardBody>
+
+      {customOpen ? (
+        <CustomPickupModal
+          fee={specialFee}
+          onSelect={(time) => cart.setCustomPickup(time)}
+          onClose={() => setCustomOpen(false)}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+/** "17:30" (a 24h `<input type="time">` value) → "5:30 PM". */
+function formatTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+/**
+ * Time picker for a custom (out-of-window) reusable-packaging pickup. Opens from
+ * the "Custom pickup time" option and lets the user name their own day and time
+ * window — nothing pre-set — which is composed into a label, written back to the
+ * cart, and shown on that option. Mirrors the other checkout modals' chrome.
+ */
+function CustomPickupModal({
+  fee,
+  onSelect,
+  onClose,
+}: {
+  fee: number;
+  onSelect: (time: string) => void;
+  onClose: () => void;
+}) {
+  const [shown, setShown] = React.useState(false);
+  const todayISO = toISODate(startOfToday());
+  const [date, setDate] = React.useState("");
+  const [start, setStart] = React.useState("");
+  const [end, setEnd] = React.useState("");
+
+  React.useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Valid once a day and a start are set; if an end is given it must be later.
+  const orderedTimes = !end || start < end;
+  const valid = Boolean(date && start && orderedTimes);
+  const label = valid
+    ? `${formatDay(fromISODate(date))}, ${formatTime(start)}${end ? ` – ${formatTime(end)}` : ""}`
+    : "";
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+      />
+      <div
+        className={cn(
+          "relative flex max-h-[85dvh] w-full max-w-md flex-col rounded-3xl bg-card shadow-raised transition-all duration-200",
+          shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
+        )}
+      >
+        <div className="flex items-start justify-between border-b border-border px-5 py-4">
+          <div>
+            <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+              <Clock className="size-4 text-primary" /> Custom pickup time
+            </h3>
+            <p className="text-[13px] text-muted-foreground">
+              Choose any day and time that works for you. Adds a {formatCurrency(fee)} fee.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          <Field>
+            <Label htmlFor="cp-date">Pickup day</Label>
+            <Input
+              id="cp-date"
+              type="date"
+              min={todayISO}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field>
+              <Label htmlFor="cp-start">From</Label>
+              <Input
+                id="cp-start"
+                type="time"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+              />
+            </Field>
+            <Field>
+              <Label htmlFor="cp-end">To (optional)</Label>
+              <Input
+                id="cp-end"
+                type="time"
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+              />
+            </Field>
+          </div>
+          {end && !orderedTimes ? (
+            <p className="text-2xs font-medium text-danger">The end time must be after the start time.</p>
+          ) : null}
+          {label ? (
+            <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-[13px]">
+              <span className="text-muted-foreground">Pickup:</span>{" "}
+              <strong className="text-foreground">{label}</strong>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-b-3xl border-t border-border bg-card p-5">
+          <Button
+            block
+            size="lg"
+            disabled={!valid}
+            onClick={() => {
+              if (valid) onSelect(label);
+              onClose();
+            }}
+          >
+            Save pickup time
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PackOption({
+  active,
+  onClick,
+  title,
+  subtitle,
+  trailing,
+  icon,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  subtitle?: string;
+  trailing?: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
+        active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-full border",
+          active ? "border-primary" : "border-border",
+        )}
+      >
+        {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
+      </span>
+      {icon ?? null}
+      <span className="min-w-0 flex-1">
+        <strong>{title}</strong>
+        {subtitle ? <span className="block text-muted-foreground">{subtitle}</span> : null}
+      </span>
+      {trailing ? (
+        <span className="shrink-0 whitespace-nowrap text-2xs font-semibold text-muted-foreground">
+          {trailing}
+        </span>
+      ) : null}
+    </button>
   );
 }
 

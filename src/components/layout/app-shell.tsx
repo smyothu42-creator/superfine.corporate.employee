@@ -5,6 +5,8 @@ import { MobileDrawer, MobileTabBar } from "./mobile-nav";
 import { CartPanel } from "./cart-panel";
 import { SubsidyModelModal } from "./subsidy-model-modal";
 import { FeedbackLauncher } from "./feedback-launcher";
+import { OrderEditBanner } from "./order-edit-banner";
+import { EditLeaveGuard } from "./edit-leave-guard";
 import { SignInModal } from "@/components/auth/sign-in-modal";
 import { Toaster } from "@/components/ui/toaster";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -50,7 +52,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
               `animate-fade-in` used translateY) makes it the containing block for
               every inline `position: fixed` modal overlay, clipping them to the
               content area instead of the viewport. */}
-          <div className="w-full">{children}</div>
+          <div className="w-full">
+            {/* Persistent "you're editing an order" bar — visible on every page
+                until the edit is saved or discarded. */}
+            <OrderEditBanner />
+            {children}
+          </div>
         </main>
       </div>
 
@@ -65,6 +72,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
       <Toaster />
       <ConfirmDialog />
+      <EditLeaveGuard />
       <SubsidyModelModal />
       <SignInModal />
     </div>

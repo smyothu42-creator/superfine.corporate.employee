@@ -1,9 +1,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { program } from "@/data/program";
+import { program, reusablePackagingFee } from "@/data/program";
 import { useUiStore } from "@/store/use-ui-store";
 import { companyCovers, employeeCovers, budgetRemaining } from "@/lib/subsidy";
-import type { PaymentChoice } from "@/data/types";
+import type { Order, PaymentChoice } from "@/data/types";
+
+/** Packaging choice for an individual order. */
+export type PackagingChoice = "disposable" | "reusable";
 
 /** A resolved add-on selection on a cart line. */
 export interface CartAddOn {
@@ -82,6 +85,15 @@ interface CartState {
   /** Delivery window per date (defaults applied at checkout). */
   windows: Record<string, string>;
   addressId: string;
+  /** Individual packaging choice (default disposable). */
+  packaging: PackagingChoice;
+  /**
+   * The selected pickup time label (reusable only) — an included window, or the
+   * custom time chosen for an out-of-window pickup. Null when disposable.
+   */
+  pickupWindow: string | null;
+  /** True when {@link pickupWindow} is a custom, out-of-window pickup (adds a fee). */
+  specialPickup: boolean;
 
   add: (line: Omit<CartItem, "uid" | "unitPrice"> & { unitPrice?: number }) => void;
   setQty: (uid: string, qty: number) => void;
@@ -101,10 +113,34 @@ interface CartState {
    * caller can tell the user which meals didn't make the move.
    */
   moveDay: (from: string, to: string, isAvailable: (itemId: string) => boolean) => string[];
+  /**
+   * Replace the cart with a placed order's meals so it can be edited from the
+   * menu (the "Change order" flow). Seeds each day's items, delivery windows and
+   * the payment choice; resolved add-on labels ride along on each line (with no
+   * up-charge, since the order's price is already the line total). The user then
+   * manages it with the normal menu + cart flow.
+   */
+  loadOrder: (order: Order) => void;
+  /** Replace the whole cart with a snapshot (used to undo/finish an order edit). */
+  restore: (snap: {
+    items: CartItem[];
+    windows: Record<string, string>;
+    payment: PaymentChoice;
+    addressId: string;
+    packaging: PackagingChoice;
+    pickupWindow: string | null;
+    specialPickup: boolean;
+  }) => void;
   clear: () => void;
   setPayment: (p: PaymentChoice) => void;
   setWindow: (date: string, window: string) => void;
   setAddress: (id: string) => void;
+  /** Set the packaging choice; switching to disposable clears any pickup selection. */
+  setPackaging: (p: PackagingChoice) => void;
+  /** Pick an included (free) pickup window. */
+  setPickupWindow: (window: string) => void;
+  /** Set a custom pickup time outside the included windows (adds a ZIP-based fee). */
+  setCustomPickup: (time: string) => void;
 
   /** Distinct ISO dates in the cart, ascending. */
   dates: () => string[];
@@ -122,7 +158,11 @@ interface CartState {
   totalEmployeePaid: () => number;
   /** Sales tax on the employee-paid portion (0 when fully covered). */
   tax: () => number;
-  /** Final amount the employee pays: out-of-pocket meals + tax. */
+  /** Containers the order needs — meals for individual lines, guests for family. */
+  packagingQty: () => number;
+  /** Flat reusable-packaging fee for the current quantity (0 when disposable). */
+  packagingFee: () => number;
+  /** Final amount the employee pays: out-of-pocket meals + tax + packaging. */
   total: () => number;
   count: () => number;
 }
@@ -139,6 +179,9 @@ export const useCartStore = create<CartState>()(
   payment: "covered",
   windows: {},
   addressId: "hq-floor-3",
+  packaging: "disposable",
+  pickupWindow: null,
+  specialPickup: false,
 
   add: (line) => {
     const unitPrice =
@@ -193,10 +236,54 @@ export const useCartStore = create<CartState>()(
     });
     return dropped;
   },
-  clear: () => set({ items: [] }),
+  loadOrder: (order) => {
+    const items: CartItem[] = order.days.flatMap((d) =>
+      d.items.map((it) => {
+        // The order stores add-ons as resolved labels; keep them on the line for
+        // display, priced at 0 since `it.price` is already the full line total.
+        const addOns: CartAddOn[] = it.addOns.map((label) => ({
+          groupId: "",
+          optionId: label,
+          name: label,
+          price: 0,
+        }));
+        return {
+          uid: lineUid(d.date, it.itemId, addOns),
+          date: d.date,
+          itemId: it.itemId,
+          name: it.name,
+          basePrice: it.price,
+          unitPrice: it.price,
+          qty: it.qty,
+          addOns,
+          type: order.type,
+        };
+      }),
+    );
+    const windows = Object.fromEntries(order.days.map((d) => [d.date, d.deliveryWindow]));
+    // Orders don't carry packaging, so an edit always starts from disposable.
+    set({ items, windows, payment: order.payment, packaging: "disposable", pickupWindow: null, specialPickup: false });
+  },
+  restore: (snap) =>
+    set({
+      items: snap.items,
+      windows: snap.windows,
+      payment: snap.payment,
+      addressId: snap.addressId,
+      packaging: snap.packaging,
+      pickupWindow: snap.pickupWindow,
+      specialPickup: snap.specialPickup,
+    }),
+  clear: () => set({ items: [], packaging: "disposable", pickupWindow: null, specialPickup: false }),
   setPayment: (payment) => set({ payment }),
   setWindow: (date, window) => set((s) => ({ windows: { ...s.windows, [date]: window } })),
   setAddress: (addressId) => set({ addressId }),
+  setPackaging: (packaging) =>
+    packaging === "disposable"
+      ? set({ packaging, pickupWindow: null, specialPickup: false })
+      : set({ packaging }),
+  setPickupWindow: (window) => set({ pickupWindow: window, specialPickup: false }),
+  setCustomPickup: (time) => set({ pickupWindow: time, specialPickup: true }),
 
   dates: () => Array.from(new Set(get().items.map((i) => i.date))).sort(),
   itemsForDate: (date) => get().items.filter((i) => i.date === date),
@@ -213,7 +300,14 @@ export const useCartStore = create<CartState>()(
   totalSubsidy: () => get().dates().reduce((s, d) => s + get().daySubsidy(d), 0),
   totalEmployeePaid: () => get().dates().reduce((s, d) => s + get().dayEmployeePaid(d), 0),
   tax: () => Math.round(get().totalEmployeePaid() * program.taxRate * 100) / 100,
-  total: () => get().totalEmployeePaid() + get().tax(),
+  // Containers = one per individual meal, or the guest count of a family package.
+  packagingQty: () =>
+    get().items.reduce((s, i) => s + (i.type === "family_style" ? i.guests ?? i.qty : i.qty), 0),
+  packagingFee: () =>
+    get().packaging === "reusable" ? reusablePackagingFee(get().packagingQty()) : 0,
+  // Packaging rides on top of the food + tax (it isn't itself taxed). The special
+  // pickup fee is ZIP-based and lives at the checkout layer, which has the ZIP.
+  total: () => get().totalEmployeePaid() + get().tax() + get().packagingFee(),
   count: () => get().items.reduce((s, i) => s + i.qty, 0),
     }),
     {
@@ -230,6 +324,9 @@ export const useCartStore = create<CartState>()(
         payment: s.payment,
         windows: s.windows,
         addressId: s.addressId,
+        packaging: s.packaging,
+        pickupWindow: s.pickupWindow,
+        specialPickup: s.specialPickup,
       }),
     },
   ),

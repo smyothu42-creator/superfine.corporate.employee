@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Search,
   Check,
@@ -18,6 +17,7 @@ import {
   BadgePercent,
   Truck,
   Gift,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -47,6 +47,8 @@ import { useSessionStore } from "@/store/use-session-store";
 import { useProfileStore } from "@/store/use-profile-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { useUiStore } from "@/store/use-ui-store";
+import { useOrderEditStore } from "@/store/use-order-edit-store";
+import { useOrdersStore } from "@/store/use-orders-store";
 import {
   nextServiceDays,
   serviceDaysInRange,
@@ -73,7 +75,6 @@ import {
 import { formatCurrency, cn } from "@/lib/utils";
 import { bumpCart } from "@/lib/fly-to-cart";
 import { toast } from "@/store/use-toast-store";
-import { confirm } from "@/store/use-confirm-store";
 import type { MenuItem, OrderType } from "@/data/types";
 
 type Mode = "single" | "multi";
@@ -131,7 +132,6 @@ export function MenuView() {
   const [configuring, setConfiguring] = React.useState<MenuItem | null>(null);
 
   const cart = useCartStore();
-  const router = useRouter();
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
   const setPlannedDays = useUiStore((s) => s.setPlannedDays);
   const openCart = useUiStore((s) => s.openCart);
@@ -140,16 +140,31 @@ export function MenuView() {
   const clearRangePicker = useUiStore((s) => s.clearRangePicker);
   const focusDayRequested = useUiStore((s) => s.focusDayRequested);
   const clearFocusDay = useUiStore((s) => s.clearFocusDay);
-  // "Edit a placed order from the full menu" context (set by the change-order popup).
-  const editingOrder = useUiStore((s) => s.editingOrder);
-  const startEditingOrder = useUiStore((s) => s.startEditingOrder);
-  const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
-  // DoorDash-style horizontal rows — capped at 2 per row so each card keeps its
-  // width; drop to a single column earlier while the cart side panel is open.
-  const gridCols = cn(
-    "grid grid-cols-1 gap-4",
-    cartOpen ? "xl:grid-cols-2" : "lg:grid-cols-2",
+  // Editing a placed order: the delivery date is fixed to the order's day(s), so
+  // the date picker locks and the auto-snap-forward effects stand down.
+  const editingOrderId = useOrderEditStore((s) => s.editingOrderId);
+  // The order being edited (stable reference), and its day(s), which the menu
+  // date pins to so added meals land on the order's day — never today's default.
+  const editOrder = useOrdersStore((s) =>
+    editingOrderId ? s.orders.find((o) => o.id === editingOrderId) : undefined,
   );
+  const editOrderDays = React.useMemo(
+    () => editOrder?.days.map((d) => d.date).sort() ?? [],
+    [editOrder],
+  );
+  // An edit *session* can persist while the user steps out of it to browse — they
+  // leave the menu, come back, and the banner offers to resume. Only while the
+  // session is *active* (the order's meals are loaded into the cart) does the menu
+  // lock to the order's day(s). When paused, the menu is a clean new-order flow —
+  // the date picker unlocks and any day is orderable — until "Continue editing"
+  // reloads the meals and re-locks the date.
+  const editingActive = useOrderEditStore((s) => s.active);
+  // DoorDash-style horizontal rows, two per row. The responsive breakpoints key
+  // off the *viewport*, which can't see the ~400px the cart side panel carves
+  // out of the content area — so two columns while the cart is open cram each
+  // card until the meal names clip ("Marg Flatb"). Keep one full-width column
+  // whenever the cart is open; two columns only when it's closed.
+  const gridCols = cn("grid grid-cols-1 gap-4", cartOpen ? "" : "lg:grid-cols-2");
 
   React.useEffect(() => {
     const today = startOfToday();
@@ -168,13 +183,8 @@ export function MenuView() {
     setRangeEnd(week[week.length - 1] ?? "");
 
     // The menu always opens in its default state — individual meals, single day.
-    // Editing a placed order still focuses that order's day (mode is already
-    // "single"), so the "Select from full menu" hand-off lands on the right menu.
-    const editing = useUiStore.getState().editingOrder;
-    if (editing) {
-      setSelectedDate(editing.date);
-      setActiveDate(editing.date);
-    }
+    // A pending focus-day request (e.g. from the "Change order" flow) is applied
+    // by its own effect right after mount.
     setMounted(true);
   }, []);
 
@@ -201,10 +211,11 @@ export function MenuView() {
 
   // Meal style drives the lead window (individual 1 day, family 3 days). When it
   // changes, if the selected single day is now too soon / closed, jump forward
-  // to the first day that's actually orderable for this style. Editing a placed
-  // order pins the date, so leave that alone.
+  // to the first day that's actually orderable for this style.
   React.useEffect(() => {
-    if (editingOrder || mode !== "single" || !selectedDate) return;
+    // While actively editing a placed order the date is locked to the order's
+    // day — never snap it forward, even if that day is now past its cutoff.
+    if (editingActive || mode !== "single" || !selectedDate) return;
     const invalid =
       !isServiceDay(selectedDate) ||
       isHoliday(selectedDate) ||
@@ -216,7 +227,7 @@ export function MenuView() {
       setSelectedDate(next);
       setActiveDate(next);
     }
-  }, [menuType, selectedDate, mode, editingOrder]);
+  }, [menuType, selectedDate, mode, editingActive]);
 
   // Same guard for the multi-day range start. The start can fall on a red
   // past-cutoff day (e.g. after switching to family-style, whose 72h cutoff
@@ -227,7 +238,8 @@ export function MenuView() {
   // red cutoff styling — so a stale start would show a red day pre-selected.
   // Snap it forward to the first orderable service day for the current style.
   React.useEffect(() => {
-    if (!rangeStart) return;
+    // Locked to the order's day(s) while actively editing — don't shift the range.
+    if (editingActive || !rangeStart) return;
     const invalid =
       !isServiceDay(rangeStart) ||
       isHoliday(rangeStart) ||
@@ -240,7 +252,7 @@ export function MenuView() {
     // Keep a real multi-day span: only preserve the old end if it's still past
     // the new start, otherwise extend to the last of the next orderable days.
     setRangeEnd((prev) => (prev && prev > open[0] ? prev : open[open.length - 1]));
-  }, [menuType, rangeStart]);
+  }, [menuType, rangeStart, editingActive]);
 
   const day = mode === "single" ? selectedDate : activeDate;
 
@@ -275,6 +287,12 @@ export function MenuView() {
   // the day strip's active tab follows the day the user tapped.
   React.useEffect(() => {
     if (!focusDayRequested) return;
+    // While actively editing, the date is driven by the order's day(s) below —
+    // ignore any focus request so it can't pull the menu onto a non-order day.
+    if (editingActive) {
+      clearFocusDay();
+      return;
+    }
     const planDays = Array.from(
       new Set([...cart.dates(), ...useUiStore.getState().plannedDays, focusDayRequested]),
     ).sort();
@@ -287,7 +305,26 @@ export function MenuView() {
     setActiveDate(focusDayRequested);
     setSelectedDate(focusDayRequested);
     clearFocusDay();
-  }, [focusDayRequested, cart, clearFocusDay]);
+  }, [focusDayRequested, cart, clearFocusDay, editingActive]);
+
+  // Editing pins the delivery date to the order's own day(s) — deterministically,
+  // so anything added from the menu lands on the day being edited, not today's
+  // default. Single-day orders lock one day; multi-day orders keep their range.
+  React.useEffect(() => {
+    if (!editingActive || editOrderDays.length === 0) return;
+    if (editOrderDays.length === 1) {
+      setMode("single");
+      setSelectedDate(editOrderDays[0]);
+      setActiveDate(editOrderDays[0]);
+    } else {
+      setMode("multi");
+      setRangeChosen(true);
+      setRangeStart(editOrderDays[0]);
+      setRangeEnd(editOrderDays[editOrderDays.length - 1]);
+      setSelectedDate(editOrderDays[0]);
+      setActiveDate(editOrderDays[0]);
+    }
+  }, [editingActive, editOrderDays]);
 
   // Multi-day progress.
   const daysBoxOpen = mode === "multi" && rangeChosen && rangeDays.length > 0;
@@ -369,22 +406,6 @@ export function MenuView() {
     }
   }
 
-  // Editing a placed order: picking a meal opens a confirm dialog ("change from
-  // X to this item?"). On confirm we drop edit mode and return to My Orders with
-  // a success toast — no cart, no banner.
-  async function requestChange(item: MenuItem) {
-    if (!editingOrder) return;
-    const ok = await confirm({
-      title: "Change your meal?",
-      description: `Change from ${editingOrder.originalItemName} to ${item.name} for ${editingOrder.dateLabel}?`,
-      confirmLabel: "Confirm change",
-    });
-    if (!ok) return;
-    clearEditingOrder();
-    toast.success("Order updated", `${editingOrder.originalItemName} → ${item.name} for ${editingOrder.dateLabel}.`);
-    router.push("/orders");
-  }
-
   if (!mounted) {
     return (
       <div className="space-y-4">
@@ -451,13 +472,21 @@ export function MenuView() {
 
   // The multi-day day strip hangs off the bottom of the header card. (The mode
   // toggle and date picker now live up in the header beside the meal-style tabs.)
-  // While editing a placed order the date is fixed, so the strip is hidden.
-  const attachedOpen = !editingOrder && daysBoxOpen;
+  const attachedOpen = daysBoxOpen;
 
   // One unified date picker: a single dropdown whose internal "Single day / Date
   // range" toggle lets the user pick either a single delivery date or a Mon–Fri
-  // range, without any separate mode segments beside it.
-  const datePicker = (
+  // range, without any separate mode segments beside it. While actively editing a
+  // placed order the date is fixed to the order's day(s), so it becomes a locked
+  // pill; with the cart closed the user is browsing normally, so it unlocks.
+  const datePicker = editingActive ? (
+    <LockedDatePill
+      mode={mode}
+      selectedDate={selectedDate}
+      rangeStart={rangeStart}
+      rangeEnd={rangeEnd}
+    />
+  ) : (
     <UnifiedDatePicker
       mode={mode}
       onModeChange={setMode}
@@ -517,7 +546,7 @@ export function MenuView() {
       {/* Start an order — date selection. The sticky wrapper pins flush to the
           topbar with a solid background so nothing shows through the float gap,
           while the inner card sits below it with a shadow (floating look). */}
-      <div className="sticky top-16 z-20 bg-background pb-1 pt-2">
+      <div className="sticky top-[calc(4rem_+_var(--edit-banner-h,0px))] z-20 bg-background pb-1 pt-2">
       {/* One shadow on the whole card so the attached box never gets the header
           card's drop shadow cast onto it (which read as a gradient). */}
       <div className="relative z-10 rounded-2xl shadow-raised">
@@ -527,21 +556,10 @@ export function MenuView() {
           attachedOpen && "rounded-b-none",
         )}
       >
-        {editingOrder ? (
-          // Editing a placed order: a plain heading (the topbar reads "Changing
-          // Order" and the cards show the change icon; picking one confirms).
-          <div>
-            <h2 className="font-display text-xl font-semibold tracking-tight">Choose a replacement meal</h2>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">
-              Pick a new meal for <strong className="text-foreground">{editingOrder.dateLabel}</strong>.
-              You&apos;ll confirm the change.
-            </p>
-          </div>
-        ) : (
-          // The greeting and the meal-style / date controls share one line. The
-          // controls stay pinned to the opposite edge, and only fall below the
-          // greeting on genuinely narrow screens.
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        {/* The greeting and the meal-style / date controls share one line. The
+            controls stay pinned to the opposite edge, and only fall below the
+            greeting on genuinely narrow screens. */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
               <h2 className="font-display text-xl font-semibold tracking-tight">
                 {firstName ? `Hi ${firstName}, what` : "What"} would you like to eat?
@@ -564,8 +582,7 @@ export function MenuView() {
               />
               {datePicker}
             </div>
-          </div>
-        )}
+        </div>
 
         {/* Filter bar — search + Allergens / Dietary / Price.
             On a phone the three filter pills are ~287px of fixed, unshrinkable
@@ -690,9 +707,8 @@ export function MenuView() {
 
       </div>
 
-      {/* Promo push — sits under the category tags, above the grid. Hidden while
-          changing a placed order. */}
-      {!editingOrder ? <PromoBanner /> : null}
+      {/* Promo push — sits under the category tags, above the grid. */}
+      <PromoBanner />
 
       {/* Menu grid */}
       {dayMenu.length ? (
@@ -703,9 +719,8 @@ export function MenuView() {
               item={item}
               inCart={inCartFor(item.id)}
               showPrice={program.showPrices}
-              editing={Boolean(editingOrder)}
-              onAdd={() => (editingOrder ? requestChange(item) : handleAdd(item))}
-              onCustomize={() => (editingOrder ? requestChange(item) : handleAdd(item))}
+              onAdd={() => handleAdd(item)}
+              onCustomize={() => handleAdd(item)}
             />
           ))}
         </div>
@@ -1278,6 +1293,49 @@ function calMatrix(year: number, month: number): (Date | null)[] {
  * in-menu toggle only previews — nothing changes until you tap a day (single)
  * or press Apply (range).
  */
+/**
+ * Read-only date pill shown in place of the picker while editing a placed order.
+ * The delivery date is fixed to the order's day(s) — you're changing the meal,
+ * not moving the order — so this is a non-interactive label with a lock icon.
+ */
+function LockedDatePill({
+  mode,
+  selectedDate,
+  rangeStart,
+  rangeEnd,
+}: {
+  mode: Mode;
+  selectedDate: string;
+  rangeStart: string;
+  rangeEnd: string;
+}) {
+  return (
+    <span
+      title="You're editing this order — the delivery date is locked to the order's day."
+      aria-label={
+        mode === "single"
+          ? `Delivery date locked to ${formatDayLong(fromISODate(selectedDate))} while editing this order`
+          : `Delivery dates locked to ${formatDay(fromISODate(rangeStart))} through ${formatDay(fromISODate(rangeEnd))} while editing this order`
+      }
+      className="flex max-w-full items-center gap-1 rounded-full bg-muted px-2.5 py-2 text-xs font-semibold text-muted-foreground sm:gap-1.5 sm:px-3 sm:py-[11px] sm:text-[13px]"
+    >
+      <Lock className="size-3.5 shrink-0" />
+      {mode === "single" ? (
+        <>
+          <span className="truncate sm:hidden">{formatDay(fromISODate(selectedDate))}</span>
+          <span className="hidden truncate sm:inline">{formatDayLong(fromISODate(selectedDate))}</span>
+        </>
+      ) : (
+        <>
+          <span className="truncate">{formatShort(fromISODate(rangeStart))}</span>
+          <ArrowRight className="size-3 shrink-0 sm:size-3.5" />
+          <span className="truncate">{formatShort(fromISODate(rangeEnd))}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
 function UnifiedDatePicker({
   mode,
   onModeChange,

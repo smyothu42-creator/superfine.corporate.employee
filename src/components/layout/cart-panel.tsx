@@ -3,9 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X, ShoppingCart, Maximize2 } from "lucide-react";
+import { X, ShoppingCart, Maximize2, Pencil } from "lucide-react";
 import { useUiStore } from "@/store/use-ui-store";
 import { useCartStore } from "@/store/use-cart-store";
+import { useOrderEditStore } from "@/store/use-order-edit-store";
 import { CartPanelBody } from "@/features/cart/cart-view";
 import { cn } from "@/lib/utils";
 
@@ -20,10 +21,18 @@ export function CartPanel() {
   const open = useUiStore((s) => s.cartOpen);
   const close = useUiStore((s) => s.closeCart);
   const count = useCartStore((s) => s.count());
+  const editingOrderId = useOrderEditStore((s) => s.editingOrderId);
+  const editActive = useOrderEditStore((s) => s.active);
   const pathname = usePathname();
 
-  // Close when navigating (e.g. tapping Checkout inside the panel).
+  // Close when navigating (e.g. tapping Checkout inside the panel). While actively
+  // editing a placed order the cart is the edit workspace, so keep it open across
+  // the menu + item pages; leaving the menu for another section still closes it
+  // (and the page-level banner takes over there). Read the edit state fresh so
+  // this effect only fires on real navigation, not when the session starts/ends.
   React.useEffect(() => {
+    const { active } = useOrderEditStore.getState();
+    if (active && pathname.startsWith("/menu")) return;
     close();
   }, [pathname, close]);
 
@@ -38,14 +47,28 @@ export function CartPanel() {
   }, [open, close]);
 
   const header = (
-    <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
-      <h2 className="flex items-center gap-2 font-display text-base font-semibold tracking-tight">
-        <ShoppingCart className="size-4 text-primary" />
-        Your cart
-        {count > 0 ? (
-          <span className="rounded-full bg-coral px-1.5 text-2xs font-bold text-white">{count}</span>
-        ) : null}
-      </h2>
+    <div
+      className={cn(
+        "flex items-center justify-between border-b px-4 py-3.5",
+        // Editing wears a distinct coral/warning header so it never reads as an
+        // ordinary cart — you're changing a placed order, not building a new one.
+        editActive ? "border-warning-border bg-warning-bg" : "border-border",
+      )}
+    >
+      {editActive ? (
+        <h2 className="flex items-center gap-2 font-display text-base font-semibold tracking-tight text-coral-deep">
+          <Pencil className="size-4" />
+          Editing {editingOrderId}
+        </h2>
+      ) : (
+        <h2 className="flex items-center gap-2 font-display text-base font-semibold tracking-tight">
+          <ShoppingCart className="size-4 text-primary" />
+          Your cart
+          {count > 0 ? (
+            <span className="rounded-full bg-coral px-1.5 text-2xs font-bold text-white">{count}</span>
+          ) : null}
+        </h2>
+      )}
       {/* gap-2 so the two icons' 44px touch boxes don't overlap on a phone. */}
       <div className="flex items-center gap-2">
         <Link
@@ -75,7 +98,8 @@ export function CartPanel() {
       <aside
         aria-label="Cart"
         className={cn(
-          "sticky top-0 hidden h-screen shrink-0 overflow-hidden border-l border-border bg-card transition-[width] duration-300 ease-out lg:block",
+          "sticky top-0 hidden h-screen shrink-0 overflow-hidden border-l bg-card transition-[width] duration-300 ease-out lg:block",
+          editActive ? "border-warning-border" : "border-border",
           open ? WIDTH : "w-0",
         )}
       >

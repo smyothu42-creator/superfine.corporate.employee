@@ -26,23 +26,19 @@ import { OrderTimeline } from "@/components/orders/order-status";
 import { FeedbackModal } from "@/components/orders/feedback-modal";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
-import { orders, orderPayment } from "@/data/orders";
+import { orderPayment } from "@/data/orders";
 import { program } from "@/data/program";
 import { useChangeOrder } from "./use-change-order";
-import { useUiStore } from "@/store/use-ui-store";
+import { useOrdersStore } from "@/store/use-orders-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
 import { useOOOStore } from "@/store/use-ooo-store";
 import { fromISODate, formatDay, toISODate, startOfToday } from "@/lib/dates";
-import { nextOpenDays, earliestDeliveryDate } from "@/lib/cutoff";
+import { nextOpenDays, earliestDeliveryDate, isCutoffPassed } from "@/lib/cutoff";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Order } from "@/data/types";
-
-const upcoming = orders.filter((o) => ["draft", "confirmed"].includes(o.status));
-const past = orders.filter((o) => o.status === "delivered");
-const cancelled = orders.filter((o) => o.status === "cancelled");
 
 const EMPTY_COPY: Record<string, string> = {
   past: "No past orders yet.",
@@ -82,7 +78,11 @@ export function OrdersView() {
   const [range, setRange] = React.useState<{ start: string; end: string } | null>(null);
   const [rangeOpen, setRangeOpen] = React.useState(false);
   const ooo = useOOOStore();
-  const clearEditingOrder = useUiStore((s) => s.clearEditingOrder);
+  // Read from the reactive store so a saved edit re-renders the list.
+  const orders = useOrdersStore((s) => s.orders);
+  const upcoming = orders.filter((o) => ["draft", "confirmed"].includes(o.status));
+  const past = orders.filter((o) => o.status === "delivered");
+  const cancelled = orders.filter((o) => o.status === "cancelled");
   const baseList = tab === "upcoming" ? upcoming : tab === "past" ? past : cancelled;
 
   // Reset the date range when switching tabs (each tab spans its own dates).
@@ -98,9 +98,6 @@ export function OrdersView() {
   const rangeFmt = (iso: string) =>
     fromISODate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const rangeLabel = range ? `${rangeFmt(range.start)} – ${rangeFmt(range.end)}` : "All dates";
-
-  // Landing on My Orders always exits any in-progress "change a meal" flow.
-  React.useEffect(() => clearEditingOrder(), [clearEditingOrder]);
 
   return (
     <div className="space-y-5">
@@ -235,13 +232,15 @@ function OrderCard({ order }: { order: Order }) {
   const href = `/orders/${order.id}`;
   const items = order.days.flatMap((d) => d.items);
   const active = ["draft", "confirmed"].includes(order.status);
-  const editable = active && !order.locked;
+  // Editable only before the change cutoff — checked against the real clock, so
+  // an order still open at page load locks the moment its cutoff passes.
+  const editable = active && !order.locked && !isCutoffPassed(order.date, order.type);
   // Re-order confirmation modal (past orders).
   const [reorderOpen, setReorderOpen] = React.useState(false);
   // In-platform feedback form (delivered orders).
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   // Shared change/swap flow (opens the change-order popup, hands off to the menu).
-  const { startChange, sheets } = useChangeOrder(order);
+  const { startChange } = useChangeOrder(order);
 
   // Re-order: drop this order's meals into the cart on the next open delivery
   // day(s), then send the user to the cart to pick a day and check out.
@@ -466,7 +465,6 @@ function OrderCard({ order }: { order: Order }) {
       </CardBody>
     </Card>
 
-    {sheets}
     {reorderOpen ? (
       <ReOrderModal order={order} onClose={() => setReorderOpen(false)} onConfirm={reorder} />
     ) : null}

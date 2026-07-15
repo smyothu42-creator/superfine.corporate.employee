@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, Check, Leaf, Wheat, ShieldCheck, SunSnow, Flame, Nut, Milk, ArrowLeftRight, Users } from "lucide-react";
+import { Plus, Check, Leaf, Wheat, ShieldCheck, SunSnow, Flame, Nut, Milk, Users } from "lucide-react";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { flyCardToCart } from "@/lib/fly-to-cart";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -42,8 +42,6 @@ interface MenuItemCardProps {
   selectable?: boolean;
   selected?: boolean;
   onSelect?: () => void;
-  /** Changing a placed order: the quick-add "+" becomes a change icon. */
-  editing?: boolean;
   className?: string;
 }
 
@@ -67,7 +65,6 @@ export function MenuItemCard({
   selectable = false,
   selected = false,
   onSelect,
-  editing = false,
   className,
 }: MenuItemCardProps) {
   const family = isFamilyStyle(item);
@@ -79,8 +76,6 @@ export function MenuItemCard({
   // per-guest rate, which the flat `originalPrice` wouldn't be comparable to.
   const onSale = !family && item.originalPrice != null && item.originalPrice > item.price;
   const cardRef = React.useRef<HTMLDivElement>(null);
-  // In "change a placed order" mode the action reads as a swap.
-  const ActionIcon = editing ? ArrowLeftRight : Plus;
 
   // Dietary tags (Vegan, Gluten-Free, …) — part of the secondary meta section.
   const dietaryTags = item.tags.length ? (
@@ -130,7 +125,11 @@ export function MenuItemCard({
             truncated name next to a Popular badge reads as "Pane…". Names get
             two lines and the badges drop below when the row is tight. */}
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <h3 className="line-clamp-2 font-display text-base font-semibold leading-tight">{item.name}</h3>
+          {/* `break-words` so a long single word (e.g. "Margherita") wraps to the
+              next line instead of being clipped to "Marg" when the column is tight. */}
+          <h3 className="line-clamp-2 break-words font-display text-base font-semibold leading-tight">
+            {item.name}
+          </h3>
           {promoBadges}
         </div>
         {showPrice ? (
@@ -252,15 +251,13 @@ export function MenuItemCard({
             type="button"
             onClick={onCustomize}
             aria-label={
-              editing
-                ? `Change to ${item.name}`
-                : family
-                  ? `Set guests and quantities for ${item.name}`
-                  : `Choose options for ${item.name}`
+              family
+                ? `Set guests and quantities for ${item.name}`
+                : `Choose options for ${item.name}`
             }
             className="touch-target absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
           >
-            <ActionIcon className="size-4" />
+            <Plus className="size-4" />
           </button>
         ) : (
           <button
@@ -269,10 +266,10 @@ export function MenuItemCard({
               flyCardToCart(cardRef.current);
               onAdd?.();
             }}
-            aria-label={editing ? `Change to ${item.name}` : `Add ${item.name}`}
+            aria-label={`Add ${item.name}`}
             className="touch-target absolute -bottom-2 -right-2 flex size-8 items-center justify-center rounded-full bg-coral text-white shadow-md ring-2 ring-card transition-colors hover:bg-coral-deep active:scale-95"
           >
-            <ActionIcon className="size-4" />
+            <Plus className="size-4" />
           </button>
         )}
       </div>

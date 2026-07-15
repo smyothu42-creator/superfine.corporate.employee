@@ -4,6 +4,7 @@ import * as React from "react";
 import { useCartStore } from "@/store/use-cart-store";
 import { useSessionStore } from "@/store/use-session-store";
 import { useAddressesStore } from "@/store/use-addresses-store";
+import { useOrderEditStore } from "@/store/use-order-edit-store";
 
 /**
  * Reads the persisted stores back in, once, after the first paint.
@@ -20,6 +21,9 @@ import { useAddressesStore } from "@/store/use-addresses-store";
 export function StoreHydrator() {
   React.useEffect(() => {
     void useCartStore.persist.rehydrate();
+    // The in-progress "edit a placed order" session shadows the cart, so it
+    // restores on the same pass — the resume/discard banner survives a reload.
+    void useOrderEditStore.persist.rehydrate();
     // The individual's saved-address book — same skipHydration treatment.
     void useAddressesStore.persist.rehydrate();
     // Sets `hydrated`, which the gates wait for before deciding anything.

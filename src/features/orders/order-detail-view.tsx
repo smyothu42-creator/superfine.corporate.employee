@@ -24,10 +24,12 @@ import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { orderPayment } from "@/data/orders";
 import { program } from "@/data/program";
+import { useOrdersStore } from "@/store/use-orders-store";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
 import { fromISODate, formatDay } from "@/lib/dates";
+import { isCutoffPassed } from "@/lib/cutoff";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Order, PaymentChoice } from "@/data/types";
 
@@ -37,16 +39,20 @@ const PAYMENT_LABEL: Record<PaymentChoice, string> = {
   pay_now: "Card on file",
 };
 
-export function OrderDetailView({ order }: { order: Order }) {
+export function OrderDetailView({ order: initialOrder }: { order: Order }) {
   const router = useRouter();
+  // Prefer the live store copy so a saved edit re-renders this page; fall back to
+  // the server-resolved prop before the store has the id (or on a hard load).
+  const order = useOrdersStore((s) => s.orders.find((o) => o.id === initialOrder.id)) ?? initialOrder;
   const active = ["draft", "confirmed"].includes(order.status);
-  const editable = active && !order.locked;
+  // Editable only before the change cutoff (checked live against the real clock).
+  const editable = active && !order.locked && !isCutoffPassed(order.date, order.type);
   // Individuals pay retail — no subsidy line, and "covered" never applies.
   const corporate = isSubsidized(useSessionStore((s) => s.account));
   // Tax on the employee-paid portion + the true total, in sync with the cart/checkout.
   const pay = orderPayment(order, corporate);
   // Same change-order popup + "Select from full menu" hand-off as the list page.
-  const { startChange, sheets } = useChangeOrder(order);
+  const { startChange } = useChangeOrder(order);
 
   async function cancel() {
     const ok = await confirm({
@@ -194,7 +200,7 @@ export function OrderDetailView({ order }: { order: Order }) {
             {editable ? (
               <>
                 <Button block variant="outline" onClick={startChange}>
-                  <Pencil className="size-4" /> Change order
+                  <Pencil className="size-4" /> Edit order
                 </Button>
                 <Button block variant="ghost" className="text-danger" onClick={cancel}>
                   <XCircle className="size-4" /> Cancel order
@@ -214,25 +220,23 @@ export function OrderDetailView({ order }: { order: Order }) {
 
         </div>
       </div>
-      {sheets}
     </div>
   );
 }
 
 function FeedbackCard({ orderId }: { orderId: string }) {
-  // In-platform feedback form — opens a lightweight rating/comment sheet tagged
-  // to this order so the kitchen knows which meal it's about.
+  // In-platform feedback form — opens a lightweight note sheet tagged to this
+  // order so the kitchen knows which one it's about.
   const [open, setOpen] = React.useState(false);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">How was it?</CardTitle>
+        <CardTitle className="text-base">Share your feedback</CardTitle>
       </CardHeader>
       <CardBody className="space-y-3">
         <p className="text-[13px] text-muted-foreground">
-          Tell us how {orderId} was: the meal, portion, freshness or delivery. The kitchen reads
-          every note.
+          Have a note about {orderId}? Tell us anything — the kitchen reads every one.
         </p>
         <Button size="sm" onClick={() => setOpen(true)}>
           <MessageSquare className="size-4" /> Share your feedback
