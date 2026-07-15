@@ -89,6 +89,7 @@ export function CheckoutView() {
   // review screen, but the CTA saves the changes back onto the order instead of
   // placing a new one.
   const editActive = useOrderEditStore((s) => s.active);
+  const editingOrderId = useOrderEditStore((s) => s.editingOrderId);
   const { saveEdit } = useOrderEdit();
 
   const [identityOpen, setIdentityOpen] = React.useState(false);
@@ -245,6 +246,23 @@ export function CheckoutView() {
       <div className="sticky top-[calc(4rem_+_var(--edit-banner-h,0px))] z-20 -mx-4 bg-background px-4 py-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <Steps current={1} />
       </div>
+
+      {/* Editing an order: a coral header so this checkout is visibly different
+          from an ordinary one — you're updating a placed order, not placing a new
+          one, and the CTA saves the change instead of charging a new order. */}
+      {editActive ? (
+        <div className="flex items-center gap-3 rounded-2xl border border-warning-border bg-warning-bg px-3 py-2.5 sm:px-4">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-warning-border bg-card text-coral-deep sm:size-10">
+            <Pencil className="size-4 sm:size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-coral-deep">Editing {editingOrderId}</p>
+            <p className="truncate text-[13px] text-coral-deep/80">
+              Review your changes and save to update this order.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
@@ -419,9 +437,9 @@ export function CheckoutView() {
 
         {/* Summary */}
         <div>
-          <Card className="lg:sticky lg:top-32">
+          <Card className={cn("lg:sticky lg:top-32", editActive && "border-warning-border")}>
             <CardHeader>
-              <CardTitle>Order summary</CardTitle>
+              <CardTitle>{editActive ? "Review your changes" : "Order summary"}</CardTitle>
               <Button size="sm" variant="ghost" onClick={() => setEditOpen(true)}>
                 <Pencil className="size-3.5" /> Edit order
               </Button>

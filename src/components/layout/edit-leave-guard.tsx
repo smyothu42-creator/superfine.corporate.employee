@@ -34,9 +34,10 @@ export function EditLeaveGuard() {
   const router = useRouter();
   const { abandonEdit } = useOrderEdit();
 
-  // Only arm on the menu surface (the grid and a meal's detail page), where the
-  // edit workspace lives.
-  const armed = active && pathname.startsWith("/menu");
+  // Arm on every edit-flow surface — the menu (grid + a meal's detail), the cart,
+  // and checkout — so leaving to another feature from any of them is intercepted.
+  // Moving *between* those flow pages isn't leaving, so it's never intercepted.
+  const armed = active && isFlowPath(pathname);
   const ref = React.useRef({ armed, router, abandonEdit });
   ref.current = { armed, router, abandonEdit };
   const busy = React.useRef(false);
