@@ -22,9 +22,8 @@ function isFlowPath(path: string) {
 /**
  * Guards against wandering off mid-edit. While the edit workspace is live on the
  * menu, clicking a link to another section (Orders, Account, Auto-Order…) is
- * intercepted with a confirm: leaving *parks* the edit (the meal comes out of the
- * cart, the menu becomes a clean new-order flow) rather than losing or committing
- * it — the banner's "Continue editing" brings it back. Staying keeps editing.
+ * intercepted with a confirm: leaving *discards* the edit (the order stays as it
+ * was) — the same outcome as the Discard button. Staying keeps editing.
  *
  * Implemented as a capture-phase click listener so it beats Next's <Link>
  * navigation (which fires in the bubble phase) without having to wrap every link.
@@ -33,18 +32,18 @@ export function EditLeaveGuard() {
   const active = useOrderEditStore((s) => s.active);
   const pathname = usePathname();
   const router = useRouter();
-  const { pauseEdit } = useOrderEdit();
+  const { abandonEdit } = useOrderEdit();
 
   // Only arm on the menu surface (the grid and a meal's detail page), where the
   // edit workspace lives.
   const armed = active && pathname.startsWith("/menu");
-  const ref = React.useRef({ armed, router, pauseEdit });
-  ref.current = { armed, router, pauseEdit };
+  const ref = React.useRef({ armed, router, abandonEdit });
+  ref.current = { armed, router, abandonEdit };
   const busy = React.useRef(false);
 
   React.useEffect(() => {
     async function onClick(e: MouseEvent) {
-      const { armed, router, pauseEdit } = ref.current;
+      const { armed, router, abandonEdit } = ref.current;
       if (!armed || busy.current) return;
       // Let modified clicks (new tab/window) and non-primary buttons pass.
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
@@ -64,16 +63,16 @@ export function EditLeaveGuard() {
       e.stopPropagation();
       busy.current = true;
       const ok = await confirm({
-        title: "Leave editing this meal?",
+        title: "Discard your changes?",
         description:
-          "You're currently editing this order. Leaving here won't change the meal yet — your edit is kept. To pick it back up, tap “Continue editing” in the banner.",
-        confirmLabel: "Leave",
+          "Leaving the menu will discard your unsaved changes to this order. The order stays exactly as it was.",
+        confirmLabel: "Discard & leave",
         cancelLabel: "Keep editing",
-        tone: "warning",
+        tone: "danger",
       });
       busy.current = false;
       if (ok) {
-        pauseEdit();
+        abandonEdit();
         router.push(href);
       }
     }

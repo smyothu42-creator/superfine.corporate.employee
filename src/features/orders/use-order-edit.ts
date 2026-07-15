@@ -16,9 +16,9 @@ import type { Order, OrderDay } from "@/data/types";
  * The model: editing reuses the normal menu + cart, but as a bounded session.
  * `begin` stashes the current cart and loads the order's meals; the user edits
  * with the ordinary menu/cart controls; `save` writes the cart back onto the
- * order and restores the stashed cart; `discard` just restores it. Because the
- * session is persisted, leaving mid-edit keeps it resumable rather than leaking
- * the order's meals into the next order.
+ * order and restores the stashed cart; `discard` (and leaving the menu, which is
+ * treated the same way) just restores it. Leaving mid-edit discards the change —
+ * it never leaks the order's meals into the next order.
  */
 export function useOrderEdit() {
   const router = useRouter();
@@ -28,8 +28,6 @@ export function useOrderEdit() {
   const editActive = useOrderEditStore((s) => s.active);
   const begin = useOrderEditStore((s) => s.begin);
   const retarget = useOrderEditStore((s) => s.retarget);
-  const pause = useOrderEditStore((s) => s.pause);
-  const resume = useOrderEditStore((s) => s.resume);
   const end = useOrderEditStore((s) => s.end);
   const requestFocusDay = useUiStore((s) => s.requestFocusDay);
   const openCart = useUiStore((s) => s.openCart);
@@ -72,22 +70,29 @@ export function useOrderEdit() {
     openCart();
   }
 
-  /**
-   * Park the edit without ending it: put the pre-edit cart back (so the menu is a
-   * clean new-order flow) and mark the session inactive. The banner's "Continue
-   * editing" reloads the order's meals later. Used when the user leaves the menu
-   * mid-edit.
-   */
-  function pauseEdit() {
+  /** The shared teardown: put the pre-edit cart back and end the session. */
+  function revertAndEnd() {
     const { snapshot } = useOrderEditStore.getState();
     if (snapshot) cart.restore(snapshot);
     else cart.clear();
-    pause();
+    end();
     closeCart();
   }
 
+  /**
+   * Discard the edit because the user is leaving the menu. The leave popup has
+   * already confirmed and the guard navigates them onward, so this just reverts
+   * the cart, ends the session, and notes it — no second confirm, no redirect.
+   * Leaving is a discard: the order stays exactly as it was.
+   */
+  function abandonEdit() {
+    const { editingOrderId: id } = useOrderEditStore.getState();
+    revertAndEnd();
+    if (id) toast.info("Edit discarded", `${id} was left unchanged.`);
+  }
+
   function saveEdit() {
-    const { editingOrderId: id, snapshot } = useOrderEditStore.getState();
+    const { editingOrderId: id } = useOrderEditStore.getState();
     if (!id) return;
     if (cart.count() === 0) {
       toast.warning("Add a meal first", "An order needs at least one meal, or cancel it from the order page.");
@@ -115,15 +120,13 @@ export function useOrderEdit() {
       employeePaid: cart.totalEmployeePaid(),
       payment: cart.payment,
     });
-    if (snapshot) cart.restore(snapshot);
-    end();
-    closeCart();
+    revertAndEnd();
     toast.success("Order updated", `Your changes to ${id} have been saved.`);
     router.push(`/orders/${id}`);
   }
 
   async function discardEdit() {
-    const { editingOrderId: id, snapshot, active } = useOrderEditStore.getState();
+    const { editingOrderId: id } = useOrderEditStore.getState();
     // Discarding throws away unsaved edits, so confirm first.
     const ok = await confirm({
       title: "Discard your changes?",
@@ -135,39 +138,25 @@ export function useOrderEdit() {
       tone: "danger",
     });
     if (!ok) return;
-    // Only put the pre-edit cart back if the workspace is still loaded. When
-    // paused the cart is already the new-order flow (and may hold fresh work), so
-    // restoring the old snapshot would wipe it — just end the parked session.
-    if (active && snapshot) cart.restore(snapshot);
-    end();
-    closeCart();
+    revertAndEnd();
     if (id) {
       toast.info("Edit discarded", `${id} was left unchanged.`);
-      if (active) router.push(`/orders/${id}`);
+      router.push(`/orders/${id}`);
     }
   }
 
   /**
-   * Resume a parked edit: re-stash the current (new-order) cart so it survives
-   * to save/discard, reload the order's meals, and land back on the locked menu.
-   * Safe to call while already active — it then just reopens the workspace.
+   * "Continue editing" from the banner — reopens the edit workspace on the menu.
+   * The edit is always live here (the order's meals are still in the cart), so
+   * this just refocuses the order's day, returns to the menu, and reopens the cart.
    */
   function resumeEdit() {
-    const { editingOrderId: id, active } = useOrderEditStore.getState();
-    if (!active) {
-      const order = id ? useOrdersStore.getState().get(id) : undefined;
-      resume(snapCart());
-      if (order) {
-        cart.loadOrder(order);
-        requestFocusDay(order.date);
-      }
-    } else {
-      const first = cart.dates()[0];
-      if (first) requestFocusDay(first);
-    }
+    const { editingOrderId: id } = useOrderEditStore.getState();
+    const order = id ? useOrdersStore.getState().get(id) : undefined;
+    if (order) requestFocusDay(order.date);
     router.push("/menu");
     openCart();
   }
 
-  return { editingOrderId, editActive, beginEdit, saveEdit, discardEdit, resumeEdit, pauseEdit };
+  return { editingOrderId, editActive, beginEdit, saveEdit, discardEdit, resumeEdit, abandonEdit };
 }
