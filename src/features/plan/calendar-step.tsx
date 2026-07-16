@@ -127,7 +127,7 @@ export function CalendarStep({
 
       {/* Grid */}
       <div className="rounded-2xl border border-border bg-card p-3 shadow-card">
-        <div className="mb-2 grid grid-cols-7 gap-1 text-center text-2xs font-semibold uppercase text-muted-foreground">
+        <div className="mb-2 grid grid-cols-7 gap-1 text-center text-2xs font-semibold text-muted-foreground">
           {WEEKDAY_COLS.map((d) => (
             <div key={d}>{d}</div>
           ))}
@@ -169,7 +169,7 @@ export function CalendarStep({
                   {date.getDate()}
                 </span>
                 {holiday ? (
-                  <span className="absolute bottom-1 text-[7px] font-semibold uppercase leading-none text-muted-foreground/70">
+                  <span className="absolute bottom-1 text-[7px] font-semibold leading-none text-muted-foreground/70">
                     Holiday
                   </span>
                 ) : cutoff ? (

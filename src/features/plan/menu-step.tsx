@@ -134,7 +134,7 @@ export function MenuStep({
                   : "border-border bg-card text-foreground hover:bg-muted",
               )}
             >
-              <span className="text-2xs font-semibold uppercase">{WEEKDAY_SHORT[d.getDay()]}</span>
+              <span className="text-2xs font-semibold">{WEEKDAY_SHORT[d.getDay()]}</span>
               <span className="font-display text-lg font-semibold leading-none">{d.getDate()}</span>
               {has ? (
                 <Check className={cn("mt-1 size-3", active ? "text-primary-foreground" : "text-success")} />
@@ -198,7 +198,7 @@ export function MenuStep({
                   <div className="relative size-20 shrink-0 overflow-hidden rounded-xl">
                     <FoodPhoto src={item.image} alt={item.name} className="size-20" iconClassName="size-6" />
                     {soldOut ? (
-                      <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-2xs font-bold uppercase text-white">
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-2xs font-bold text-white">
                         Sold out
                       </span>
                     ) : null}

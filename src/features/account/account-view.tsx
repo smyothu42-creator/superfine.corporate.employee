@@ -415,7 +415,7 @@ function OutOfOfficeDates({ dates }: { dates: string[] }) {
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <span className="text-2xs font-semibold uppercase tracking-wide text-danger">
+      <span className="text-2xs font-semibold text-danger">
         Away · {dates.length} day{dates.length > 1 ? "s" : ""}
       </span>
       <div className="flex flex-wrap justify-end gap-1">

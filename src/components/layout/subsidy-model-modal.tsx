@@ -42,7 +42,7 @@ function SubsidyModelModal() {
         aria-labelledby="subsidy-model-title"
         className="relative w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-raised animate-fade-in"
       >
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-warning-border bg-warning-bg px-2.5 py-1 text-2xs font-semibold uppercase tracking-wide text-coral-deep">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-warning-border bg-warning-bg px-2.5 py-1 text-2xs font-semibold text-coral-deep">
           <FlaskConical className="size-3.5" /> Demo toggle
         </span>
 

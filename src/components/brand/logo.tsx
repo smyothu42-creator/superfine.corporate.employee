@@ -52,7 +52,7 @@ function Logo({ variant = "dark", size = "md", showPlatform = false, className }
       {showPlatform ? (
         <span
           className={cn(
-            "block text-2xs font-medium uppercase tracking-[0.14em]",
+            "block text-2xs font-medium",
             isLight ? "text-sidebar-muted" : "text-muted-foreground",
           )}
         >

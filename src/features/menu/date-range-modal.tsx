@@ -157,7 +157,7 @@ export function DateRangeModal({
           </button>
         </div>
 
-        <div className="mt-4 grid grid-cols-7 text-center text-2xs font-semibold uppercase text-muted-foreground">
+        <div className="mt-4 grid grid-cols-7 text-center text-2xs font-semibold text-muted-foreground">
           {COLS.map((d, i) => (
             <div key={d} className={cn("pb-1.5", i >= 5 && "text-muted-foreground/40")}>
               {d}

@@ -313,7 +313,7 @@ export function FamilyStyleModal({
                 view shows it in more detail up top.) */}
             {item.includedItems?.length ? (
               <div className="mt-2">
-                <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="text-2xs font-semibold text-muted-foreground">
                   Also included
                 </span>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -388,7 +388,7 @@ function ServingGroupPicker({
         </div>
 
         {optional ? (
-          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-2xs font-bold uppercase tracking-wide text-muted-foreground">
+          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-2xs font-bold text-muted-foreground">
             Optional
           </span>
         ) : (

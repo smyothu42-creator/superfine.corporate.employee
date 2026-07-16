@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
-  Check,
   MapPin,
   Clock,
   CreditCard,
@@ -21,17 +21,19 @@ import {
   ArrowRight,
   Package,
   Recycle,
-  Info,
+  ChevronRight,
+  MessageSquare,
+  Building2,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Label, Field } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { ThemeSelect } from "@/components/ui/theme-select";
+import { DateField, TimeField } from "@/components/ui/datetime-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ServingBreakdown } from "@/components/cart/serving-breakdown";
-import { CartDayList } from "@/features/cart/cart-view";
 import { subsidyLabel } from "@/lib/subsidy";
 import { IdentityModal } from "@/components/auth/identity-modal";
 import { useUiStore } from "@/store/use-ui-store";
@@ -43,15 +45,27 @@ import {
   deliveryComplete,
   type Account,
 } from "@/store/use-session-store";
-import { useCartStore } from "@/store/use-cart-store";
+import { useCartStore, type PackagingChoice } from "@/store/use-cart-store";
 import { toast } from "@/store/use-toast-store";
 import { program, addresses, getAddress, reusablePackagingFee } from "@/data/program";
-import { checkZip, neighborhoodFor, deliveryFeeForZip } from "@/data/service-areas";
+import { checkZip, deliveryFeeForZip } from "@/data/service-areas";
 import { me } from "@/data/me";
-import { fromISODate, formatDay, startOfToday, toISODate } from "@/lib/dates";
+import { fromISODate, formatDay, startOfToday, toISODate, addDays } from "@/lib/dates";
 import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { PaymentChoice } from "@/data/types";
+
+/**
+ * Checkout's section headers wear the same teal band as the order cards on
+ * /orders (see `orders-view.tsx`) — one shelf, one look.
+ *
+ * SECTION_CARD is not optional on a card that uses the band: the header paints
+ * to its own square edges, so without `overflow-hidden` the colour spills past
+ * the card's rounded corners.
+ */
+const SECTION_CARD = "overflow-hidden";
+const SECTION_HEADER = "border-teal-soft bg-teal-wash";
+const SECTION_TITLE = "text-teal-deep";
 
 /** Demo promo codes — flat dollars off or a percentage of the employee balance. */
 const PROMO_CODES: Record<string, { kind: "flat" | "percent"; value: number; label: string }> = {
@@ -133,10 +147,43 @@ export function CheckoutView() {
   const payLaterAvailable = corporate && me.permissions.payLater;
   const effectivePayment: PaymentChoice = payLaterAvailable ? payment : "pay_now";
   const [commonWindow, setCommonWindow] = React.useState(program.deliveryWindows[1]);
-  // Email-only order updates — address where confirmation/updates are sent.
-  const [editOpen, setEditOpen] = React.useState(false);
-  const [timeModalOpen, setTimeModalOpen] = React.useState(false);
-  const [addressOpen, setAddressOpen] = React.useState(false);
+
+  /**
+   * "Edit order" hands the user back the menu with their cart open beside it —
+   * the same place they built the order — rather than a modal copy of the cart
+   * that can only delete lines. Swapping a meal or fixing a quantity needs the
+   * menu behind it, and a modal never had one.
+   *
+   * Mirrors `beginEdit` in use-order-edit.ts: push, then open. The cart panel
+   * keeps itself open on /menu.
+   */
+  const router = useRouter();
+  const openCart = useUiStore((s) => s.openCart);
+  function editOrder() {
+    router.push("/menu");
+    openCart();
+  }
+  /**
+   * One row open at a time. Each row states its current answer and expands in
+   * place to change it — the page stays a readable summary of the order rather
+   * than every form it contains, unfolded at once.
+   *
+   * Accordion, not free-for-all: two open forms is two places to look, and the
+   * whole point of the collapsed row is that you can see the shape of the order
+   * without opening anything.
+   */
+  /**
+   * Payment opens a dialog rather than a panel: Square's card form is its own
+   * hosted surface, and it needs a container it can own rather than a row that
+   * folds shut underneath it.
+   */
+  const [paymentOpen, setPaymentOpen] = React.useState(false);
+  const [openRow, setOpenRow] = React.useState<RowName | null>(null);
+  const toggleRow = React.useCallback(
+    (r: RowName) => setOpenRow((cur) => (cur === r ? null : r)),
+    [],
+  );
+  const closeRow = React.useCallback(() => setOpenRow(null), []);
 
   // Promo code (applied against the employee-paid balance).
   const [promoInput, setPromoInput] = React.useState("");
@@ -191,6 +238,51 @@ export function CheckoutView() {
   const subtotal = cart.subtotal();
   const subsidy = cart.totalSubsidy();
 
+  /* ---- What each row says when it's closed. --------------------------------
+     A row has to answer its own question without being opened, or the collapse
+     has just hidden the order behind five sheets. */
+
+  const addressValue = corporate
+    ? address.address
+    : deliveryComplete(delivery)
+      ? [delivery.street, delivery.apt, delivery.city, delivery.zip].filter(Boolean).join(", ")
+      : "Add a delivery address";
+
+  // Days can carry different windows (the per-day picker), so the row can't just
+  // read `commonWindow` — it says so rather than naming one day's time for all.
+  const chosenWindows = new Set(dates.map((d) => cart.windows[d] ?? commonWindow));
+  const timeValue = chosenWindows.size === 1 ? [...chosenWindows][0] : "Varies by day";
+
+  const packagingValue =
+    cart.packaging === "reusable"
+      ? `Reusable · pickup ${cart.pickupWindow || "not set"}`
+      : "Disposable · nothing to return";
+
+  const paymentValue =
+    corporate && owed === 0
+      ? `Fully covered by ${program.company}`
+      : effectivePayment === "pay_later"
+        ? "Company invoice · nothing to pay now"
+        : "Square · •••• 4242";
+
+  /**
+   * The CTA renders twice — docked on a phone, in the rail on desktop — so its
+   * label and its enabled-ness are derived once here. Two copies of this ternary
+   * is two chances for one button to place an order the other one is blocking.
+   *
+   * An individual's order can't be driven anywhere without a street and a phone,
+   * so the button waits on them the same way it waits on an account. Corporate
+   * orders skip that check: the address is the contract's.
+   */
+  const placeDisabled = !account || (!corporate && !deliveryComplete(delivery));
+  const ctaLabel = !account
+    ? "Sign in to continue"
+    : !corporate && !deliveryComplete(delivery)
+      ? "Add a delivery address"
+      : editActive
+        ? "Save changes"
+        : "Place order";
+
   // Per-day cutoff status — order type drives which rule applies (individual =
   // 4 PM day before, family = 72 h ahead), resolved inside CutoffIndicator.
   const cutoffs = dates.map((date) => {
@@ -243,10 +335,6 @@ export function CheckoutView() {
 
   return (
     <div className="space-y-5">
-      <div className="sticky top-[calc(4rem_+_var(--edit-banner-h,0px))] z-20 -mx-4 bg-background px-4 py-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <Steps current={1} />
-      </div>
-
       {/* Editing an order: a coral header so this checkout is visibly different
           from an ordinary one — you're updating a placed order, not placing a new
           one, and the CTA saves the change instead of charging a new order. */}
@@ -265,7 +353,7 @@ export function CheckoutView() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="space-y-5 lg:col-span-2">
+        <div className="space-y-6 lg:col-span-2">
           {/* Identity — a guest is asked who they are first, because everything
               below (subsidy, address rules, payment) depends on the answer.
               Once signed in — corporate or individual — the sidebar already shows
@@ -274,177 +362,132 @@ export function CheckoutView() {
             <IdentityGate onOpen={() => setIdentityOpen(true)} />
           ) : null}
 
-          {/* Cutoff check */}
-          <Card>
-            <CardHeader className="flex-wrap">
+          {/* Cutoff check — the one thing here that isn't a setting to change, so
+              it stays a plain strip rather than a row that opens nothing. */}
+          <CutoffStrip cutoffs={cutoffs} />
+
+          {/* Delivery details. Each row states its current answer and expands in
+              place to change it — the address form, the time picker and the
+              packaging choice used to sit unfolded here at once, which is why
+              Payment spent this whole page below the fold. */}
+          <Card className={SECTION_CARD}>
+            {/* The email promise rides beside the title, the way the cutoff rule
+                does — it's a standing fact about the section, not a row someone
+                acts on, so it doesn't earn a strip of its own at the bottom. */}
+            <CardHeader className={cn("flex-wrap", SECTION_HEADER)}>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <CardTitle>Cutoff check</CardTitle>
-                <span className="inline-flex items-center gap-1 text-2xs font-medium leading-snug text-warning">
-                  <AlertTriangle className="size-3 shrink-0 -translate-y-px" />
-                  Order by each day&apos;s cutoff (individual meals 4 PM the day before, family style 72 h ahead) or that day is cancelled automatically.
-                </span>
+                <CardTitle className={SECTION_TITLE}>Delivery details</CardTitle>
+                <SectionNote icon={Mail} tone="success">
+                  You&apos;ll receive an email when your order is confirmed.
+                </SectionNote>
               </div>
             </CardHeader>
-            <CardBody>
-              <div className="flex flex-col gap-2">
-                  {cutoffs.map((c) => (
-                    <div key={c.date} className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-2xs font-semibold text-muted-foreground">
-                        <CalendarDays className="size-3.5 text-primary" />
-                        {formatDay(fromISODate(c.date))}
-                      </span>
-                      <CutoffIndicator deliveryISO={c.date} type={c.type} variant="inline" />
-                    </div>
-                  ))}
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* Delivery address. A corporate order goes to a contract-locked company
-              site — the employee picks from a list and can't type a new one. An
-              individual has no such site, so we ask. Same heading, different
-              question entirely. */}
-          {corporate ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Delivery address</CardTitle>
-              </CardHeader>
-              <CardBody>
-                <div className="flex items-start gap-3">
-                  <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
-                  <div className="min-w-0 flex-1 text-[13px]">
-                    <div className="font-semibold">{address.name}</div>
-                    <div className="text-muted-foreground">{address.address}</div>
-                    {address.instructions ? (
-                      <div className="mt-1 text-2xs text-muted-foreground">{address.instructions}</div>
-                    ) : null}
-                  </div>
-                  {addresses.length > 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => setAddressOpen(true)}
-                      aria-label="Change delivery address"
-                      className="shrink-0 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <Pencil className="size-4" />
-                    </button>
-                  ) : null}
-                </div>
-              </CardBody>
-            </Card>
-          ) : (
-            /* Locked until we have an email. A corporate employee who types their
-               address here would have it thrown away the moment they verify and
-               the order snaps to the contract site — so don't invite the work. */
-            <IndividualAddressCard locked={!account} />
-          )}
-
-          {/* Delivery time — one common time for all days, editable per day in a modal */}
-          <Card>
-            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-              {/* The title and the select are both unshrinkable; without wrap
-                  they overflow the card at 375px. */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <span className="flex items-center gap-2 whitespace-nowrap font-display text-base font-semibold tracking-tight">
-                  <CalendarDays className="size-4 text-primary" /> Delivery time
-                </span>
-                {me.permissions.flexibleDelivery ? (
-                  // w-52 fits "12:00 PM – 12:30 PM" without truncating.
-                  <div className="w-52 shrink-0 sm:w-56">
-                    <ThemeSelect
-                      value={commonWindow}
-                      onValueChange={applyCommonWindow}
-                      options={program.deliveryWindows.map((w) => ({ value: w, label: w }))}
-                      aria-label="Delivery time for all days"
-                      size="sm"
-                      align="right"
-                    />
-                  </div>
-                ) : (
-                  <span className="flex items-center gap-1.5 whitespace-nowrap text-[13px] text-muted-foreground">
-                    <Clock className="size-3.5" /> {program.deliveryWindows[1]}
-                  </span>
-                )}
-              </div>
-              {me.permissions.flexibleDelivery && dates.length > 1 ? (
-                <Button size="sm" variant="ghost" onClick={() => setTimeModalOpen(true)}>
-                  <CalendarDays className="size-3.5" /> Set delivery time per day
-                </Button>
+            <RowGroup>
+              <SettingRow
+                icon={MapPin}
+                label="Delivery address"
+                value={addressValue}
+                /* A corporate order goes to a contract-locked company site; an
+                   individual types their own. Same row, different panel. */
+                incomplete={!corporate && !deliveryComplete(delivery)}
+                /* Locked until we have an email: a corporate employee who typed
+                   their address here would have it thrown away the moment they
+                   verify and the order snaps to the contract site. */
+                disabled={!corporate && !account}
+                expanded={openRow === "address"}
+                onClick={() => toggleRow("address")}
+              />
+              {openRow === "address" ? (
+                <RowPanel>
+                  {corporate ? <AddressPanel onDone={closeRow} /> : <IndividualAddressPanel />}
+                </RowPanel>
               ) : null}
-            </div>
-            <div className="flex items-center gap-2 border-t border-border px-5 py-3 text-2xs text-muted-foreground">
-              <Mail className="size-3.5 shrink-0 text-primary" />
-              You&apos;ll receive an email when your order is confirmed.
-            </div>
+
+              <SettingRow
+                icon={CalendarDays}
+                label="Delivery time"
+                value={timeValue}
+                expanded={openRow === "time"}
+                onClick={() => toggleRow("time")}
+              />
+              {openRow === "time" ? (
+                <RowPanel>
+                  <TimePanel dates={dates} commonWindow={commonWindow} onApplyCommon={applyCommonWindow} />
+                </RowPanel>
+              ) : null}
+
+              {!corporate ? (
+                <>
+                  <SettingRow
+                    icon={MessageSquare}
+                    label="Delivery instructions"
+                    value={delivery.instructions || "Add a note for the driver"}
+                    disabled={!account}
+                    expanded={openRow === "instructions"}
+                    onClick={() => toggleRow("instructions")}
+                  />
+                  {openRow === "instructions" ? (
+                    <RowPanel>
+                      <InstructionsPanel onRemoved={closeRow} />
+                    </RowPanel>
+                  ) : null}
+                </>
+              ) : null}
+
+              {/* Packaging — individual orders only. Corporate contracts don't offer it. */}
+              {!corporate ? <PackagingRow zip={delivery.zip} value={packagingValue} /> : null}
+            </RowGroup>
           </Card>
 
-          {/* Packaging — individual orders only. Corporate contracts don't offer it. */}
-          {!corporate ? <PackagingCard zip={delivery.zip} /> : null}
-
-          {/* Payment */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Payment</CardTitle>
+          <Card className={SECTION_CARD}>
+            <CardHeader className={cn("flex-wrap", SECTION_HEADER)}>
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <CardTitle className={SECTION_TITLE}>Payment</CardTitle>
+                {/* Shortened to earn its place on the title's line — the strip it
+                    came from could afford "never before. You can edit until then."
+                    and a chip can't. What survives is the promise that matters:
+                    nothing is charged today. */}
+                <SectionNote icon={Lock} tone="success">
+                  Charged 24 hours before delivery, never before.
+                </SectionNote>
+              </div>
             </CardHeader>
-            <CardBody className="space-y-3">
-              {corporate && owed === 0 ? (
-                <Notice tone="success">
-                  <CheckCircle2 className="inline size-3.5" /> Your order is fully covered by{" "}
-                  {program.company}. <strong>No payment needed.</strong>
-                </Notice>
-              ) : (
-                <>
-                  <p className="text-[13px] text-muted-foreground">
-                    {corporate ? (
-                      <>
-                        {program.company} pays {formatCurrency(subsidy)}. You pay{" "}
-                        <strong className="text-foreground">{formatCurrency(finalOwed)}</strong> for the
-                        extras, tax included.
-                      </>
-                    ) : (
-                      <>
-                        You pay <strong className="text-foreground">{formatCurrency(finalOwed)}</strong>,
-                        tax included.
-                      </>
-                    )}
-                  </p>
-                  <div className="space-y-2">
-                    {payLaterAvailable ? (
-                      <PayOption
-                        active={effectivePayment === "pay_later"}
-                        onClick={() => setPayment("pay_later")}
-                        title="Add to my company invoice"
-                        subtitle="Added to your company's monthly invoice. Nothing to pay now"
-                      />
-                    ) : null}
-                    <PayOption
-                      active={effectivePayment === "pay_now"}
-                      onClick={() => setPayment("pay_now")}
-                      title="Pay with card on file"
-                      subtitle="•••• 4242 · charged 24h before delivery"
-                    />
-                  </div>
-                </>
-              )}
-              <Notice tone="info" className="text-xs">
-                <Lock className="inline size-3.5" /> Your order locks in and{" "}
-                <strong>payment is taken 24 hours before delivery</strong>, never before. You can edit
-                until then.
-              </Notice>
-            </CardBody>
+            <RowGroup>
+              <SettingRow
+                icon={corporate && owed === 0 ? CheckCircle2 : CreditCard}
+                label="Payment method"
+                value={paymentValue}
+                /* Never disabled, even with one method: this row is where someone
+                   checks which card is about to be charged, and a greyed-out row
+                   answers that by refusing to open. */
+                onClick={() => setPaymentOpen(true)}
+              />
+            </RowGroup>
           </Card>
         </div>
 
-        {/* Summary */}
+        {/* Summary. On desktop the rail sticks and the *item list* is what
+            scrolls inside it — capping the whole card would let a seven-day cart
+            push Place order below the viewport with no way to reach it, which is
+            exactly the failure the sticky rail exists to prevent. Header and
+            totals+CTA are shrink-0; only the middle gives. */}
         <div>
-          <Card className={cn("lg:sticky lg:top-32", editActive && "border-warning-border")}>
-            <CardHeader>
-              <CardTitle>{editActive ? "Review your changes" : "Order summary"}</CardTitle>
-              <Button size="sm" variant="ghost" onClick={() => setEditOpen(true)}>
+          <Card
+            className={cn(
+              "lg:sticky lg:top-32 lg:flex lg:max-h-[calc(100dvh-9rem)] lg:flex-col",
+              SECTION_CARD,
+              editActive && "border-warning-border",
+            )}
+          >
+            <CardHeader className={cn("lg:shrink-0", SECTION_HEADER)}>
+              <CardTitle className={SECTION_TITLE}>
+                {editActive ? "Review your changes" : "Order summary"}
+              </CardTitle>
+              <Button size="sm" variant="ghost" onClick={editOrder}>
                 <Pencil className="size-3.5" /> Edit order
               </Button>
             </CardHeader>
-            <CardBody className="space-y-3">
+            <CardBody className="space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               {dates.map((date) => (
                 <div key={date} className="border-b border-border pb-2 last:border-0 last:pb-0">
                   <div className="text-overline">{formatDay(fromISODate(date))}</div>
@@ -479,9 +522,12 @@ export function CheckoutView() {
                   </ul>
                 </div>
               ))}
+            </CardBody>
 
+            {/* Totals and the CTA — pinned below the scrolling list on desktop. */}
+            <div className="space-y-3 border-t border-border p-5 lg:shrink-0">
               {program.showPrices ? (
-                <div className="space-y-1.5 pt-1">
+                <div className="space-y-1.5">
                   <SummaryRow label="Meals total" value={formatCurrency(subtotal)} />
                   {corporate ? (
                     <SummaryRow label={subsidyLabel(subsidyMode)} value={`−${formatCurrency(subsidy)}`} tone="success" />
@@ -515,42 +561,82 @@ export function CheckoutView() {
                 </div>
               )}
 
+              {/* Promo sits with the total it moves, right above the commit. It's
+                  the one control on this page whose whole job is to change the
+                  number directly above it — in the Payment section it was two
+                  columns away from the figure it edits. Bordered on its own so it
+                  reads as an action among the totals' plain rows. */}
               {program.showPrices && owed > 0 ? (
-                <PromoField
-                  promo={promo}
-                  value={promoInput}
-                  error={promoError}
-                  onChange={(v) => {
-                    setPromoInput(v);
-                    if (promoError) setPromoError("");
-                  }}
-                  onApply={applyPromo}
-                  onRemove={removePromo}
-                />
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <SettingRow
+                    icon={Tag}
+                    label="Promo code"
+                    value={promo ? `${promo.code} · ${promo.label}` : "Add a promo code"}
+                    expanded={openRow === "promo"}
+                    onClick={() => toggleRow("promo")}
+                  />
+                  {openRow === "promo" ? (
+                    <RowPanel>
+                      <PromoPanel
+                        promo={promo}
+                        value={promoInput}
+                        error={promoError}
+                        onChange={(v) => {
+                          setPromoInput(v);
+                          if (promoError) setPromoError("");
+                        }}
+                        onApply={applyPromo}
+                        onRemove={removePromo}
+                      />
+                    </RowPanel>
+                  ) : null}
+                </div>
               ) : null}
 
-              {/* An individual's order can't be driven anywhere without a street and
-                  a phone, so the button waits on them the same way it waits on an
-                  account. Corporate orders skip this: the address is the contract's. */}
-              <Button
-                block
-                size="lg"
-                onClick={placeOrder}
-                disabled={!account || (!corporate && !deliveryComplete(delivery))}
-              >
-                {!account
-                  ? "Sign in to continue"
-                  : !corporate && !deliveryComplete(delivery)
-                    ? "Add a delivery address to continue"
-                    : editActive
-                      ? "Save changes"
-                      : "Place order"}
-              </Button>
-              <Button asChild variant="ghost" block size="lg">
-                <Link href="/cart">Back to cart</Link>
-              </Button>
-            </CardBody>
+            </div>
           </Card>
+        </div>
+      </div>
+
+      {/* The commit, docked at the foot of the viewport on every width — one bar,
+          not a rail copy plus a phone copy.
+
+          `fixed`, not `sticky`. Sticky is trapped in its containing block, and
+          the shell's `main` carries a bottom padding: the bar could never reach
+          the floor, so it stranded a strip of page background under itself at
+          full scroll. Fixed escapes that; `lg:left-[var(--sidebar-w)]` is what
+          keeps it off the desktop rail, reading the rail's own width rather than
+          re-typing it.
+
+          Opaque `bg-card`, not `bg-card/95`: this bar sits over live content, and
+          at 95% the rows behind it ghosted through the total.
+
+          `bottom-dock` rests it on the tab bar on a phone and on the floor on
+          desktop; `pb-safe` keeps the iPhone home indicator off it. */}
+      <div className="h-24" aria-hidden />
+      <div className="bottom-dock pb-safe fixed inset-x-0 z-30 border-t border-border bg-card shadow-[0_-4px_16px_-8px_rgb(0_0_0/0.15)] lg:left-[var(--sidebar-w)]">
+        {/* The safe-area inset is the outer element's padding and the bar's own
+            padding is the inner element's. They can't share a box: `.pb-safe`
+            *sets* padding-bottom, so on desktop — where the inset is 0 — it
+            silently zeroed the bottom padding of a `py-3` and left the button
+            sitting on the floor with 13px of air above it and none below. */}
+        <div className="flex items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+          <div className="min-w-0 flex-1">
+            <div className="text-2xs text-muted-foreground">
+              {editActive ? "Updated total" : "You pay"}
+            </div>
+            <div className={cn("truncate text-base font-bold nums", finalOwed === 0 && "text-success")}>
+              {formatCurrency(program.showPrices ? finalOwed : 0)}
+            </div>
+          </div>
+          <Button
+            size="lg"
+            onClick={placeOrder}
+            disabled={placeDisabled}
+            className="min-w-0 shrink lg:min-w-[16rem]"
+          >
+            <span className="truncate">{ctaLabel}</span>
+          </Button>
         </div>
       </div>
 
@@ -560,21 +646,176 @@ export function CheckoutView() {
         onDone={announceIdentity}
       />
 
-      {addressOpen ? <AddressModal onClose={() => setAddressOpen(false)} /> : null}
-      {editOpen ? <EditOrderModal onClose={() => setEditOpen(false)} /> : null}
-      {timeModalOpen ? (
-        <PerDayTimeModal
-          dates={dates}
-          commonWindow={commonWindow}
-          onClose={() => setTimeModalOpen(false)}
+      {paymentOpen ? (
+        <PaymentModal
+          value={effectivePayment}
+          onChange={setPayment}
+          payLaterAvailable={payLaterAvailable}
+          covered={corporate && owed === 0}
+          onClose={() => setPaymentOpen(false)}
         />
       ) : null}
+
     </div>
   );
 }
 
 /* ---------------------------------------------------------------------- */
-/* Delivery details — the individual's own address, asked for at checkout   */
+/* The row/sheet pair the whole page is built from                          */
+/* ---------------------------------------------------------------------- */
+
+type RowName = "address" | "time" | "instructions" | "promo";
+
+/**
+ * The rows of a section, hairline-divided. No border or radius of its own — the
+ * Card it sits in draws those, and a second border here would double the line
+ * under the header.
+ */
+function RowGroup({ children }: { children: React.ReactNode }) {
+  return <div className="divide-y divide-border">{children}</div>;
+}
+
+/**
+ * What a row opens into: the form for that one setting, inline under its row.
+ *
+ * Tinted, because an expanded panel and the next collapsed row are both just
+ * bands in the same stack — without a shade behind it, the fields read as
+ * belonging to the row below rather than the one above.
+ */
+function RowPanel({ children }: { children: React.ReactNode }) {
+  return <div className="bg-muted/30 px-4 py-4">{children}</div>;
+}
+
+/**
+ * The standing fact that rides beside a section title — what a cutoff is, where
+ * the confirmation goes, when the card is charged. A chip rather than a strip:
+ * these are notes *about* the section, not rows anyone acts on.
+ *
+ * Tone is the section's own weather, not the message's severity. Warning is the
+ * cutoff, where missing the time cancels the day; success is the two sections
+ * whose note is a reassurance rather than a deadline.
+ */
+function SectionNote({
+  icon: Icon,
+  tone,
+  children,
+}: {
+  icon: React.ElementType;
+  tone: "success" | "warning";
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-medium leading-snug",
+        tone === "warning" ? "bg-warning-bg text-warning" : "bg-success-bg text-success",
+      )}
+    >
+      <Icon className="size-3 shrink-0" />
+      <span>{children}</span>
+    </span>
+  );
+}
+
+/**
+ * One setting, closed: what it is, what it currently says, and a chevron into the
+ * sheet that changes it.
+ *
+ * `incomplete` is not styling — it's the difference between "Disposable" (an
+ * answer) and "Add a delivery address" (a hole). A row that reads like an answer
+ * when it's actually blank is how someone reaches a disabled Place-order button
+ * with no idea which row is at fault.
+ */
+function SettingRow({
+  icon: Icon,
+  label,
+  value,
+  onClick,
+  disabled,
+  incomplete,
+  expanded,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  onClick: () => void;
+  disabled?: boolean;
+  incomplete?: boolean;
+  expanded?: boolean;
+}) {
+  /**
+   * Bring the row to the top when it opens, so its panel is on screen instead of
+   * somewhere below the fold — the row nearest the bottom would otherwise expand
+   * entirely out of sight.
+   *
+   * Anchored on the row rather than the panel: a panel can be taller than what's
+   * left of the viewport, and scrolling that into view would land its middle on
+   * screen with its first field above the top. `scroll-mt-20` keeps the row clear
+   * of the sticky topbar. Keyed on `expanded`, so re-renders while open (typing
+   * an address, picking a window) never yank the page.
+   */
+  const ref = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => {
+    if (!expanded) return;
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [expanded]);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      // Only a disclosure claims this. A row that opens a dialog leaves it off,
+      // or it announces a panel that never appears.
+      aria-expanded={disabled || expanded === undefined ? undefined : expanded}
+      className={cn(
+        "flex w-full scroll-mt-20 items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:bg-muted/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-55",
+        expanded ? "bg-muted/30" : "hover:bg-muted/40",
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-xl",
+          incomplete ? "bg-warning-bg text-warning" : "bg-teal-wash text-primary",
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-semibold">{label}</span>
+        <span
+          className={cn(
+            "block truncate text-2xs",
+            incomplete ? "font-medium text-warning" : "text-muted-foreground",
+          )}
+        >
+          {value}
+        </span>
+      </span>
+      {/* The chevron turns down when the row is open — the row is a disclosure,
+          and a chevron that always points right promises a page it never goes to. */}
+      {disabled ? null : (
+        <ChevronRight
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+            expanded && "rotate-90",
+          )}
+        />
+      )}
+    </button>
+  );
+}
+
+/**
+ * The chrome every sheet shares — backdrop, entrance, Escape, header, scrollable
+ * body, pinned footer. This file grew four hand-rolled copies of it; they drifted
+ * (one lost its rounded footer, one its max-height) and every new sheet was a
+ * fresh chance to forget the Escape listener.
+ */
+
+/* ---------------------------------------------------------------------- */
+/* The sheets each row opens                                                */
 /* ---------------------------------------------------------------------- */
 
 /**
@@ -584,133 +825,164 @@ export function CheckoutView() {
  * change a meal returns to a filled-in form, and the Place-order button's
  * readiness check reads the same source the order will be built from.
  */
-function IndividualAddressCard({
-  locked,
-}: {
-  locked: boolean;
-}) {
+
+/**
+ * Everything the kitchen and the driver need for an order that isn't going to a
+ * company office. It writes straight to the session store on each keystroke
+ * rather than holding a local draft: the Place-order button's readiness check
+ * reads the same source the order will be built from, so there is no window
+ * where the form looks complete and the button disagrees.
+ */
+
+/**
+ * Everything the kitchen and the driver need for an order that isn't going to a
+ * company office. It writes straight to the session store on each keystroke
+ * rather than holding a local draft: the row above it and the Place-order
+ * button's readiness check read the same source the order will be built from,
+ * so there is no window where the form looks complete and the button disagrees.
+ *
+ * No Save button — an inline panel that applies live has nothing to save, and
+ * the row's own summary is the receipt for what was typed.
+ */
+function IndividualAddressPanel() {
   const delivery = useSessionStore((s) => s.delivery);
   const setDelivery = useSessionStore((s) => s.setDelivery);
   const set = (field: keyof typeof delivery, value: string) =>
     setDelivery({ ...delivery, [field]: value });
 
   // The ZIP is prefilled from the serviceability check, but the field stays
-  // editable — people move, and typo'd. If they edit it out of the zone, say so
-  // here rather than letting the order fail after payment.
+  // editable — people move, and typo'd. Only the failing case speaks up: if they
+  // edit it out of the zone, say so here rather than letting the order fail
+  // after payment.
   const zipStatus = checkZip(delivery.zip);
-  const neighborhood = neighborhoodFor(delivery.zip);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Delivery address</CardTitle>
-        <span className="text-2xs text-muted-foreground">
-          {locked ? "Available once you sign in" : "Where should we bring it?"}
-        </span>
-      </CardHeader>
-      <CardBody className="space-y-4">
-        {/* One `disabled` on the wrapper rather than on each control: a fieldset
-            takes its whole subtree out of the tab order, so a locked form can't
-            be reached by keyboard even though it's still on screen. */}
-        <fieldset disabled={locked} className="space-y-4 disabled:opacity-60">
-        <Field>
-          <Label htmlFor="d-street">Street address</Label>
+    <div className="space-y-3">
+      <Field>
+        <Label htmlFor="d-street">Street address</Label>
+        <Input
+          id="d-street"
+          value={delivery.street}
+          onChange={(e) => set("street", e.target.value)}
+          placeholder="123 Market St"
+          autoComplete="address-line1"
+          autoFocus
+        />
+      </Field>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Field className="sm:col-span-2">
+          <Label htmlFor="d-city">City</Label>
           <Input
-            id="d-street"
-            value={delivery.street}
-            onChange={(e) => set("street", e.target.value)}
-            placeholder="123 Market St"
-            autoComplete="address-line1"
+            id="d-city"
+            value={delivery.city}
+            onChange={(e) => set("city", e.target.value)}
+            placeholder="San Francisco"
+            autoComplete="address-level2"
           />
         </Field>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field>
-            <Label htmlFor="d-apt">Apt, suite, floor (optional)</Label>
-            <Input
-              id="d-apt"
-              value={delivery.apt}
-              onChange={(e) => set("apt", e.target.value)}
-              placeholder="Apt 4B"
-              autoComplete="address-line2"
-            />
-          </Field>
-          <Field>
-            <Label htmlFor="d-city">City</Label>
-            <Input
-              id="d-city"
-              value={delivery.city}
-              onChange={(e) => set("city", e.target.value)}
-              placeholder="San Francisco"
-              autoComplete="address-level2"
-            />
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field>
-            <Label htmlFor="d-zip">ZIP code</Label>
-            <Input
-              id="d-zip"
-              inputMode="numeric"
-              maxLength={5}
-              value={delivery.zip}
-              onChange={(e) => set("zip", e.target.value.replace(/\D/g, ""))}
-              placeholder="94105"
-              autoComplete="postal-code"
-            />
-            {zipStatus === "serviceable" && neighborhood ? (
-              <p className="mt-1.5 flex items-center gap-1.5 text-2xs text-success">
-                <Check className="size-3.5 shrink-0" /> We deliver to {neighborhood}.
-              </p>
-            ) : null}
-          </Field>
-          <Field>
-            <Label htmlFor="d-phone">Phone</Label>
-            <Input
-              id="d-phone"
-              type="tel"
-              value={delivery.phone}
-              onChange={(e) => set("phone", e.target.value)}
-              placeholder="+1 (555) 123-4567"
-              autoComplete="tel"
-            />
-            <p className="mt-1.5 text-2xs text-muted-foreground">
-              Used only if the driver can&apos;t find you.
-            </p>
-          </Field>
-        </div>
-
-        {zipStatus === "unserviceable" ? (
-          <Notice tone="warning">
-            We don&apos;t deliver to {delivery.zip} yet. Use an address in our service area, or your
-            order can&apos;t be dispatched.
-          </Notice>
-        ) : null}
-
         <Field>
-          <Label htmlFor="d-instructions">Delivery instructions (optional)</Label>
-          <Textarea
-            id="d-instructions"
-            value={delivery.instructions}
-            onChange={(e) => set("instructions", e.target.value)}
-            placeholder="Gate code, buzzer, where to leave it…"
+          <Label htmlFor="d-apt">Apt, suite</Label>
+          <Input
+            id="d-apt"
+            value={delivery.apt}
+            onChange={(e) => set("apt", e.target.value)}
+            placeholder="Apt 4B"
+            autoComplete="address-line2"
           />
         </Field>
-        </fieldset>
-      </CardBody>
-    </Card>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field>
+          <Label htmlFor="d-zip">ZIP code</Label>
+          <Input
+            id="d-zip"
+            inputMode="numeric"
+            maxLength={5}
+            value={delivery.zip}
+            onChange={(e) => set("zip", e.target.value.replace(/\D/g, ""))}
+            placeholder="94105"
+            autoComplete="postal-code"
+          />
+        </Field>
+        <Field>
+          <Label htmlFor="d-phone">Phone</Label>
+          <Input
+            id="d-phone"
+            type="tel"
+            value={delivery.phone}
+            onChange={(e) => set("phone", e.target.value)}
+            placeholder="+1 (555) 123-4567"
+            autoComplete="tel"
+          />
+        </Field>
+      </div>
+
+      {zipStatus === "unserviceable" ? (
+        <Notice tone="warning">
+          We don&apos;t deliver to {delivery.zip} yet. Use an address in our service area, or your
+          order can&apos;t be dispatched.
+        </Notice>
+      ) : null}
+    </div>
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/* Delivery address picker — modal with radio options                       */
-/* ---------------------------------------------------------------------- */
+/** The driver's note. Its own row, so it never costs height when it's empty. */
+function InstructionsPanel({ onRemoved }: { onRemoved: () => void }) {
+  const delivery = useSessionStore((s) => s.delivery);
+  const setDelivery = useSessionStore((s) => s.setDelivery);
 
-function AddressModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="space-y-2">
+      <Textarea
+        id="d-instructions"
+        aria-label="Delivery instructions"
+        value={delivery.instructions}
+        onChange={(e) => setDelivery({ ...delivery, instructions: e.target.value })}
+        placeholder="Gate code, buzzer, where to leave it…"
+        autoFocus
+      />
+      {delivery.instructions ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            // Clearing, not hiding: a note kept out of sight still rides along
+            // on the order and the driver acts on it.
+            setDelivery({ ...delivery, instructions: "" });
+            onRemoved();
+          }}
+        >
+          <X className="size-3.5" /> Remove note
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * How you're paying. A dialog, not a panel: this is where Square's card form
+ * will mount, and a hosted payment surface needs a container of its own — not a
+ * row that can fold shut under it while it's collecting a card number.
+ *
+ * Opens even when there's only one method: the row is where someone goes to
+ * check *what card they're about to be charged on*, and a greyed-out row answers
+ * that question by refusing to.
+ */
+function PaymentModal({
+  value,
+  onChange,
+  payLaterAvailable,
+  covered,
+  onClose,
+}: {
+  value: PaymentChoice;
+  onChange: (p: PaymentChoice) => void;
+  payLaterAvailable: boolean;
+  covered: boolean;
+  onClose: () => void;
+}) {
   const [shown, setShown] = React.useState(false);
-  const cart = useCartStore();
-  const [selected, setSelected] = React.useState(cart.addressId);
 
   React.useEffect(() => {
     const id = requestAnimationFrame(() => setShown(true));
@@ -725,80 +997,181 @@ function AddressModal({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+        className={cn(
+          "absolute inset-0 bg-black/50 transition-opacity",
+          shown ? "opacity-100" : "opacity-0",
+        )}
       />
       <div
         className={cn(
-          "relative flex max-h-[85dvh] w-full max-w-md flex-col overflow-y-auto rounded-3xl bg-card p-5 shadow-raised transition-all duration-200",
+          "relative flex max-h-[85dvh] w-full max-w-md flex-col rounded-3xl bg-card text-left shadow-raised transition-all duration-200",
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
         )}
       >
-        <div className="flex items-start justify-between">
-          <div>
+        {/* Plain hairline header — the teal band is for the page's section cards;
+            every dialog in the app wears white. */}
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="min-w-0">
             <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
-              <MapPin className="size-4 text-primary" /> Delivery address
+              <CreditCard className="size-4 shrink-0 text-primary" /> Payment method
             </h3>
-            <p className="text-[13px] text-muted-foreground">Pick where your meals are delivered.</p>
+            <p className="text-[13px] text-muted-foreground">
+              {covered ? "Nothing to pay on this order." : "How would you like to pay?"}
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="shrink-0 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        <div className="mt-4 space-y-2" role="radiogroup" aria-label="Delivery address">
-          {addresses.map((a) => {
-            const active = a.id === selected;
-            return (
-              <button
-                key={a.id}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setSelected(a.id)}
-                className={cn(
-                  "flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors",
-                  active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
-                )}
-              >
-                <span
-                  className={cn(
-                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
-                    active ? "border-primary" : "border-border",
-                  )}
-                >
-                  {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
-                </span>
-                <span className="min-w-0 flex-1 text-[13px]">
-                  <span className="block font-semibold">{a.name}</span>
-                  <span className="block text-muted-foreground">{a.address}</span>
-                </span>
-              </button>
-            );
-          })}
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          {covered ? (
+            <Notice tone="success">
+              <CheckCircle2 className="inline size-3.5" /> Your order is fully covered by{" "}
+              {program.company}. <strong>No payment needed</strong>, so there&apos;s no method to
+              choose.
+            </Notice>
+          ) : (
+            <div className="space-y-2" role="radiogroup" aria-label="Payment method">
+              <PayOption
+                active={value === "pay_now"}
+                onClick={() => {
+                  onChange("pay_now");
+                  onClose();
+                }}
+                icon={CreditCard}
+                title="Square · •••• 4242"
+                subtitle="Charged 24 hours before delivery"
+              />
+              {/* Deferring to an invoice needs a company to send it to. */}
+              {payLaterAvailable ? (
+                <PayOption
+                  active={value === "pay_later"}
+                  onClick={() => {
+                    onChange("pay_later");
+                    onClose();
+                  }}
+                  icon={Building2}
+                  title="Company invoice"
+                  subtitle="On your company's monthly invoice. Nothing to pay now"
+                />
+              ) : null}
+            </div>
+          )}
         </div>
-
-        <Button
-          block
-          className="mt-4"
-          onClick={() => {
-            cart.setAddress(selected);
-            toast.success("Delivery address updated");
-            onClose();
-          }}
-        >
-          Save address
-        </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Cutoff check — the one thing on the page that isn't a setting, so it stays a
+ * plain strip. The header says what a cutoff *is*; each row says when that day's
+ * falls. It used to recite the rule ("individual meals 4 PM the day before,
+ * family style 72 h ahead"), which is both a mouthful and redundant: every row
+ * already resolves that rule into a real time for that day's order type.
+ *
+ * "order or change" is the whole rule, not half of it — `cutoffInfo` picks its
+ * verb from context (order vs edit) and locks both at the same instant.
+ */
+function CutoffStrip({
+  cutoffs,
+}: {
+  cutoffs: readonly { date: string; type: "individual" | "family_style" }[];
+}) {
+  return (
+    <Card className={SECTION_CARD}>
+      <div className={cn("flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b px-5 py-3.5", SECTION_HEADER)}>
+        <h2 className={cn("font-display text-lg font-semibold tracking-tight", SECTION_TITLE)}>
+          Cutoff check
+        </h2>
+        <SectionNote icon={AlertTriangle} tone="warning">
+          The last time you can order or change a day&apos;s meals.
+        </SectionNote>
+      </div>
+      {/* Day + deadline flow inline, two to a row: a five-day plan as a labelled
+          table was one row per day and half again the height, and this list is
+          scanned for the day that's close, not read top to bottom.
+
+          The roles carry without column headings: the delivery day is teal like
+          every other heading on this page, and the chip beside it says "Order
+          by …" in its own words. No calendar icon per day — the chip already has
+          a clock, and two icons on one line is decoration, not signal. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
+        {cutoffs.map((c) => (
+          <span key={c.date} className="inline-flex items-center gap-1.5">
+            <span className="whitespace-nowrap text-2xs font-semibold text-teal-deep">
+              {formatDay(fromISODate(c.date))}
+            </span>
+            <CutoffIndicator deliveryISO={c.date} type={c.type} variant="inline" />
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Delivery address picker — the contract sites, as a sheet                 */
+/* ---------------------------------------------------------------------- */
+
+
+
+/** The contract's sites. Picking one applies it and folds the row back up. */
+function AddressPanel({ onDone }: { onDone: () => void }) {
+  const cart = useCartStore();
+  return (
+    <div className="space-y-2" role="radiogroup" aria-label="Delivery address">
+      {addresses.map((a) => {
+        const active = a.id === cart.addressId;
+        return (
+          <button
+            key={a.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => {
+              cart.setAddress(a.id);
+              toast.success("Delivery address updated");
+              onDone();
+            }}
+            className={cn(
+              "flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors",
+              active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+            )}
+          >
+            <span
+              className={cn(
+                "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+                active ? "border-primary" : "border-border",
+              )}
+            >
+              {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
+            </span>
+            <span className="min-w-0 flex-1 text-[13px]">
+              <span className="block font-semibold">{a.name}</span>
+              <span className="block text-muted-foreground">{a.address}</span>
+              {a.instructions ? (
+                <span className="mt-1 block text-2xs text-muted-foreground">{a.instructions}</span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -841,188 +1214,112 @@ function IdentityGate({ onOpen }: { onOpen: () => void }) {
 }
 
 
-/* ---------------------------------------------------------------------- */
-/* Edit order — the cart, shown as a modal with a pinned bottom summary     */
-/* ---------------------------------------------------------------------- */
 
-function EditOrderModal({ onClose }: { onClose: () => void }) {
-  const [shown, setShown] = React.useState(false);
-  const cart = useCartStore();
-  const subsidyMode = useUiStore((s) => s.subsidyMode);
-  const corporate = isSubsidized(useSessionStore((s) => s.account));
-  const subtotal = cart.subtotal();
-  const subsidy = cart.totalSubsidy();
-  const tax = cart.tax();
-  const owed = cart.total();
-
-  React.useEffect(() => {
-    const id = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
-      />
-      <div
-        className={cn(
-          "relative flex max-h-[85dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-card shadow-raised transition-all duration-200",
-          shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
-        )}
-      >
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
-          <h3 className="font-display text-lg font-semibold tracking-tight">Edit order</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <CartDayList />
-        </div>
-
-        <div className="shrink-0 space-y-3 border-t border-border bg-card p-5">
-          {program.showPrices ? (
-            <>
-              <SummaryRow label="Meals total" value={formatCurrency(subtotal)} />
-              {corporate ? (
-                <SummaryRow label={subsidyLabel(subsidyMode)} value={`−${formatCurrency(subsidy)}`} tone="success" />
-              ) : null}
-              <SummaryRow label="Tax" value={formatCurrency(tax)} />
-              <div className="flex items-center justify-between border-t-2 border-foreground pt-2 text-base font-bold">
-                <span>You pay</span>
-                <span className="nums">{formatCurrency(owed)}</span>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center justify-between text-base font-bold">
-              <span>Your meals are fully covered</span>
-              <span className="nums text-success">{formatCurrency(0)}</span>
-            </div>
-          )}
-          <Button
-            block
-            size="lg"
-            onClick={() => {
-              toast.success("Order updated");
-              onClose();
-            }}
-          >
-            Save order
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------------- */
-/* Per-day delivery time — modal                                           */
-/* ---------------------------------------------------------------------- */
-
-function PerDayTimeModal({
+/**
+ * Delivery time. A multi-day order picks one window for the lot or one per day;
+ * a single-day order has no such question, so it never sees the choice.
+ */
+function TimePanel({
   dates,
   commonWindow,
-  onClose,
+  onApplyCommon,
 }: {
   dates: string[];
   commonWindow: string;
-  onClose: () => void;
+  onApplyCommon: (w: string) => void;
 }) {
-  const [shown, setShown] = React.useState(false);
   const cart = useCartStore();
+  const options = program.deliveryWindows.map((w) => ({ value: w, label: w }));
+  const multiDay = dates.length > 1;
 
-  React.useEffect(() => {
-    const id = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  /**
+   * Open on whichever mode the order is actually in: if the days already carry
+   * different windows, this is a per-day order and saying "Same for every day"
+   * would be a lie the first render tells.
+   *
+   * Read once, on mount — after that the toggle owns it, or picking a day's time
+   * would re-derive `each` and fight the user mid-edit.
+   */
+  const [mode, setMode] = React.useState<"all" | "each">(() =>
+    new Set(dates.map((d) => cart.windows[d] ?? commonWindow)).size > 1 ? "each" : "all",
+  );
+
+  if (!me.permissions.flexibleDelivery) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-[13px]">
+        <Clock className="size-3.5 shrink-0 text-primary" />
+        <span className="text-muted-foreground">Your company sets the window:</span>{" "}
+        <strong className="font-semibold">{program.deliveryWindows[1]}</strong>
+      </div>
+    );
+  }
+
+  /**
+   * Switching back to "Same for every day" flattens the per-day windows onto the
+   * common one. Otherwise the toggle would only hide the overrides — the order
+   * would still deliver at four different times while the row claimed one.
+   */
+  function choose(next: "all" | "each") {
+    setMode(next);
+    if (next === "all") onApplyCommon(commonWindow);
+  }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
-      />
-      <div
-        className={cn(
-          // A week-long plan is seven rows; without a cap the sheet grows past
-          // the viewport and pushes Done off the bottom of a phone.
-          "relative flex max-h-[85dvh] w-full max-w-md flex-col rounded-3xl bg-card shadow-raised transition-all duration-200",
-          shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
-        )}
-      >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <div>
-            <h3 className="font-display text-lg font-semibold tracking-tight">Delivery time per day</h3>
-            <p className="text-[13px] text-muted-foreground">Pick a time for each delivery day.</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
-          >
-            <X className="size-4" />
-          </button>
+    <div className="space-y-3">
+      {/* One day is one answer; the choice only exists for a multi-day order.
+          Two cards rather than a segmented pill: the pill is for the packaging
+          row, where it stands in for a chevron in a one-line row. This one is a
+          full-width either/or at the top of a panel, so it reads as the two
+          options it is. No subtitles — the labels are already the whole idea. */}
+      {multiDay ? (
+        <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Delivery time mode">
+          <PackOption
+            active={mode === "all"}
+            onClick={() => choose("all")}
+            title="Same for every day"
+          />
+          <PackOption
+            active={mode === "each"}
+            onClick={() => choose("each")}
+            title="Set for each day"
+          />
         </div>
+      ) : null}
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
-          {dates.map((date) => {
-            const win = cart.windows[date] ?? commonWindow;
-            return (
-              <div key={date} className="flex items-center justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
-                {/* "Wednesday, Jul 15" beside a 176px select overflows a 375px
-                    sheet if neither can give. The label truncates; the select
-                    narrows. */}
-                <span className="flex min-w-0 items-center gap-2 truncate text-base font-semibold">
-                  <CalendarDays className="size-4 shrink-0 text-primary" />
-                  {formatDay(fromISODate(date))}
-                </span>
-                <div className="w-36 shrink-0 sm:w-56">
-                  <ThemeSelect
-                    value={win}
-                    onValueChange={(v) => cart.setWindow(date, v)}
-                    options={program.deliveryWindows.map((w) => ({ value: w, label: w }))}
-                    aria-label={`Delivery time for ${formatDay(fromISODate(date))}`}
-                    align="right"
-                  />
-                </div>
+      {mode === "all" || !multiDay ? (
+        <ThemeSelect
+          value={commonWindow}
+          onValueChange={onApplyCommon}
+          options={options}
+          aria-label="Delivery time for all days"
+        />
+      ) : (
+        <div className="space-y-2">
+          {dates.map((date) => (
+            <div
+              key={date}
+              className="flex items-center justify-between gap-3 border-b border-border pb-2.5 last:border-0 last:pb-0"
+            >
+              {/* "Wednesday, Jul 15" beside a select overflows a narrow panel if
+                  neither can give. The label truncates; the select narrows. */}
+              <span className="flex min-w-0 items-center gap-2 truncate text-[13px] font-semibold">
+                <CalendarDays className="size-3.5 shrink-0 text-primary" />
+                {formatDay(fromISODate(date))}
+              </span>
+              <div className="w-36 shrink-0 sm:w-52">
+                <ThemeSelect
+                  value={cart.windows[date] ?? commonWindow}
+                  onValueChange={(v) => cart.setWindow(date, v)}
+                  options={options}
+                  aria-label={`Delivery time for ${formatDay(fromISODate(date))}`}
+                  size="sm"
+                  align="right"
+                />
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
-
-        <div className="rounded-b-3xl border-t border-border bg-card p-5">
-          <Button block size="lg" onClick={onClose}>
-            Done
-          </Button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -1053,7 +1350,7 @@ function Confirmation({
 
         <div className="space-y-2.5">
           <h2 className="font-display text-2xl font-semibold tracking-tight">Order confirmed 🎉</h2>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-2xs font-bold uppercase tracking-wide text-foreground nums">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-2xs font-bold text-foreground nums">
             Order #ORD-2892
           </span>
         </div>
@@ -1066,7 +1363,7 @@ function Confirmation({
           ) : corporate && payment === "pay_later" ? (
             <>The {formatCurrency(owed)} balance will appear on your company invoice.</>
           ) : (
-            <>Your card on file will be charged {formatCurrency(owed)} 24 hours before delivery.</>
+            <>Square will charge your card {formatCurrency(owed)} 24 hours before delivery.</>
           )}
         </p>
 
@@ -1088,71 +1385,45 @@ function Confirmation({
   );
 }
 
-function Steps({ current }: { current: number }) {
-  const labels = ["Cart", "Checkout", "Confirmed"];
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-card">
-      {labels.map((label, i) => {
-        const done = i < current;
-        const active = i === current;
-        return (
-          <React.Fragment key={label}>
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  "flex size-7 shrink-0 items-center justify-center rounded-full text-2xs font-bold transition-colors",
-                  done && "bg-success text-white",
-                  active && "bg-primary text-primary-foreground",
-                  !done && !active && "border border-border text-muted-foreground",
-                )}
-              >
-                {done ? <Check className="size-3.5" /> : i + 1}
-              </span>
-              <span
-                className={cn(
-                  "text-[13px] font-semibold transition-colors",
-                  active ? "text-teal-deep" : done ? "text-foreground" : "text-muted-foreground",
-                  active ? "inline" : "hidden sm:inline",
-                )}
-              >
-                {label}
-              </span>
-            </div>
-            {i < labels.length - 1 ? (
-              <span
-                className={cn(
-                  "h-0.5 flex-1 rounded-full transition-colors",
-                  done ? "bg-success" : "bg-border",
-                )}
-              />
-            ) : null}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-}
-
+/** One payment method: its own mark, what it is, and whether it's the one. */
 function PayOption({
   active,
   onClick,
   title,
   subtitle,
+  icon: Icon,
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
   subtitle: string;
+  icon: React.ElementType;
 }) {
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={active}
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
         active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
       )}
     >
+      {/* Each method carries its own mark — a card and an invoice are not the
+          same thing, and a shared CreditCard glyph said they were. */}
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-xl",
+          active ? "bg-card text-primary" : "bg-muted text-muted-foreground",
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <strong className="block truncate">{title}</strong>
+        <span className="block text-muted-foreground">{subtitle}</span>
+      </span>
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-full border",
@@ -1160,11 +1431,6 @@ function PayOption({
         )}
       >
         {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
-      </span>
-      <CreditCard className="size-4 text-muted-foreground" />
-      <span>
-        <strong>{title}</strong>
-        <span className="block text-muted-foreground">{subtitle}</span>
       </span>
     </button>
   );
@@ -1179,122 +1445,246 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
+
 /**
- * Reusable-vs-disposable packaging selector for an individual order. Reusable
- * adds a flat fee that scales with container count and asks for a pickup window;
- * a pickup outside the admin's included windows adds a ZIP-based fee. Every
- * charge lands in the checkout total — there is no deposit-and-refund.
+ * Two options, so a toggle rather than a row that opens a list to hold two
+ * items. It sits where the chevron used to: the chevron promised somewhere to
+ * go, and the choice is right here.
  */
-function PackagingCard({ zip }: { zip: string }) {
+function SegmentedToggle<T extends string>({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string; hint?: string }[];
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className="flex shrink-0 items-center gap-0.5 rounded-full bg-muted p-1"
+    >
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-2xs font-semibold transition-colors",
+              active
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {o.label}
+            {/* The price rides on the segment so the cost of switching is on the
+                control itself, not only in the panel it opens. */}
+            {o.hint ? (
+              <span className={cn("font-bold", active ? "text-primary" : "opacity-70")}>
+                {o.hint}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Reusable-vs-disposable for an individual order. Reusable adds a flat fee that
+ * scales with container count and needs a pickup window; a pickup outside the
+ * admin's included windows adds a ZIP-based fee. Every charge lands in the
+ * checkout total — there is no deposit-and-refund.
+ *
+ * Not a `SettingRow`: this row *contains* controls, and a button wrapping
+ * buttons is neither valid nor clickable in the way either one wants. It renders
+ * a fragment so the row and its dropdown land as siblings in the RowGroup, and
+ * the group's hairline divider falls between them like every other row.
+ */
+function PackagingRow({ zip, value }: { zip: string; value: string }) {
   const cart = useCartStore();
   const windows = program.reusablePackaging.includedPickupWindows;
   const qty = cart.packagingQty();
   const fee = reusablePackagingFee(qty);
   const specialFee = deliveryFeeForZip(zip);
+
+  const [pickupOpen, setPickupOpen] = React.useState(false);
   const [customOpen, setCustomOpen] = React.useState(false);
 
-  function chooseReusable() {
+  /**
+   * Reusable containers have to get back to the kitchen, so choosing reusable
+   * drops the window list open — the question is part of the choice, not a
+   * follow-up someone has to think to go looking for. The default window is set
+   * first, so collapsing the list again still leaves a schedulable pickup rather
+   * than an order no driver collects.
+   *
+   * Tapping "Reusable" while already on reusable folds the list back up: with no
+   * chevron on this row, the segment is the only handle on it.
+   */
+  function choose(next: PackagingChoice) {
+    if (next === "disposable") {
+      cart.setPackaging("disposable");
+      setPickupOpen(false);
+      setCustomOpen(false);
+      return;
+    }
+    const alreadyReusable = cart.packaging === "reusable";
     cart.setPackaging("reusable");
-    // Default to the first included (free) window so a pickup is always set.
     if (!cart.pickupWindow && !cart.specialPickup) cart.setPickupWindow(windows[0] ?? "");
+    setPickupOpen(alreadyReusable ? !pickupOpen : true);
   }
 
+  const Icon = cart.packaging === "reusable" ? Recycle : Package;
+  const open = cart.packaging === "reusable" && pickupOpen;
+
+  /**
+   * Bring the row to the top when the list drops open, so the windows are on
+   * screen instead of somewhere below the fold. Anchored on the *row*, not the
+   * panel: the panel can be taller than what's left of the viewport, and
+   * scrolling that into view would put its middle on screen and the "Pickup
+   * window" heading above it. `scroll-mt-20` keeps it clear of the sticky topbar.
+   */
+  const rowRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    rowRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [open]);
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Packaging</CardTitle>
-      </CardHeader>
-      <CardBody className="space-y-3">
-        {/* Disposable and Reusable sit side by side — one quick either/or choice. */}
-        <div className="grid grid-cols-2 gap-3">
-          <PackOption
-            active={cart.packaging === "disposable"}
-            onClick={() => cart.setPackaging("disposable")}
-            icon={<Package className="size-4 text-muted-foreground" />}
-            title="Disposable"
-            subtitle="Standard recyclable containers. Nothing to return."
-          />
-          <PackOption
-            active={cart.packaging === "reusable"}
-            onClick={chooseReusable}
-            icon={<Recycle className="size-4 text-muted-foreground" />}
-            title="Reusable"
-            subtitle="Returnable containers, collected after your meals."
-          />
-        </div>
+    <>
+      <div
+        ref={rowRef}
+        className={cn("flex w-full scroll-mt-20 items-center gap-3 px-4 py-3", open && "bg-muted/30")}
+      >
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-teal-wash text-primary">
+          <Icon className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold">Packaging</span>
+          <span className="block truncate text-2xs text-muted-foreground">{value}</span>
+        </span>
+        <SegmentedToggle
+          ariaLabel="Packaging"
+          value={cart.packaging}
+          onChange={choose}
+          options={[
+            // No price on Disposable — it's the default and it's free, so the
+            // only number worth carrying is the one switching would add.
+            { value: "disposable", label: "Disposable" },
+            {
+              value: "reusable",
+              label: "Reusable",
+              hint: qty > 0 ? formatCurrency(fee) : "Free",
+            },
+          ]}
+        />
+      </div>
 
-        {cart.packaging === "reusable" ? (
-          <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
-            <div className="text-overline">Pickup window</div>
-            {windows.map((w) => (
-              <PackOption
-                key={w}
-                active={cart.pickupWindow === w}
-                onClick={() => cart.setPickupWindow(w)}
-                title={w}
-              />
-            ))}
-            <PackOption
-              active={cart.specialPickup}
-              onClick={() => setCustomOpen(true)}
-              title="Custom pickup time"
-              subtitle={
-                cart.specialPickup && cart.pickupWindow
-                  ? cart.pickupWindow
-                  : "Outside the windows above — pick a time that works for you."
-              }
-              trailing={`+${formatCurrency(specialFee)}`}
-            />
+      {open ? (
+        <RowPanel>
+          <div className="space-y-3">
+            {/* At the top, and highlighted: this is what reusable *costs*, and
+                at the foot of the list it was a footnote to a decision already
+                made. */}
             <Notice tone="info" className="text-xs">
-              <Info className="inline size-3.5" /> Pickup during the windows above is{" "}
-              <strong>free</strong>. A custom pickup time adds a {formatCurrency(specialFee)} fee, based
-              on your delivery ZIP. Reusable packaging is{" "}
-              <strong>{qty > 0 ? formatCurrency(fee) : "free"}</strong> for {qty}{" "}
-              {qty === 1 ? "meal" : "meals"}, added to your total.
+              Reusable packaging is{" "}
+              <strong className="font-semibold">
+                {qty > 0 ? formatCurrency(fee) : "free"}
+              </strong>{" "}
+              for {qty} {qty === 1 ? "meal" : "meals"}, added to your total. Pickup in an included
+              window is free; a custom time adds {formatCurrency(specialFee)}.
             </Notice>
-          </div>
-        ) : null}
-      </CardBody>
 
+            <div className="text-overline">Pickup window</div>
+            {/* Tapping a window is the answer — it applies and folds up, no Save
+                to hunt for. Custom is the one row that opens something. */}
+            <div className="space-y-2" role="radiogroup" aria-label="Pickup window">
+              {windows.map((w) => (
+                <PackOption
+                  key={w}
+                  active={!cart.specialPickup && cart.pickupWindow === w}
+                  onClick={() => {
+                    // Stays open on purpose: the windows are a comparison, and
+                    // folding the list on the first tap makes changing your mind
+                    // cost a re-open. The segment is what closes it.
+                    cart.setPickupWindow(w);
+                    setCustomOpen(false);
+                  }}
+                  // No "Included — no extra charge" per row: the notice above
+                  // already says an included window is free, and repeating it
+                  // three times turned each option into two lines to say a time.
+                  title={w}
+                />
+              ))}
+              <PackOption
+                active={cart.specialPickup}
+                onClick={() => setCustomOpen(true)}
+                title="Custom pickup time"
+                subtitle={
+                  cart.specialPickup && cart.pickupWindow
+                    ? cart.pickupWindow
+                    : "Outside the windows above — pick your own."
+                }
+                trailing={`+${formatCurrency(specialFee)}`}
+              />
+            </div>
+          </div>
+        </RowPanel>
+      ) : null}
+
+      {/* The one thing on this page that still opens a dialog. Naming a day and
+          a time is a detour off the window list, not a refinement of it — and
+          unlike every other panel it can't apply live, since three fields have
+          to agree before there's a label to save. */}
       {customOpen ? (
         <CustomPickupModal
           fee={specialFee}
-          onSelect={(time) => cart.setCustomPickup(time)}
+          onSave={(label) => cart.setCustomPickup(label)}
           onClose={() => setCustomOpen(false)}
         />
       ) : null}
-    </Card>
+    </>
   );
 }
 
-/** "17:30" (a 24h `<input type="time">` value) → "5:30 PM". */
-function formatTime(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
-}
-
 /**
- * Time picker for a custom (out-of-window) reusable-packaging pickup. Opens from
- * the "Custom pickup time" option and lets the user name their own day and time
- * window — nothing pre-set — which is composed into a label, written back to the
- * cart, and shown on that option. Mirrors the other checkout modals' chrome.
+ * Pickup day + window for an out-of-window collection. Its own dialog because
+ * the three fields compose into a single label — there is nothing to apply until
+ * all of them agree, so there is nothing to show on the row until Save.
+ *
+ * State lives here rather than in the row above, so every open starts on a blank
+ * form instead of whatever was half-typed and abandoned last time.
  */
 function CustomPickupModal({
   fee,
-  onSelect,
+  onSave,
   onClose,
 }: {
   fee: number;
-  onSelect: (time: string) => void;
+  onSave: (label: string) => void;
   onClose: () => void;
 }) {
   const [shown, setShown] = React.useState(false);
-  const todayISO = toISODate(startOfToday());
   const [date, setDate] = React.useState("");
   const [start, setStart] = React.useState("");
   const [end, setEnd] = React.useState("");
+
+  /**
+   * Themed day + time pickers rather than `<input type="date">` / `type="time"`.
+   * A native picker's popup is drawn by the browser — an OS calendar and an OS
+   * spinner that no CSS reaches. See `datetime-fields.tsx`: same month grid and
+   * same hour/minute/meridiem columns, in the site's paint.
+   */
+  const todayISO = toISODate(startOfToday());
 
   React.useEffect(() => {
     const id = requestAnimationFrame(() => setShown(true));
@@ -1316,23 +1706,32 @@ function CustomPickupModal({
     : "";
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
+        className={cn(
+          "absolute inset-0 bg-black/50 transition-opacity",
+          shown ? "opacity-100" : "opacity-0",
+        )}
       />
       <div
         className={cn(
-          "relative flex max-h-[85dvh] w-full max-w-md flex-col rounded-3xl bg-card shadow-raised transition-all duration-200",
+          "relative flex max-h-[85dvh] w-full max-w-md flex-col rounded-3xl bg-card text-left shadow-raised transition-all duration-200",
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
         )}
       >
-        <div className="flex items-start justify-between border-b border-border px-5 py-4">
-          <div>
+        {/* Plain hairline header — the teal band is for the page's section cards
+            (see SECTION_HEADER); every dialog in the app wears white. */}
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="min-w-0">
             <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
-              <Clock className="size-4 text-primary" /> Custom pickup time
+              <Clock className="size-4 shrink-0 text-primary" /> Custom pickup time
             </h3>
             <p className="text-[13px] text-muted-foreground">
               Choose any day and time that works for you. Adds a {formatCurrency(fee)} fee.
@@ -1342,45 +1741,42 @@ function CustomPickupModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="shrink-0 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+        {/* No `overflow-y-auto`: the selects' lists are absolutely positioned and
+            a scroll container would clip them. Three fields never need to scroll. */}
+        <div className="min-h-0 flex-1 space-y-4 p-5">
+          {/* The day is one answer and the times are a pair, so the layout says
+              so: a full row for the date, then From and To side by side.
+              No `htmlFor` — these are buttons, not inputs; each carries its own
+              aria-label, and a label pointing at nothing is worse than none. */}
           <Field>
-            <Label htmlFor="cp-date">Pickup day</Label>
-            <Input
-              id="cp-date"
-              type="date"
-              min={todayISO}
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
+            <Label>Pickup day</Label>
+            <DateField value={date} onChange={setDate} min={todayISO} aria-label="Pickup day" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field>
-              <Label htmlFor="cp-start">From</Label>
-              <Input
-                id="cp-start"
-                type="time"
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-              />
+              <Label>From</Label>
+              <TimeField value={start} onChange={setStart} aria-label="Pickup start time" />
             </Field>
             <Field>
-              <Label htmlFor="cp-end">To (optional)</Label>
-              <Input
-                id="cp-end"
-                type="time"
+              <Label>To (optional)</Label>
+              <TimeField
                 value={end}
-                onChange={(e) => setEnd(e.target.value)}
+                onChange={setEnd}
+                placeholder="No end time"
+                aria-label="Pickup end time"
               />
             </Field>
           </div>
           {end && !orderedTimes ? (
-            <p className="text-2xs font-medium text-danger">The end time must be after the start time.</p>
+            <p className="text-2xs font-medium text-danger">
+              The end time must be after the start time.
+            </p>
           ) : null}
           {label ? (
             <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-[13px]">
@@ -1390,13 +1786,14 @@ function CustomPickupModal({
           ) : null}
         </div>
 
-        <div className="rounded-b-3xl border-t border-border bg-card p-5">
+        <div className="shrink-0 rounded-b-3xl border-t border-border bg-card p-5">
           <Button
             block
             size="lg"
             disabled={!valid}
             onClick={() => {
-              if (valid) onSelect(label);
+              if (!valid) return;
+              onSave(label);
               onClose();
             }}
           >
@@ -1407,6 +1804,24 @@ function CustomPickupModal({
     </div>
   );
 }
+
+/** "17:30" (a 24h `<input type="time">` value) → "5:30 PM". */
+function formatTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+/**
+ * Where the reusable containers get collected. Two steps behind one dialog: the
+ * included (free) windows, and — when none of them work — a day and time the user
+ * names themselves.
+ *
+ * The custom step *replaces* the list rather than opening a second dialog over
+ * it. It's the same question answered a different way, and stacking would leave
+ * someone two Escapes deep in a choice that should cost one.
+ */
 
 function PackOption({
   active,
@@ -1426,6 +1841,11 @@ function PackOption({
   return (
     <button
       type="button"
+      // It draws a radio dot and lives in a `radiogroup`; without these it was
+      // announced as a plain button, so nothing conveyed which option was
+      // chosen except the colour.
+      role="radio"
+      aria-checked={active}
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
@@ -1458,7 +1878,18 @@ function PackOption({
  * Promo-code entry above "Place order". Shows an input + Apply button while no
  * code is active; once applied it collapses into a removable success chip.
  */
-function PromoField({
+
+/**
+ * Promo entry, as a sheet. The field used to sit under the total in the rail,
+ * which meant the one control that changes the total lived in the panel that
+ * only reports it.
+ */
+
+/**
+ * Promo entry, inline. Lives in the rail with the total it moves — the one
+ * control on this page whose whole job is to change the number above it.
+ */
+function PromoPanel({
   promo,
   value,
   error,
@@ -1493,7 +1924,6 @@ function PromoField({
       </div>
     );
   }
-
   return (
     <div className="space-y-1.5">
       <div
@@ -1514,9 +1944,9 @@ function PromoField({
           }}
           placeholder="Promo code"
           aria-label="Promo code"
-          autoCapitalize="characters"
           spellCheck={false}
-          className="h-9 min-w-0 flex-1 bg-transparent text-base uppercase tracking-wide text-foreground outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground/70 sm:h-8 sm:text-[13px]"
+          autoFocus
+          className="h-9 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/70 sm:h-8 sm:text-[13px]"
         />
         <Button size="sm" variant="teal" onClick={onApply} disabled={!value.trim()}>
           Apply

@@ -33,7 +33,7 @@ export function BudgetBar({ dayTotal, compact = false, showNote = true, classNam
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-2xs font-semibold text-muted-foreground">
           <Wallet className="size-3.5 text-primary" />
           Today&apos;s budget
         </span>

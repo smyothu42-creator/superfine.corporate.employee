@@ -126,7 +126,7 @@ function MenuItemCard({
             type="button"
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
-            className="flex items-center gap-1 text-2xs font-semibold uppercase tracking-[0.08em] text-primary"
+            className="flex items-center gap-1 text-2xs font-semibold text-primary"
           >
             <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
             {open ? "Hide details" : "Ingredients"}

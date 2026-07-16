@@ -541,7 +541,7 @@ function CheckoutStep({
           </span>
           <div className="flex-1">
             <p className="text-sm font-semibold">Visa ···· 4242</p>
-            <p className="text-2xs text-muted-foreground">Default payment method</p>
+            <p className="text-2xs text-muted-foreground">Default payment method · charged via Square</p>
           </div>
           <span className="text-sm font-bold nums">{formatCurrency(youPay)}</span>
         </div>
@@ -644,7 +644,7 @@ function ConfirmationStep({
 
       {/* Email preview */}
       <div className="rounded-2xl border border-border bg-card p-3">
-        <div className="flex items-center gap-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="flex items-center gap-2 text-2xs font-semibold text-muted-foreground">
           <Mail className="size-3.5" /> Email preview
         </div>
         <p className="mt-1.5 text-sm font-semibold">{subject}</p>

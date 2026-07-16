@@ -277,7 +277,7 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
           aria-label="Today's budget breakdown"
           className="pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-64 origin-top-right rounded-2xl border border-border bg-card p-4 text-foreground opacity-0 shadow-lg transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
         >
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold text-muted-foreground">
             <Wallet className="size-3.5 text-primary" /> Today&apos;s budget
           </div>
 

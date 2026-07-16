@@ -43,7 +43,9 @@ function Sidebar({ onNavigate }: SidebarProps) {
   }
 
   return (
-    <div className="flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground">
+    // Width comes from `--sidebar-w` so a fixed element that has to start where
+    // the content starts (checkout's docked CTA) can read the same number.
+    <div className="flex h-full w-[var(--sidebar-w)] flex-col bg-sidebar text-sidebar-foreground">
       <div className="flex items-center px-4 py-6">
         <Logo variant="light" size="xl" className="flex-1 items-center" />
       </div>

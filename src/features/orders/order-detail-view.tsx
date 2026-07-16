@@ -36,7 +36,7 @@ import type { Order, PaymentChoice } from "@/data/types";
 const PAYMENT_LABEL: Record<PaymentChoice, string> = {
   covered: "Fully covered by company",
   pay_later: "Invoice to company",
-  pay_now: "Card on file",
+  pay_now: "Paid with Square",
 };
 
 export function OrderDetailView({ order: initialOrder }: { order: Order }) {

@@ -115,7 +115,7 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
             <div key={g.id}>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-[13px] font-semibold">{g.name}</span>
-                <span className="text-2xs uppercase tracking-wide text-muted-foreground">
+                <span className="text-2xs text-muted-foreground">
                   {g.required ? "Required" : "Optional"}
                   {g.select === "multi" && g.max ? ` · up to ${g.max}` : ""}
                 </span>
@@ -150,7 +150,7 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
                           +{formatCurrency(o.price)}
                         </span>
                       ) : (
-                        <span className="text-2xs font-semibold uppercase text-success">Included</span>
+                        <span className="text-2xs font-semibold text-success">Included</span>
                       )}
                     </button>
                   );

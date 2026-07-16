@@ -64,7 +64,10 @@ function MobileTabBar() {
     <nav
       aria-label="Primary"
       className={cn(
-        "pb-safe fixed inset-x-0 bottom-0 z-30 grid border-t border-border bg-card/95 backdrop-blur lg:hidden",
+        // `h-tab-bar` makes the rendered height match `--tab-bar-h`, which the
+        // variable's other readers assume — including checkout's docked CTA,
+        // which lands directly on top of this bar.
+        "h-tab-bar pb-safe fixed inset-x-0 bottom-0 z-30 grid border-t border-border bg-card/95 backdrop-blur lg:hidden",
         items.length === 5 ? "grid-cols-5" : "grid-cols-4",
       )}
     >

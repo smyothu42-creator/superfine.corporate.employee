@@ -205,7 +205,7 @@ function MealCombobox({
                     <span className="truncate">{i.name}</span>
                     {/* Flag meals that will ask for choices before a label. */}
                     {hasRequiredAddOns(i) ? (
-                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-2xs font-semibold text-muted-foreground">
                         Choose options
                       </span>
                     ) : null}

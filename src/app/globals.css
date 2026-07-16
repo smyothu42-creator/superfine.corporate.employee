@@ -11,6 +11,9 @@
     /* Height of the phone tab bar, before the home-indicator inset. Anything
        that floats above it reads this rather than hard-coding 68px. */
     --tab-bar-h: 4.25rem;
+    /* Width of the desktop rail. Anything `fixed` that must start where the
+       content does reads this rather than re-typing the rail's width. */
+    --sidebar-w: 16rem;
   }
 
   html {
@@ -114,6 +117,19 @@
   .-mb-tab-bar {
     margin-bottom: calc(-1 * (var(--tab-bar-h) + env(safe-area-inset-bottom, 0px) + 1rem));
   }
+  /* The tab bar's own height: exactly `--tab-bar-h` of content plus the
+     home-indicator inset it pads out with `.pb-safe`. Sizing it from content
+     instead left the variable a ~3px lie, which nobody noticed while everything
+     only used it for clearance — but a bar docking flush on top of it showed
+     the gap. */
+  .h-tab-bar {
+    height: calc(var(--tab-bar-h) + env(safe-area-inset-bottom, 0px));
+  }
+  /* A docked action bar: rests flush on the tab bar on a phone and on the
+     viewport floor on desktop, where there is no tab bar. */
+  .bottom-dock {
+    bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom, 0px));
+  }
   @media (min-width: 1024px) {
     .above-tab-bar {
       bottom: 1.5rem;
@@ -123,6 +139,9 @@
     }
     .-mb-tab-bar {
       margin-bottom: -1.5rem;
+    }
+    .bottom-dock {
+      bottom: 0;
     }
   }
 
@@ -168,7 +187,7 @@
     font-family: var(--font-sans), system-ui, sans-serif;
   }
   .text-overline {
-    @apply text-2xs font-semibold uppercase tracking-[0.12em] text-muted-foreground;
+    @apply text-2xs font-semibold text-muted-foreground;
   }
   .nums {
     font-variant-numeric: tabular-nums;

@@ -98,7 +98,7 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
                 </span>
                 <ArrowRight className="size-5 shrink-0" />
               </button>
-              <p className="text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <p className="text-2xs font-semibold text-muted-foreground">
                 Or pick a favorite
               </p>
             </div>

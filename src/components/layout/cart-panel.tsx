@@ -25,14 +25,17 @@ export function CartPanel() {
   const editActive = useOrderEditStore((s) => s.active);
   const pathname = usePathname();
 
-  // Close when navigating (e.g. tapping Checkout inside the panel). While actively
-  // editing a placed order the cart is the edit workspace, so keep it open across
-  // the menu + item pages; leaving the menu for another section still closes it
-  // (and the page-level banner takes over there). Read the edit state fresh so
-  // this effect only fires on real navigation, not when the session starts/ends.
+  // The cart belongs to the menu: keep it open across the menu + item pages, and
+  // close it anywhere else (e.g. tapping Checkout inside the panel), where the
+  // page-level banner takes over.
+  //
+  // This used to require an active edit session to stay open, because an edit was
+  // the only thing that opened the cart *and* navigated in one gesture. Checkout's
+  // "Edit order" does the same now, and it isn't an edit session — so the rule is
+  // the destination, not the session. Nothing persists `cartOpen`, so a cold load
+  // of /menu still starts closed.
   React.useEffect(() => {
-    const { active } = useOrderEditStore.getState();
-    if (active && pathname.startsWith("/menu")) return;
+    if (pathname.startsWith("/menu")) return;
     close();
   }, [pathname, close]);
 

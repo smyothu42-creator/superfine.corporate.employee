@@ -405,7 +405,7 @@ export function IdentityFlow({
 
       <div className="flex items-center gap-3">
         <span className="h-px flex-1 bg-border" />
-        <span className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">or</span>
+        <span className="text-2xs font-medium text-muted-foreground">or</span>
         <span className="h-px flex-1 bg-border" />
       </div>
 

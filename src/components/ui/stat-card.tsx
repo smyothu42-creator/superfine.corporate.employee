@@ -41,7 +41,7 @@ function StatCard({ label, value, sub, icon, tone = "default", pop = false, clas
         {icon ? <span className={cn(colored ? "opacity-90" : "text-primary")}>{icon}</span> : null}
         <div
           className={cn(
-            "text-2xs font-bold uppercase tracking-[0.12em]",
+            "text-2xs font-bold",
             colored ? "opacity-95" : "text-muted-foreground",
           )}
         >

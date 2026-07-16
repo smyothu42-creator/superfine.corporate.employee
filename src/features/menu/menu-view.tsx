@@ -945,7 +945,7 @@ function DayStrip({
                     : "border-border bg-card text-foreground hover:bg-muted",
               )}
             >
-              <span className="text-2xs font-semibold uppercase">{cell.weekday}</span>
+              <span className="text-2xs font-semibold">{cell.weekday}</span>
               <span className="font-display text-base font-semibold leading-none">{cell.dayNum}</span>
               <span
                 className={cn(
@@ -1017,7 +1017,7 @@ function DayStrip({
             className="absolute -top-1 left-1/2 size-2 -translate-x-1/2 rotate-45 border-l border-t border-border bg-card"
             aria-hidden
           />
-          <div className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="text-2xs font-semibold text-muted-foreground">
             {hover.cell.fullLabel}
           </div>
           <div className="mt-2 text-[13px]">
@@ -1120,7 +1120,7 @@ function PromoCard({ promo }: { promo: Promo }) {
       <div className="pointer-events-none absolute -left-10 -top-12 size-40 rounded-full bg-primary/10 blur-2xl" />
 
       <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-center gap-1.5 py-5 pl-5 pr-3 sm:pl-6">
-        <span className="inline-flex w-fit items-center rounded-full bg-coral px-2.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-white shadow-sm">
+        <span className="inline-flex w-fit items-center rounded-full bg-coral px-2.5 py-0.5 text-2xs font-bold text-white shadow-sm">
           {promo.tag}
         </span>
         {/* Phones: no clamp + smaller font so the whole title shows (no "…");
@@ -1572,7 +1572,7 @@ function UnifiedDatePicker({
             </button>
           </div>
 
-          <div className="grid grid-cols-7 text-center text-2xs font-semibold uppercase text-muted-foreground">
+          <div className="grid grid-cols-7 text-center text-2xs font-semibold text-muted-foreground">
             {CAL_COLS.map((d, i) => (
               <div key={d} className={cn("pb-1", i >= 5 && "text-muted-foreground/40")}>
                 {d}

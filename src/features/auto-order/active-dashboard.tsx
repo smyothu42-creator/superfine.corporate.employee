@@ -107,7 +107,7 @@ export function ActiveDashboard({
               <CalendarClock className="size-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="text-2xs font-semibold text-muted-foreground">
                 Next up
               </p>
               <p className="text-[13px] font-semibold">Lunch for {formatDayLong(nextDelivery)}</p>
