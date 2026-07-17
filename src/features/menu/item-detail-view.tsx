@@ -202,6 +202,14 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
           </Card>
         </div>
       </div>
+
+      {/* Both embedded configurators dock their commit bar to the foot of the
+          viewport, so the foot of the page is under it. The spacer is the page's
+          job, not theirs: they render inside the card above, where reserving the
+          room would just open a hole in the card instead of below it. Sized for
+          the taller of the two bars — family style carries a total and a
+          balancing line over its button. */}
+      <div className="h-32" aria-hidden />
     </div>
   );
 }

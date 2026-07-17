@@ -222,10 +222,17 @@ export function CartDayList() {
               {items.map((line) => (
                 <div key={line.uid} className="flex items-start justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    {/* The badge takes its own line rather than share a tight
+                        one. Both halves of that matter: `shrink-0` stops the
+                        pill being squeezed — it's a flex item, so a long meal
+                        name was compressing it to a ~90px lozenge with "Family
+                        Style · 9 guests" wrapped four words deep inside it —
+                        and `flex-wrap` gives it somewhere to go once it won't
+                        shrink. A short name still keeps it on the same line. */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="font-semibold">{line.name}</span>
                       {line.type === "family_style" ? (
-                        <Badge tone="neutral">
+                        <Badge tone="neutral" className="shrink-0">
                           Family Style{line.guests ? ` · ${line.guests} guests` : ""}
                         </Badge>
                       ) : null}

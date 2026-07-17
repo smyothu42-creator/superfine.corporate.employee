@@ -244,38 +244,54 @@ export function FamilyStyleModal({
     </>
   );
 
+  /* The footer, as pieces: the popup stacks them in its 448px sheet, the detail
+     page's docked bar lays them out in a row. Same content and handlers either
+     way — only the arrangement differs. */
+
+  /* What the headcount comes to. */
+  const priceLine = (className?: string) => (
+    <div className={cn("flex items-baseline justify-between gap-3", className)}>
+      <span className="text-[13px] text-muted-foreground">
+        {guests} × {formatCurrency(perGuest)}
+      </span>
+      <span className="font-display text-lg font-semibold nums">{formatCurrency(total)}</span>
+    </div>
+  );
+
+  /* Name the groups that don't balance. A greyed-out button with no reason
+     sends the user hunting up the sheet for the one chip that isn't green. */
+  const balanceNote = (className?: string) =>
+    valid ? null : (
+      <p className={cn("text-2xs font-medium text-coral-deep", className)}>
+        {unbalanced
+          .map((g) => `${g.name} (${assignedIn(g)}/${servingsRequired(g, guests)})`)
+          .join(", ")}{" "}
+        {unbalanced.length === 1 ? "still needs" : "still need"} balancing.
+      </p>
+    );
+
+  /* Same treatment as the individual-meal sheet, and the same as checkout's
+     "Add a delivery address": the coral pill at full strength once the table is
+     balanced, at half while it isn't. Half-strength but never `disabled` — what
+     it's waiting on is a serving count up this same sheet, so it stays tappable
+     and jumps to the group that doesn't add up. See `add-on-modal.tsx`. */
+  const cta = (className: string) => (
+    <Button
+      className={cn(className, !valid && "opacity-50 hover:bg-coral")}
+      size="lg"
+      onClick={() => (valid ? confirm() : scrollToGroup(unbalanced[0].id))}
+    >
+      <span className="truncate">
+        {valid ? `Add to order · ${formatCurrency(total)}` : `Balance ${unbalanced[0].name}`}
+      </span>
+    </Button>
+  );
+
   const footerBar = (
     <>
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <span className="text-[13px] text-muted-foreground">
-          {guests} × {formatCurrency(perGuest)}
-        </span>
-        <span className="font-display text-lg font-semibold nums">
-          {formatCurrency(total)}
-        </span>
-      </div>
-      {/* Name the groups that don't balance. A greyed-out button with no
-          reason sends the user hunting up the sheet for the one chip that
-          isn't green. */}
-      {!valid ? (
-        <p className="mb-3 text-2xs font-medium text-coral-deep">
-          {unbalanced
-            .map((g) => `${g.name} (${assignedIn(g)}/${servingsRequired(g, guests)})`)
-            .join(", ")}{" "}
-          {unbalanced.length === 1 ? "still needs" : "still need"} balancing.
-        </p>
-      ) : null}
-      {/* Same button treatment as the individual-meal sheet: coral when it's
-          ready to add, and a tappable ghost signpost — not a dead greyed
-          button — while a group still needs balancing, jumping to that group. */}
-      <Button
-        block
-        size="lg"
-        variant={valid ? "default" : "ghost"}
-        onClick={() => (valid ? confirm() : scrollToGroup(unbalanced[0].id))}
-      >
-        {valid ? `Add to order · ${formatCurrency(total)}` : `Balance ${unbalanced[0].name}`}
-      </Button>
+      {priceLine("mb-3")}
+      {balanceNote("mb-3")}
+      {cta("w-full")}
     </>
   );
 
@@ -285,7 +301,36 @@ export function FamilyStyleModal({
     return (
       <div className="space-y-6">
         {configBody}
-        <div className="border-t border-border pt-4">{footerBar}</div>
+
+        {/* Docked at the foot of the viewport, the same bar as checkout and the
+            auto-order wizard — see `add-on-modal.tsx` for the reasoning both
+            embedded configurators share. It matters most here: the total and
+            the "still needs balancing" line are what the headcount stepper and
+            every serving row are being judged against, and inline at the end of
+            the card they scrolled out of sight the moment the groups got long
+            enough to have to scroll. The page reserves the scroll room this bar
+            covers; see `item-detail-view.tsx`. */}
+        <div className="bottom-dock pb-safe fixed inset-x-0 z-30 border-t border-border bg-card shadow-[0_-4px_16px_-8px_rgb(0_0_0/0.15)] lg:left-[var(--sidebar-w)]">
+          {/* Stacked on a phone, one row once there's width for it: the total,
+              then the commit it belongs to, kept together as one group at the
+              right rather than shoved to opposite ends of the bar.
+
+              That's the whole reason the text block doesn't take the slack —
+              `lg:justify-end` gives the empty space to the *left* of the pair
+              instead of driving a wedge through it. On a wide screen the group
+              then lands under the configurator card it commits, and the price
+              stays where the eye already is when it reaches the button.
+
+              (The individual bar spreads instead: its note and stepper fill the
+              middle, so it has no gap to close.) */}
+          <div className="flex flex-col gap-1 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-end lg:gap-6 lg:px-8">
+            <div className="min-w-0">
+              {priceLine("lg:justify-start lg:gap-2")}
+              {balanceNote()}
+            </div>
+            {cta("w-full lg:w-auto lg:min-w-[16rem] lg:shrink-0")}
+          </div>
+        </div>
       </div>
     );
   }

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { X, Plus, Minus, Copy, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useComboBuilder, ComboBlock, type BuiltCombo } from "@/components/menu/combo-builder";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import { program } from "@/data/program";
 import type { MenuItem, AddOnGroup } from "@/data/types";
 import type { CartAddOn } from "@/store/use-cart-store";
@@ -196,50 +196,80 @@ export function AddOnModal({
     </p>
   );
 
-  /* Action bar: adding a *different* meal (its chooser expands in place), then
-     quantity for this exact meal + the primary add action. */
+  /* The action bar, as pieces. Both renders show all of them and wire them to
+     the same handlers — only the arrangement differs, because the popup is a
+     448px sheet and the docked bar is as wide as the page. Composing from
+     shared pieces is what keeps that a *layout* difference and nothing more. */
+
+  /* Adding a *different* meal — the chooser expands in place. */
+  const addAnother = (className?: string) =>
+    showQuantity && groups.length ? (
+      <AddAnotherSection
+        className={className}
+        pending={pendingChoice}
+        canRepeat={Boolean(built[rows - 1]?.summary)}
+        onOpenChooser={openChooser}
+        onRepeat={() => handleAddCustomization(rows - 1)}
+        onCustomizeNew={() => handleAddCustomization()}
+        onCancel={() => setPendingChoice(false)}
+      />
+    ) : null;
+
+  /* What the stepper does, in words. Hidden while the chooser is open: there it
+     would answer a question nobody asked, next to one that's on screen. */
+  const qtyNote = (className?: string) =>
+    !showQuantity || !groups.length || pendingChoice ? null : (
+      <p className={cn("text-2xs text-muted-foreground", className)}>
+        {rows === 1 ? (
+          <>
+            Quantity makes more of{" "}
+            <span className="font-semibold text-foreground">this exact meal</span>, each packed
+            separately.
+          </>
+        ) : (
+          `${meals} meals, packed separately — each customization has its own quantity above.`
+        )}
+      </p>
+    );
+
+  /* Quantity for this exact meal + the primary add action, always side by side:
+     the stepper is what the button's count refers to. */
+  const commitRow = (rowClassName: string, ctaClassName: string) => (
+    <div className={cn("flex items-center gap-3", rowClassName)}>
+      {/* Inline quantity — only for a single configuration; once there are
+          several customizations, each carries its own stepper on its card. */}
+      {showQuantity && groups.length && rows === 1 ? (
+        <MealQtyStepper qty={built[0].qty} onChange={(n) => handleSetComboQty(0, n)} />
+      ) : null}
+      {/* One button in two strengths, never two different buttons: the coral
+          pill at full strength once it can add, and checkout's waiting look —
+          the same pill at half — while a question is open. "Not yet" then reads
+          the same here as it does on "Add a delivery address".
+
+          Half-strength but *not* `disabled`, which is the one thing it doesn't
+          borrow from checkout: there, the button waits on an address only the
+          user can supply, so there's nothing to tap it for. Here what's missing
+          is a few rows up this very sheet, so the button stays a signpost — it
+          takes the tap and jumps to the customization that's blocking. The
+          hover override is what keeps that from leaking: without it the pill
+          brightens under the cursor and starts claiming it's ready. */}
+      <Button
+        className={cn(ctaClassName, blocked && "opacity-50 hover:bg-coral")}
+        size="lg"
+        onClick={() => (blocked ? focusCombo(firstIncomplete) : onConfirm(built))}
+      >
+        <span className="truncate">{ctaLabel}</span>
+      </Button>
+    </div>
+  );
+
+  /* The popup stacks them in the sheet's own footer, which is already pinned
+     above a scrolling body. At 448px there's no width to do anything else. */
   const actionBar = (
     <>
-      {showQuantity && groups.length ? (
-        <AddAnotherSection
-          pending={pendingChoice}
-          canRepeat={Boolean(built[rows - 1]?.summary)}
-          onOpenChooser={openChooser}
-          onRepeat={() => handleAddCustomization(rows - 1)}
-          onCustomizeNew={() => handleAddCustomization()}
-          onCancel={() => setPendingChoice(false)}
-        />
-      ) : null}
-      {showQuantity && groups.length && rows === 1 && !pendingChoice ? (
-        <p className="text-2xs text-muted-foreground">
-          Quantity makes more of{" "}
-          <span className="font-semibold text-foreground">this exact meal</span>, each packed
-          separately.
-        </p>
-      ) : null}
-      {showQuantity && groups.length && rows > 1 && !pendingChoice ? (
-        <p className="text-2xs text-muted-foreground">
-          {meals} meals, packed separately — each customization has its own quantity above.
-        </p>
-      ) : null}
-
-      <div className="flex items-center gap-3">
-        {/* Inline quantity — only for a single configuration; once there are
-            several customizations, each carries its own stepper on its card. */}
-        {showQuantity && groups.length && rows === 1 ? (
-          <MealQtyStepper qty={built[0].qty} onChange={(n) => handleSetComboQty(0, n)} />
-        ) : null}
-        {/* While something's unanswered the button is a signpost, not a dead
-            end: it stays tappable and jumps to the customization that's blocking. */}
-        <Button
-          className="flex-1"
-          size="lg"
-          variant={blocked ? "ghost" : "default"}
-          onClick={() => (blocked ? focusCombo(firstIncomplete) : onConfirm(built))}
-        >
-          {ctaLabel}
-        </Button>
-      </div>
+      {addAnother()}
+      {qtyNote()}
+      {commitRow("", "flex-1")}
     </>
   );
 
@@ -267,7 +297,54 @@ export function AddOnModal({
           </p>
         ) : null}
         <div className="space-y-3">{optionsBody}</div>
-        <div className="space-y-2.5 border-t border-border pt-4">{actionBar}</div>
+
+        {/* Docked at the foot of the viewport, exactly as the popup keeps its
+            footer above a scrolling body — the popup got that for free from the
+            sheet's flex column, but inline the bar sat at the end of the card,
+            so a meal with three option groups pushed Add below the fold and
+            answering the last question left nothing to press.
+
+            Same bar as checkout and the auto-order wizard, for the same reasons
+            spelled out there: `fixed` (the shell's `main` has a bottom padding a
+            `sticky` bar could never escape), opaque `bg-card` (the option rows
+            ghost through anything less), `lg:left-[var(--sidebar-w)]` to clear
+            the desktop rail, `bottom-dock` to rest on the phone tab bar, and
+            `pb-safe` on the outer box only — it *sets* padding-bottom, so the
+            bar's own padding has to live on a separate inner box or desktop
+            (inset 0) silently loses it.
+
+            The page reserves the scroll room this bar covers; see
+            `item-detail-view.tsx`. */}
+        <div className="bottom-dock pb-safe fixed inset-x-0 z-30 border-t border-border bg-card shadow-[0_-4px_16px_-8px_rgb(0_0_0/0.15)] lg:left-[var(--sidebar-w)]">
+          {/* Stacked on a phone, two groups in a row once there's width: the
+              way to add a *different* meal on one side, this meal's quantity
+              and commit on the other.
+
+              The row goes back to a stack while the chooser is open: expanded,
+              "add another" is a panel of choices, not a button, and a panel
+              can't sit in a row of controls pretending to be one. */}
+          <div
+            className={cn(
+              "flex flex-col gap-2 px-4 py-3 sm:px-6 lg:px-8",
+              !pendingChoice && "lg:flex-row lg:items-center lg:gap-4",
+            )}
+          >
+            {addAnother("lg:w-auto lg:shrink-0 lg:px-5")}
+            {/* The note sits directly over the stepper and the button at every
+                width, because it's about them — it says what pressing + does.
+                Between them in the row it read like a caption for the bar as a
+                whole, floating nearer the "add a different customization" it
+                exists to draw a line *against*.
+
+                `lg:ml-auto` also covers a meal with nothing to choose: no
+                chooser, no note, so there's no sibling to push the commit over
+                and it would otherwise sit stranded on the left. */}
+            <div className="flex flex-col gap-2 lg:ml-auto lg:shrink-0 lg:gap-1.5">
+              {qtyNote()}
+              {commitRow("", "min-w-0 flex-1 lg:flex-none lg:min-w-[16rem]")}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -373,6 +450,7 @@ function MealQtyStepper({ qty, onChange }: { qty: number; onChange: (qty: number
 function AddAnotherSection({
   pending,
   canRepeat,
+  className,
   onOpenChooser,
   onRepeat,
   onCustomizeNew,
@@ -381,6 +459,9 @@ function AddAnotherSection({
   pending: boolean;
   /** The previous customization has choices to copy. */
   canRepeat: boolean;
+  /** Sizing for the collapsed trigger, so a caller with width to spare can let
+   *  it be a button instead of a full-width block. Never restyles it. */
+  className?: string;
   onOpenChooser: () => void;
   onRepeat: () => void;
   onCustomizeNew: () => void;
@@ -391,7 +472,10 @@ function AddAnotherSection({
       <button
         type="button"
         onClick={onOpenChooser}
-        className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card py-3 text-[13px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className={cn(
+          "flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card text-[13px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          className,
+        )}
       >
         <Plus className="size-4" /> Add a different customization
       </button>
