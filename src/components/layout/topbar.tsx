@@ -77,7 +77,7 @@ function Topbar() {
   const dayTotal = activeOrderDate ? cart.dayTotal(activeOrderDate) : 0;
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background px-4 sm:px-6">
+    <header className="sticky top-0 z-30 flex h-[var(--topbar-h)] items-center justify-between border-b border-border bg-background px-4 sm:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <button
           type="button"

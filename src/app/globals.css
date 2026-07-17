@@ -14,6 +14,11 @@
     /* Width of the desktop rail. Anything `fixed` that must start where the
        content does reads this rather than re-typing the rail's width. */
     --sidebar-w: 16rem;
+    /* Height of the sticky topbar. A `sticky` element under it offsets by this
+       plus the content well's own top padding — pick a larger number and the
+       element sinks below the content it's meant to sit beside, because sticky
+       pushes a box *down* when its resting place is above the offset. */
+    --topbar-h: 4rem;
   }
 
   html {

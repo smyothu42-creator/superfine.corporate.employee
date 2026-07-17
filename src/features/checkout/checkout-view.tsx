@@ -470,11 +470,19 @@ export function CheckoutView() {
             scrolls inside it — capping the whole card would let a seven-day cart
             push Place order below the viewport with no way to reach it, which is
             exactly the failure the sticky rail exists to prevent. Header and
-            totals+CTA are shrink-0; only the middle gives. */}
+            totals+CTA are shrink-0; only the middle gives.
+
+            The sticky offset is the content well's own top — the topbar plus
+            `main`'s `py-6` — so this card's resting place and its stuck place are
+            the same line, and it starts level with Cutoff check beside it. Any
+            larger and sticky would shunt it *down* the difference at scroll 0,
+            leaving it hanging below the left column. The max-height is keyed to
+            the same offset: it's what keeps the card's foot 1rem clear of the
+            viewport, so the two move together. */}
         <div>
           <Card
             className={cn(
-              "lg:sticky lg:top-32 lg:flex lg:max-h-[calc(100dvh-9rem)] lg:flex-col",
+              "lg:sticky lg:top-[calc(var(--topbar-h)_+_1.5rem)] lg:flex lg:max-h-[calc(100dvh_-_var(--topbar-h)_-_2.5rem)] lg:flex-col",
               SECTION_CARD,
               editActive && "border-warning-border",
             )}
@@ -725,6 +733,10 @@ function SectionNote({
  * answer) and "Add a delivery address" (a hole). A row that reads like an answer
  * when it's actually blank is how someone reaches a disabled Place-order button
  * with no idea which row is at fault.
+ *
+ * An open row keeps the card's white: the turned chevron and the panel unfolded
+ * beneath it already say which row is open, and tinting the row on top of that
+ * only broke the white run of the rows around it.
  */
 function SettingRow({
   icon: Icon,
@@ -769,10 +781,7 @@ function SettingRow({
       // Only a disclosure claims this. A row that opens a dialog leaves it off,
       // or it announces a panel that never appears.
       aria-expanded={disabled || expanded === undefined ? undefined : expanded}
-      className={cn(
-        "flex w-full scroll-mt-20 items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:bg-muted/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-55",
-        expanded ? "bg-muted/30" : "hover:bg-muted/40",
-      )}
+      className="flex w-full scroll-mt-20 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-55"
     >
       <span
         className={cn(

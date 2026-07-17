@@ -298,10 +298,20 @@ export function SetupWizard({
         </div>
       )}
 
-      {/* Footer — Cancel + Continue. Sticky on desktop; on mobile it sits at the
-          end so it never overlaps the bottom tab bar. */}
-      <div className="z-20 -mx-4 mt-2 border-t border-border bg-background/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:sticky lg:bottom-0 lg:-mx-8 lg:px-8">
-        <div className="flex items-center justify-between gap-2">
+      {/* Cancel + Confirm, docked at the foot of the viewport on every width —
+          the same bar checkout commits from, for the same reason. This footer was
+          `lg:sticky lg:bottom-0`, which only ever held on desktop: a phone parked
+          Confirm at the end of the meal grid, so picking one meal near the top
+          meant scrolling the entire pool to reach the button that acts on it.
+
+          See `checkout-view.tsx` for the reasoning this inherits — `fixed` rather
+          than `sticky` (the shell's `main` has a bottom padding a sticky bar can
+          never escape), an opaque fill rather than the old `bg-background/90`
+          (the meal cards ghosted through it), and what `bottom-dock`, `pb-safe`
+          and `lg:left-[var(--sidebar-w)]` each hold off. */}
+      <div className="h-24" aria-hidden />
+      <div className="bottom-dock pb-safe fixed inset-x-0 z-30 border-t border-border bg-card shadow-[0_-4px_16px_-8px_rgb(0_0_0/0.15)] lg:left-[var(--sidebar-w)]">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <Button variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
