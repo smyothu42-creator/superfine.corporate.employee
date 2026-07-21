@@ -58,6 +58,8 @@ interface SessionState {
   signIn: (account: Account) => void;
   /** Rename the signed-in account (edited from Account & Profile). No-op for guests. */
   setAccountName: (name: string) => void;
+  /** Update the signed-in account's phone number. No-op for guests. */
+  setAccountPhone: (phone: string) => void;
   signOut: () => void;
   markHydrated: () => void;
 }
@@ -96,6 +98,14 @@ export const useSessionStore = create<SessionState>()(
         })),
       setAccountName: (name) =>
         set((s) => (s.account ? { account: { ...s.account, name } } : {})),
+      // Keep the address form's phone in step with the account phone — it's the
+      // same person, and the checkout form seeds from it.
+      setAccountPhone: (phone) =>
+        set((s) =>
+          s.account
+            ? { account: { ...s.account, phone }, delivery: { ...s.delivery, phone } }
+            : {},
+        ),
       // The ZIP survives sign-out: it isn't identity, and re-asking is friction.
       // The address does not — it belongs to the person who just left.
       signOut: () => set((s) => ({ account: null, delivery: { ...emptyDelivery, zip: s.zip } })),

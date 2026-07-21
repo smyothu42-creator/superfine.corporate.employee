@@ -28,10 +28,17 @@ import {
 } from "@/data/menu";
 import { program } from "@/data/program";
 import { me } from "@/data/me";
+import { useDialog } from "@/lib/use-dialog";
 import { cn } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
 import type { CartAddOn } from "@/store/use-cart-store";
-import { setupMealPool, type AutoConfig, type SoldOutBehavior } from "./shared";
+import {
+  setupMealPool,
+  DEFAULT_AUTO_DAYS,
+  type AutoConfig,
+  type SoldOutBehavior,
+} from "./shared";
+import { AutoDayPicker } from "./day-picker";
 import { TOUR_PICK_EVENT } from "./walkthrough";
 
 const SOLD_OUT: { id: SoldOutBehavior; label: string; desc: string; recommended?: boolean }[] = [
@@ -67,6 +74,7 @@ export function SetupWizard({
   initialFavorites = [],
   initialCustomizations = {},
   initialSoldOut = "notify",
+  initialDays = DEFAULT_AUTO_DAYS,
   onActivate,
   onCancel,
 }: {
@@ -78,6 +86,8 @@ export function SetupWizard({
   initialCustomizations?: Record<string, CartAddOn[]>;
   /** The current unavailable-day rule, pre-selected on open. */
   initialSoldOut?: SoldOutBehavior;
+  /** Weekdays already selected, pre-selected on open. Defaults to all service days. */
+  initialDays?: number[];
   onActivate: (config: AutoConfig) => void;
   onCancel: () => void;
 }) {
@@ -89,6 +99,7 @@ export function SetupWizard({
   const [customizations, setCustomizations] =
     React.useState<Record<string, CartAddOn[]>>(initialCustomizations);
   const [soldOut, setSoldOut] = React.useState<SoldOutBehavior>(initialSoldOut);
+  const [days, setDays] = React.useState<number[]>(initialDays);
   // The meal whose customization popup is open, if any. Auto-order is
   // individual-style only (the pool excludes family-style), so this is always
   // the individual AddOnModal — never the family-style configurator.
@@ -101,7 +112,7 @@ export function SetupWizard({
   const [diets, setDiets] = React.useState<string[]>([]);
   const [category, setCategory] = React.useState("");
 
-  const config: AutoConfig = { status: "active", favorites, customizations, soldOut };
+  const config: AutoConfig = { status: "active", favorites, customizations, soldOut, days };
 
   function addFav(id: string, addOns: CartAddOn[] = []) {
     setFavorites((prev) =>
@@ -347,6 +358,8 @@ export function SetupWizard({
           editing={editing}
           soldOut={soldOut}
           onSelect={setSoldOut}
+          days={days}
+          onDaysChange={setDays}
           onClose={() => setRulesOpen(false)}
           onActivate={() => onActivate(config)}
         />
@@ -355,17 +368,29 @@ export function SetupWizard({
   );
 }
 
-/** "One quick rule" step, shown as a modal after the meals are picked. */
+/**
+ * The last step before switching on, shown as a modal after the meals are
+ * picked: which days to order on, and what to do when a pick is unavailable.
+ *
+ * Both live here rather than as their own wizard steps because neither is a
+ * decision anyone came to make — the days default to the whole contract and the
+ * rule has a recommendation, so most people read and confirm. Splitting them
+ * into steps would charge two screens for that.
+ */
 function RulesModal({
   editing,
   soldOut,
   onSelect,
+  days,
+  onDaysChange,
   onClose,
   onActivate,
 }: {
   editing?: boolean;
   soldOut: SoldOutBehavior;
   onSelect: (v: SoldOutBehavior) => void;
+  days: number[];
+  onDaysChange: (days: number[]) => void;
   onClose: () => void;
   onActivate: () => void;
 }) {
@@ -375,23 +400,24 @@ function RulesModal({
     const id = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label="Auto-order rule">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
         className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
       />
+      {/* The dialog is the sheet, not the box that also holds the scrim, so the
+          trap ends where the panel does. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Auto-order days and rules"
+        {...dialog.props}
         className={cn(
           "relative flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
           shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",
@@ -401,7 +427,7 @@ function RulesModal({
           <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-border sm:hidden" />
           <div className="flex items-start justify-between gap-3">
             <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
-              <SlidersHorizontal className="size-5 text-primary" /> One quick rule
+              <SlidersHorizontal className="size-5 text-primary" /> Days &amp; rules
             </h3>
             <button
               type="button"
@@ -412,29 +438,48 @@ function RulesModal({
               <X className="size-4" />
             </button>
           </div>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">
-            If a pick isn&apos;t available on a service day, what should we do?
-          </p>
         </div>
 
-        <div data-tour="rule-options" className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-4">
-          {SOLD_OUT.map((s) => (
-            <RadioCard
-              key={s.id}
-              active={soldOut === s.id}
-              onClick={() => onSelect(s.id)}
-              title={s.label}
-              desc={s.desc}
-              badge={s.recommended ? "Recommended" : undefined}
-            />
-          ))}
+        <div data-tour="rule-options" className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+          <div>
+            <p className="mb-2.5 text-sm font-semibold">Which days should we order?</p>
+            <AutoDayPicker days={days} onChange={onDaysChange} />
+            {/* An empty selection is a config that never orders anything, which
+                is what "turn it off" is for — so it blocks rather than silently
+                activating something inert. Shown only when it applies; there's
+                no running commentary on a valid selection. */}
+            {days.length ? null : (
+              <p className="mt-2 text-2xs font-semibold text-warning">Pick at least one day.</p>
+            )}
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <p className="mb-2.5 text-sm font-semibold">If a pick isn&apos;t available</p>
+            <div className="space-y-2">
+              {SOLD_OUT.map((s) => (
+                <RadioCard
+                  key={s.id}
+                  active={soldOut === s.id}
+                  onClick={() => onSelect(s.id)}
+                  title={s.label}
+                  desc={s.desc}
+                  badge={s.recommended ? "Recommended" : undefined}
+                />
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-5 py-4">
           <Button variant="ghost" onClick={onClose}>
             <ChevronLeft className="size-4" /> Back
           </Button>
-          <Button variant="teal" data-tour="rule-activate" onClick={onActivate}>
+          <Button
+            variant="teal"
+            data-tour="rule-activate"
+            disabled={!days.length}
+            onClick={onActivate}
+          >
             <Check className="size-4" /> {editing ? "Save changes" : "Turn on Auto-Order"}
           </Button>
         </div>

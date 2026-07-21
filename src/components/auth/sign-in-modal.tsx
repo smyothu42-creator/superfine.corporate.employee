@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { AuthPanel } from "@/features/auth/auth-panel";
+import { useDialog } from "@/lib/use-dialog";
 import { useUiStore } from "@/store/use-ui-store";
 
 /**
@@ -25,12 +26,9 @@ export function SignInModal() {
   const open = useUiStore((s) => s.signInPromptOpen);
   const close = useUiStore((s) => s.closeSignInPrompt);
 
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, close]);
+  // Called above the early-return and handed `open` rather than gated on it, so
+  // the hook count stays the same on the renders where nothing is shown.
+  const dialog = useDialog({ open, onClose: close });
 
   if (!open || typeof document === "undefined") return null;
 
@@ -41,6 +39,7 @@ export function SignInModal() {
         role="dialog"
         aria-modal="true"
         aria-label="Sign in"
+        {...dialog.props}
         className="relative w-full max-w-lg rounded-3xl border border-border bg-card p-7 shadow-raised animate-fade-in sm:p-9"
       >
         <button

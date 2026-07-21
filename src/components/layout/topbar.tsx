@@ -117,8 +117,8 @@ function Topbar() {
              lives in Account & Profile. */
           null
         ) : onCheckout ? (
-          /* Checkout: no header action — the on-page "Cutoff check" card already
-             covers per-day cutoffs. */
+          /* Checkout: no header action — the docked "Place order" bar carries the
+             next step, and the on-page "Cutoff check" card covers per-day cutoffs. */
           null
         ) : onNotifications ? (
           /* Notifications: unread count + mark all read. */
@@ -155,6 +155,18 @@ function Topbar() {
           </>
         )}
       </div>
+
+      {/* Single owner of the "cart changed" announcement for the whole shell —
+          it renders at every breakpoint, so nothing else that paints the count
+          may carry `aria-live` without every add being read out twice.
+
+          Kept outside the conditionals above so the region exists in the DOM
+          before the count changes — a live region mounted at the same moment as
+          its content is not announced. The units are spelled out because a bare
+          "3" tells a screen-reader user nothing about what moved. */}
+      <span aria-live="polite" aria-atomic="true" className="sr-only">
+        {cartCount === 1 ? "1 item in cart" : `${cartCount} items in cart`}
+      </span>
     </header>
   );
 }
@@ -222,6 +234,33 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
   const account = useSessionStore((s) => s.account);
   const percentMode = mode === "percent";
 
+  // The breakdown used to open on `group-hover` / `group-focus-within` alone,
+  // which put the whole subsidy calculation out of reach on a touch device —
+  // there is no hover, and tapping the trigger did nothing because it had no
+  // onClick. It's now an explicit toggle. Hover is kept purely as a desktop
+  // shortcut: `group-hover:` never fires on a touch pointer, so the two can
+  // co-exist. Order matters below — the click state is applied *after* the
+  // hover rules so moving the mouse away can't slam a tapped-open panel shut.
+  const [budgetOpen, setBudgetOpen] = React.useState(false);
+  const budgetRef = React.useRef<HTMLDivElement>(null);
+  const panelId = React.useId();
+
+  React.useEffect(() => {
+    if (!budgetOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setBudgetOpen(false);
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (!budgetRef.current?.contains(e.target as Node)) setBudgetOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [budgetOpen]);
+
   // Guests and individual customers have no company budget. Showing them an
   // allowance — even an empty one — advertises pricing they aren't entitled to.
   if (!isSubsidized(account)) return null;
@@ -246,12 +285,36 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
         ? "Budget used · extra is on you"
         : `${formatCurrency(remaining)} left today`;
 
+  /**
+   * The same fact with the sentence taken off, for phone widths. The pill shares
+   * that row with the page title, and the full wording ("Budget over · you pay
+   * $4.50") pushed into "Menu" — the money is the part being watched, so that's
+   * what survives; the pill's own colour and icon already say which state it is,
+   * and tapping it opens the breakdown that spells the rest out.
+   */
+  const shortLabel = percentMode
+    ? empty
+      ? `Pays ${pct}%`
+      : `You pay ${formatCurrency(youCover)}`
+    : over
+      ? `Over · ${formatCurrency(youCover)}`
+      : remaining === 0
+        ? "Budget used"
+        : `${formatCurrency(remaining)} left`;
+
   return (
-    <div className={cn("flex items-center gap-1.5", !over && "hidden sm:flex")}>
-      <div className="group relative">
+    /* Shown at every width. It used to appear on a phone only once the day was
+       over budget, which is the one reading a corporate employee can't act on
+       any more — the headroom is what they're deciding against while they pick
+       meals, and hiding it until it's spent made the subsidy look like a
+       desktop-only feature. The short label is what buys it the room. */
+    <div className="flex items-center gap-1.5">
+      <div ref={budgetRef} className="group relative">
         <button
           type="button"
-          aria-haspopup="dialog"
+          aria-expanded={budgetOpen}
+          aria-controls={panelId}
+          onClick={() => setBudgetOpen((o) => !o)}
           className={cn(
             "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold outline-none transition-colors",
             over
@@ -267,15 +330,32 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
             // Both subsidy models share the wallet icon on the pill.
             <Wallet className="size-3.5" />
           )}
-          <span className="nums">{label}</span>
-          <ChevronDown className="size-3.5 opacity-70 transition-transform group-hover:rotate-180" />
+          {/* Two renderings, one ever live: `hidden` is display:none, so the
+              copy that isn't showing is out of the accessibility tree too and
+              only one of them is ever announced. */}
+          <span className="nums sm:hidden">{shortLabel}</span>
+          <span className="nums hidden sm:inline">{label}</span>
+          <ChevronDown
+            className={cn(
+              "size-3.5 opacity-70 transition-transform group-hover:rotate-180",
+              budgetOpen && "rotate-180",
+            )}
+          />
         </button>
 
-        {/* Hover/focus breakdown */}
+        {/* Opens on tap (any device) and on hover/focus as a desktop shortcut.
+            Deliberately role-less: this is a non-modal breakdown anchored to its
+            pill, and it opens on hover. Calling it a dialog would promise a
+            screen-reader user a layer that traps focus and blocks the page
+            behind it, when in fact the page stays fully live and Tab walks
+            straight out. The trigger's aria-expanded/aria-controls is what
+            actually describes the relationship. */}
         <div
-          role="dialog"
-          aria-label="Today's budget breakdown"
-          className="pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-64 origin-top-right rounded-2xl border border-border bg-card p-4 text-foreground opacity-0 shadow-lg transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+          id={panelId}
+          className={cn(
+            "pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-64 origin-top-right rounded-2xl border border-border bg-card p-4 text-foreground opacity-0 shadow-lg transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100",
+            budgetOpen && "pointer-events-auto visible opacity-100",
+          )}
         >
           <div className="flex items-center gap-1.5 text-2xs font-semibold text-muted-foreground">
             <Wallet className="size-3.5 text-primary" /> Today&apos;s budget
@@ -323,7 +403,11 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
         onClick={toggleMode}
         aria-label={`Demo: switch to the ${percentMode ? "fixed daily allowance" : "percentage share"} subsidy model`}
         title="Demo: switch subsidy model"
-        className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        /* Desktop only. It's a demo control, and on a 320px phone it was the
+           difference between a readable page title and "M." — the subsidy
+           itself is what has to survive that row, not the switch between the
+           two models of it. */
+        className="hidden rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:block"
       >
         <ArrowLeftRight className="size-3.5" />
       </button>

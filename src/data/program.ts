@@ -16,6 +16,9 @@ export const program: MealProgram = {
   // Neptune lets employees see prices so they know what (if anything) they owe.
   showPrices: true,
   mealsPerDay: 1,
+  // Neptune's contract includes Auto-Order. Flip this to false to see the
+  // employee-facing "your company hasn't enabled this" screen.
+  autoOrderEnabled: true,
   serviceDays: "Mon–Wed",
   serviceDayNums: [1, 2, 3],
   individualSoftCutoff: "4:00 PM the day before",
@@ -92,6 +95,23 @@ export const support = {
   phoneHref: "tel:+15550123456",
   /** Main contact page opened by the "Contact page" link. */
   contactUrl: "https://superfinekitchen.example/contact",
+};
+
+/**
+ * Who at the *company* owns the meal program — distinct from {@link support},
+ * which is the kitchen. Anything the contract governs (which features are on,
+ * the subsidy, who's eligible) is this person's call, not Superfine's, so the
+ * screens that hit a contract limit point here rather than at our own support
+ * line. Sending someone to the kitchen for a decision the kitchen can't make is
+ * how a request dies in a queue.
+ *
+ * NOTE: placeholder demo values — swap for the real contract contact, or drive
+ * them off the company record, before shipping.
+ */
+export const programAdmin = {
+  name: "Dana Whitfield",
+  role: "People Ops",
+  email: "mealprogram@neptunecorp.com",
 };
 
 export function getAddress(id: string) {

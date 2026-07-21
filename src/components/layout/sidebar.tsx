@@ -2,15 +2,19 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { LogOut, LogIn, Apple } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { LogOut, LogIn, Apple, MessageSquareHeart } from "lucide-react";
 import { NAV_ITEMS, isActive, visibleNav, requiresAccount } from "@/lib/nav";
 import { useUiStore } from "@/store/use-ui-store";
 import { useSessionStore } from "@/store/use-session-store";
 import { Logo } from "@/components/brand/logo";
 import { Avatar } from "@/components/ui/avatar";
-import { confirm } from "@/store/use-confirm-store";
+import { useSignOut } from "@/features/auth/use-sign-out";
 import { cn } from "@/lib/utils";
+
+/** The rail's quiet foot-of-the-list links — not nav, and not styled like it. */
+const SECONDARY_LINK =
+  "flex items-center gap-2 py-1 text-2xs font-medium text-sidebar-muted transition-colors hover:text-white";
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -19,28 +23,12 @@ interface SidebarProps {
 /** Persistent deep-teal navigation rail (desktop) / drawer body (mobile). */
 function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
 
   const account = useSessionStore((s) => s.account);
-  const signOut = useSessionStore((s) => s.signOut);
   const openSignInPrompt = useUiStore((s) => s.openSignInPrompt);
+  const openFeedback = useUiStore((s) => s.openFeedbackModal);
 
-  async function handleLogout() {
-    const ok = await confirm({
-      title: account?.company ? `Sign out of ${account.company}?` : "Sign out?",
-      description: account?.company
-        ? "Your company's pricing will no longer apply until you verify again."
-        : "You can keep browsing, but you'll need to sign in again to order.",
-      confirmLabel: "Sign out",
-    });
-    if (ok) {
-      // Actually drop the session. The old code only navigated, which left the
-      // subsidy applied to whoever sat down at the machine next.
-      signOut();
-      onNavigate?.();
-      router.push("/login");
-    }
-  }
+  const handleLogout = useSignOut(onNavigate);
 
   return (
     // Width comes from `--sidebar-w` so a fixed element that has to start where
@@ -85,15 +73,37 @@ function Sidebar({ onNavigate }: SidebarProps) {
 
       {/* Secondary site links — kept quiet at the foot of the rail. Nutrition
           lookup lives here (not beside the Menu title) because pulling accurate
-          figures for some meals is hard, so we don't want to over-promise it. */}
-      <div className="px-4 pb-1 pt-2">
+          figures for some meals is hard, so we don't want to over-promise it.
+
+          Feedback joined it here from a floating button that sat over the menu
+          on every visit. Asking for feedback should be available, not insistent:
+          in the rail it's found by someone who has something to say, and it no
+          longer covers the meal in the bottom-right corner. Same quiet type as
+          Nutrition rather than a nav pill — neither is a place in the app, and a
+          pill among the pills would read as a sixth section. */}
+      <div className="space-y-0.5 px-4 pb-1 pt-2">
         <Link
           href="/nutrition"
           onClick={onNavigate}
-          className="flex items-center gap-2 py-1 text-2xs font-medium text-sidebar-muted transition-colors hover:text-white"
+          className={SECONDARY_LINK}
         >
           <Apple className="size-3.5 shrink-0" /> Check the nutrition information
         </Link>
+        {/* Signed in only: feedback is tied to an account and the orders behind
+            it, and a guest has neither. */}
+        {account ? (
+          <button
+            type="button"
+            onClick={() => {
+              openFeedback();
+              // Closes the mobile drawer, or the sheet opens behind it.
+              onNavigate?.();
+            }}
+            className={cn(SECONDARY_LINK, "w-full text-left")}
+          >
+            <MessageSquareHeart className="size-3.5 shrink-0" /> Share your feedback
+          </button>
+        ) : null}
       </div>
 
       {/* Profile — moved down from the topbar into the rail */}

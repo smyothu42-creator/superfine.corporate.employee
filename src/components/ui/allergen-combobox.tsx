@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Check, Plus, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,12 +40,69 @@ export function AllergenCombobox({
   const [query, setQuery] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(0);
   const ref = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const listRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
+
+  // The open list is portalled to <body> and positioned `fixed`, not rendered
+  // `absolute` inside this component. An absolute list is clipped by any
+  // ancestor that hides overflow — and the account settings shell does exactly
+  // that (`lg:overflow-hidden` to keep its rail's rounded corners), which sheared
+  // this dropdown off at the card edge. Same fix, and same reasoning, as
+  // ThemeSelect: escape the clipping ancestor rather than fight it with z-index.
+  const [placement, setPlacement] = React.useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
+  const GAP = 8;
+  const EDGE = 8;
+  const MIN_H = 140;
+  const MAX_H = 288;
+
+  const measure = React.useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const r = trigger.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - GAP - EDGE;
+    const above = r.top - GAP - EDGE;
+    // Drop down by default; flip up only when below is genuinely too cramped and
+    // above has more room, so it doesn't jump sides on small scrolls.
+    const up = below < MIN_H && above > below;
+    setPlacement({
+      top: up ? undefined : r.bottom + GAP,
+      bottom: up ? window.innerHeight - r.top + GAP : undefined,
+      left: r.left,
+      width: r.width,
+      maxHeight: Math.max(MIN_H, Math.min(MAX_H, up ? above : below)),
+    });
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    measure();
+    const onReflow = () => measure();
+    // Capture phase: the trigger may live inside a scrolling panel whose scroll
+    // doesn't bubble to window.
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
+    return () => {
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
+    };
+  }, [open, measure]);
 
   React.useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // The list is portalled outside this component's tree, so testing only the
+      // wrapper would close it on mousedown and swallow the option click.
+      if (ref.current?.contains(target) || listRef.current?.contains(target)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -109,6 +167,7 @@ export function AllergenCombobox({
     <div ref={ref} className={cn("relative w-full", className)}>
       {/* Trigger / search input — selected allergens sit inside as chips. */}
       <div
+        ref={triggerRef}
         className={cn(
           "flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-xl border bg-card px-3 py-1.5 text-sm transition-colors",
           open ? "border-primary ring-2 ring-ring/30" : "border-input hover:border-primary/40",
@@ -185,11 +244,21 @@ export function AllergenCombobox({
         />
       </div>
 
-      {open ? (
+      {open && placement
+        ? createPortal(
         <div
+          ref={listRef}
           role="listbox"
           aria-multiselectable
-          className="absolute top-full z-50 mt-2 max-h-72 w-full overflow-auto rounded-2xl border border-border bg-card p-1.5 shadow-raised"
+          style={{
+            position: "fixed",
+            top: placement.top,
+            bottom: placement.bottom,
+            left: placement.left,
+            width: placement.width,
+            maxHeight: placement.maxHeight,
+          }}
+          className="z-50 overflow-auto rounded-2xl border border-border bg-card p-1.5 shadow-raised"
         >
           {filtered.map((o, i) => {
             const active = value.some((v) => v.toLowerCase() === o.toLowerCase());
@@ -235,8 +304,10 @@ export function AllergenCombobox({
           {filtered.length === 0 && !canAddCustom ? (
             <p className="px-3 py-2 text-[13px] text-muted-foreground">No allergens found.</p>
           ) : null}
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
 
       {/* Selected chips in their own row below the search box — same pill shape
           as the Dietary tags, kept in the danger tone to read as "avoid". */}

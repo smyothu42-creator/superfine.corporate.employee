@@ -5,8 +5,13 @@ import { useUiStore } from "@/store/use-ui-store";
 import { companyCovers, employeeCovers, budgetRemaining } from "@/lib/subsidy";
 import type { Order, PaymentChoice } from "@/data/types";
 
-/** Packaging choice for an individual order. */
-export type PackagingChoice = "disposable" | "reusable";
+/**
+ * Packaging choice for an individual order. Only `reusable` comes back to the
+ * kitchen, so it's the only one that carries a fee and a pickup — the other two
+ * are single-trip and differ in what happens to them afterwards, not in what
+ * the order has to arrange.
+ */
+export type PackagingChoice = "disposable" | "compostable" | "reusable";
 
 /** A resolved add-on selection on a cart line. */
 export interface CartAddOn {
@@ -135,7 +140,7 @@ interface CartState {
   setPayment: (p: PaymentChoice) => void;
   setWindow: (date: string, window: string) => void;
   setAddress: (id: string) => void;
-  /** Set the packaging choice; switching to disposable clears any pickup selection. */
+  /** Set the packaging choice; anything but reusable clears the pickup selection. */
   setPackaging: (p: PackagingChoice) => void;
   /** Pick an included (free) pickup window. */
   setPickupWindow: (window: string) => void;
@@ -160,7 +165,7 @@ interface CartState {
   tax: () => number;
   /** Containers the order needs — meals for individual lines, guests for family. */
   packagingQty: () => number;
-  /** Flat reusable-packaging fee for the current quantity (0 when disposable). */
+  /** Flat reusable-packaging fee for the current quantity (0 for single-trip). */
   packagingFee: () => number;
   /** Final amount the employee pays: out-of-pocket meals + tax + packaging. */
   total: () => number;
@@ -278,10 +283,13 @@ export const useCartStore = create<CartState>()(
   setPayment: (payment) => set({ payment }),
   setWindow: (date, window) => set((s) => ({ windows: { ...s.windows, [date]: window } })),
   setAddress: (addressId) => set({ addressId }),
+  // Only reusable has anything to collect, so leaving it drops the pickup —
+  // otherwise a compostable order would keep a stale collection time nobody is
+  // coming for, and the fee rows keyed off `specialPickup` would still charge.
   setPackaging: (packaging) =>
-    packaging === "disposable"
-      ? set({ packaging, pickupWindow: null, specialPickup: false })
-      : set({ packaging }),
+    packaging === "reusable"
+      ? set({ packaging })
+      : set({ packaging, pickupWindow: null, specialPickup: false }),
   setPickupWindow: (window) => set({ pickupWindow: window, specialPickup: false }),
   setCustomPickup: (time) => set({ pickupWindow: time, specialPickup: true }),
 

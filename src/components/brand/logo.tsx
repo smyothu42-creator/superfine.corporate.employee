@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 interface LogoProps {
   /** "light" for dark backgrounds (teal rail), "dark" for light backgrounds. */
   variant?: "light" | "dark";
-  /** Wordmark height: "md" (default), "lg", or "xl" for the largest mark. */
-  size?: "md" | "lg" | "xl";
+  /** Wordmark height: "md" (default), "lg", "xl", or "2xl" for the largest mark. */
+  size?: "md" | "lg" | "xl" | "2xl";
   showPlatform?: boolean;
   className?: string;
 }
@@ -15,6 +15,7 @@ const logoHeights = {
   md: "h-8",
   lg: "h-12",
   xl: "h-16",
+  "2xl": "h-20",
 };
 
 /** Pixel heights matching `logoHeights`, applied inline so the mark is sized
@@ -24,6 +25,7 @@ const logoHeightPx = {
   md: 32,
   lg: 48,
   xl: 64,
+  "2xl": 80,
 };
 
 /**

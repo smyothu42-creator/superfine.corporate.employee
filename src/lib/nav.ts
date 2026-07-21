@@ -4,7 +4,6 @@ import {
   Repeat,
   Bell,
   UserCog,
-  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import { isSubsidized, type Account } from "@/store/use-session-store";
@@ -31,22 +30,11 @@ export const NAV_ITEMS: NavItem[] = [
   // Auto-Order draws from a company subsidy, so it's corporate-only.
   { label: "Auto-Order", href: "/auto-order", icon: Repeat, corporateOnly: true },
   { label: "Notifications", href: "/notifications", icon: Bell },
-  // Feedback is no longer a rail item — it lives on the floating action button
-  // (see {@link FeedbackLauncher}). The `/feedback` route still exists for the
-  // "Leave feedback" deep link from a past order.
+  // Feedback is deliberately not a nav item: it sits with the rail's quiet
+  // secondary links below this list, where it's available without asking to be
+  // noticed. The `/feedback` route still exists for the "Leave feedback" deep
+  // link from a past order.
   { label: "Account & Profile", href: "/account", icon: UserCog },
-];
-
-/**
- * Compact bottom-bar nav for mobile — the platform is mobile-first for
- * employees (manufacturers are phone-only). The 5 highest-traffic tasks.
- */
-export const MOBILE_NAV: NavItem[] = [
-  { label: "Menu", href: "/menu", icon: UtensilsCrossed },
-  { label: "Cart", href: "/cart", icon: ShoppingCart, match: ["/checkout"] },
-  { label: "Orders", href: "/orders", icon: ClipboardList },
-  { label: "Auto", href: "/auto-order", icon: Repeat, corporateOnly: true },
-  { label: "Account", href: "/account", icon: UserCog },
 ];
 
 /** Nav items visible to the given account — hides corporate-only items (e.g.

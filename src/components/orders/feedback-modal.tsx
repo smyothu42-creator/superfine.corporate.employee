@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea, Label } from "@/components/ui/input";
 import { toast } from "@/store/use-toast-store";
 import { useFeedbackStore } from "@/store/use-feedback-store";
+import { useDialog } from "@/lib/use-dialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,13 +24,8 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
     const id = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
 
   const canSubmit = message.trim().length > 0;
 
@@ -48,19 +44,20 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Leave feedback for ${orderId}`}
-    >
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
         className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
       />
+      {/* The dialog is the sheet, not the box that also holds the scrim, so the
+          trap ends where the panel does. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Leave feedback for ${orderId}`}
+        {...dialog.props}
         className={cn(
           "relative flex max-h-[90dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-200 sm:rounded-3xl",
           shown ? "translate-y-0 sm:scale-100 sm:opacity-100" : "translate-y-full sm:translate-y-0 sm:scale-95 sm:opacity-0",

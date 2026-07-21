@@ -10,7 +10,7 @@ import { FeedbackForm } from "@/features/feedback/feedback-form";
  * is still reachable directly — notably via the `/feedback?order=ORD-2891` deep
  * link that the "Leave feedback" action on a past order uses to arrive here with
  * the order pre-filled. The everyday entry point is the floating action button
- * (see {@link FeedbackLauncher}), which opens the same form as a modal.
+ * (the rail's "Share your feedback" link), which opens the same form as a modal.
  *
  * The content borrows the sign-in screen's two-column shape: a branded
  * illustration + copy on the left, the form on the right, collapsing to just the
@@ -18,18 +18,18 @@ import { FeedbackForm } from "@/features/feedback/feedback-form";
  */
 export default function FeedbackPage() {
   return (
-    // Full-bleed: cancel the app shell's content padding (and its reserved
-    // tab-bar space) so the two panels touch all four edges of the content area
+    // Full-bleed: cancel the app shell's content padding (and its floor
+    // clearance) so the two panels touch all four edges of the content area
     // instead of floating as a centered card. `4rem` is the topbar height.
-    <div className="-mx-4 -mt-6 -mb-tab-bar sm:-mx-6 lg:-mx-8">
+    <div className="-mx-4 -mt-6 -mb-floor sm:-mx-6 lg:-mx-8">
       <div className="grid lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-2">
         {/* Left panel: the same login-page hero (logo, headline, copy, green
             line) in the Auto-Order header's lemon-yellow/teal palette — but with
             no background illustration. */}
         <FeedbackHero />
         {/* Form fills the right half and centres on desktop; on mobile it's the
-            whole width and keeps clearance above the fixed tab bar. */}
-        <div className="flex flex-col justify-center bg-card p-6 pb-tab-bar sm:p-10 lg:p-12">
+            whole width and keeps its foot clear of the home indicator. */}
+        <div className="flex flex-col justify-center bg-card p-6 pb-floor sm:p-10 lg:p-12">
           <div className="mx-auto w-full max-w-md">
             <React.Suspense fallback={<div className="h-[520px]" />}>
               <DeepLinkedForm />

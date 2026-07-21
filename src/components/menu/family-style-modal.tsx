@@ -11,6 +11,7 @@ import {
   servingUnit,
   familyStyleTotal,
 } from "@/data/menu";
+import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { MenuItem, ServingGroup } from "@/data/types";
 import type { CartServing } from "@/store/use-cart-store";
@@ -66,6 +67,11 @@ export function FamilyStyleModal({
   const groups = item.servingGroups ?? [];
   const required = groups.filter((g) => g.perGuest > 0);
   const extras = groups.filter((g) => g.perGuest === 0);
+
+  // Embedded is a column of the meal detail page, not a layer over it, so the
+  // trap and the scroll lock stand down there. Called above the embedded
+  // early-return so the hook itself runs on every render either way.
+  const dialog = useDialog({ open: !embedded, onClose });
 
   const [guests, setGuests] = React.useState(minGuests);
   const [quantities, setQuantities] = React.useState<Quantities>(() =>
@@ -340,14 +346,17 @@ export function FamilyStyleModal({
   // Portalled to <body> so a transformed/overflow ancestor in the menu tree can't
   // become the containing block for this `fixed` overlay and clip its top edge.
   return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Configure ${item.name} for ${dateLabel}`}
-    >
-      <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
+      <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} aria-hidden />
+      {/* The dialog is the sheet itself, not the box that also wraps the scrim,
+          so the focus trap stops at the panel's edge. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Configure ${item.name} for ${dateLabel}`}
+        {...dialog.props}
+        className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl"
+      >
         <div className="flex items-start justify-between gap-3 border-b border-border p-5">
           <div className="min-w-0">
             <h2 className="font-display text-lg font-semibold tracking-tight">{item.name}</h2>

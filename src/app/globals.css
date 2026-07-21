@@ -8,9 +8,6 @@
   }
 
   :root {
-    /* Height of the phone tab bar, before the home-indicator inset. Anything
-       that floats above it reads this rather than hard-coding 68px. */
-    --tab-bar-h: 4.25rem;
     /* Width of the desktop rail. Anything `fixed` that must start where the
        content does reads this rather than re-typing the rail's width. */
     --sidebar-w: 16rem;
@@ -106,47 +103,39 @@
      and the home indicator. Every fixed element that touches an edge has to
      pad itself back out, or the OS draws its own furniture on top of it. */
 
-  /* Bottom-anchored bars: tab bar, sticky CTAs, bottom sheets. */
+  /* Bottom-anchored bars: docked CTAs, sticky footers, bottom sheets. */
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-  /* A floating element that must clear the phone tab bar entirely. */
-  .above-tab-bar {
-    bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom, 0px) + 0.75rem);
+  /* ── The viewport floor ──────────────────────────────────────────────────
+     Phone navigation is the drawer behind the topbar's hamburger, so nothing
+     is parked at the bottom of every page any more: what's left to clear is
+     the home indicator. (A page that docks its own CTA reserves that bar's
+     height itself, with a spacer of its own.) These stay named utilities
+     because the inset is easy to forget, and desktop has none. */
+
+  /* Breathing room at the end of a page, clear of the home indicator. Nothing
+     floats over the corner any more — the feedback button that used to is now a
+     link in the rail — so this is back to plain page padding. */
+  .pb-floor {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
   }
-  /* Scroll room at the end of a page so its last row isn't under the tab bar. */
-  .pb-tab-bar {
-    padding-bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom, 0px) + 1rem);
+  /* Cancels the shell's `.pb-floor` for a full-bleed page that re-adds it inside. */
+  .-mb-floor {
+    margin-bottom: calc(-1 * (env(safe-area-inset-bottom, 0px) + 1.5rem));
   }
-  /* Cancels the shell's `.pb-tab-bar` for a full-bleed page that re-adds it inside. */
-  .-mb-tab-bar {
-    margin-bottom: calc(-1 * (var(--tab-bar-h) + env(safe-area-inset-bottom, 0px) + 1rem));
-  }
-  /* The tab bar's own height: exactly `--tab-bar-h` of content plus the
-     home-indicator inset it pads out with `.pb-safe`. Sizing it from content
-     instead left the variable a ~3px lie, which nobody noticed while everything
-     only used it for clearance — but a bar docking flush on top of it showed
-     the gap. */
-  .h-tab-bar {
-    height: calc(var(--tab-bar-h) + env(safe-area-inset-bottom, 0px));
-  }
-  /* A docked action bar: rests flush on the tab bar on a phone and on the
-     viewport floor on desktop, where there is no tab bar. */
+  /* A docked action bar. Sits on the floor at every width now; it pads itself
+     out of the home indicator with `.pb-safe`, so this stays at 0 rather than
+     adding the inset twice. */
   .bottom-dock {
-    bottom: calc(var(--tab-bar-h) + env(safe-area-inset-bottom, 0px));
+    bottom: 0;
   }
   @media (min-width: 1024px) {
-    .above-tab-bar {
-      bottom: 1.5rem;
-    }
-    .pb-tab-bar {
+    .pb-floor {
       padding-bottom: 1.5rem;
     }
-    .-mb-tab-bar {
+    .-mb-floor {
       margin-bottom: -1.5rem;
-    }
-    .bottom-dock {
-      bottom: 0;
     }
   }
 

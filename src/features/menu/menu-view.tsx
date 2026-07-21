@@ -602,11 +602,14 @@ export function MenuView() {
               className="h-10 w-full rounded-full bg-transparent pl-9 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground/70 sm:h-9 sm:text-sm"
             />
           </div>
-          {/* flex-nowrap (not overflow-x-auto): a scroll container clips the
+          {/* Wrapping, not `overflow-x-auto`: a scroll container clips the
               pills' absolutely-positioned dropdown panels on both axes, so
               they'd open invisibly on phones. The pills shrink on phones (see
-              their own sm: breakpoints) so all three stay on one row. */}
-          <div className="flex flex-nowrap items-center gap-1 sm:contents">
+              their own sm: breakpoints) and all three fit one row from 360px
+              up; at the 320px floor they are ~287px of unshrinkable width in a
+              ~276px well, so the third drops to a second line rather than
+              pushing the whole page into horizontal scroll. */}
+          <div className="flex flex-wrap items-center gap-1 sm:contents">
             <div className="hidden h-6 w-px shrink-0 bg-border sm:block" />
             <MultiSelectFilter
               label="Allergens"
@@ -990,7 +993,7 @@ function DayStrip({
             aria-label="Scroll days left"
             disabled={!canLeft}
             onClick={() => scrollByStep(-1)}
-            className="absolute left-0 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-0"
+            className="touch-target absolute left-0 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
           >
             <ChevronLeft className="size-5" />
           </button>
@@ -999,7 +1002,7 @@ function DayStrip({
             aria-label="Scroll days right"
             disabled={!canRight}
             onClick={() => scrollByStep(1)}
-            className="absolute right-0 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-0"
+            className="touch-target absolute right-0 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
           >
             <ChevronRight className="size-5" />
           </button>
@@ -1194,7 +1197,7 @@ function PromoBanner() {
             aria-label="Previous promotions"
             disabled={!canLeft}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
-            className="absolute -left-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-0"
+            className="touch-target absolute -left-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
           >
             <ChevronLeft className="size-5" />
           </button>
@@ -1203,7 +1206,7 @@ function PromoBanner() {
             aria-label="Next promotions"
             disabled={!canRight}
             onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-            className="absolute -right-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-0"
+            className="touch-target absolute -right-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
           >
             <ChevronRight className="size-5" />
           </button>
@@ -1470,7 +1473,6 @@ function UnifiedDatePicker({
       <button
         ref={triggerRef}
         type="button"
-        aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={
           mode === "single"
@@ -1479,10 +1481,12 @@ function UnifiedDatePicker({
         }
         onClick={() => (open ? setOpen(false) : openMenu())}
         className={cn(
-          // py matches the Individual/Family toggle height (its p-1 + border add
-          // ~10px around an identically-padded button), keeping the same pill style.
-          // Shrinks on phones so the tabs + date sit on one line; restored at sm+.
-          "flex max-w-full items-center gap-1 rounded-full px-2.5 py-2 text-xs font-semibold text-teal-deep transition-colors sm:gap-1.5 sm:px-3 sm:py-[11px] sm:text-[13px]",
+          // Height matches the Individual/Family toggle beside it — that control
+          // is a button inside a `p-1` bordered wrapper, so this one carries the
+          // wrapper's 10px itself to land on the same line. Both sit at ~44px on
+          // phones (the touch-target floor) and return to the tighter desktop
+          // proportions at sm+.
+          "flex max-w-full items-center gap-1 rounded-full px-2.5 py-[15px] text-xs font-semibold text-teal-deep transition-colors sm:gap-1.5 sm:px-3 sm:py-[11px] sm:text-[13px]",
           open ? "bg-teal-soft" : "bg-teal-wash hover:bg-teal-soft",
         )}
       >
@@ -1514,9 +1518,14 @@ function UnifiedDatePicker({
       </button>
 
       {open ? (
+        // Deliberately role-less. This is a calendar anchored to its pill, not a
+        // modal: there is no scrim, the menu behind stays live and scrollable,
+        // and Tab is meant to walk out of it. (The mobile branch is `fixed` only
+        // to escape the header's clipping — it is still positioned under the
+        // trigger, not over the page.) Calling it a dialog would promise a
+        // screen-reader user a focus trap that isn't there and shouldn't be; the
+        // trigger's aria-expanded carries the open state instead.
         <div
-          role="dialog"
-          aria-label="Choose a delivery date"
           style={mobileTop != null ? { top: mobileTop } : undefined}
           className={cn(
             "z-50 rounded-2xl border border-border bg-card p-3 shadow-raised",
@@ -1557,7 +1566,7 @@ function UnifiedDatePicker({
               type="button"
               aria-label="Previous month"
               onClick={() => shiftMonth(-1)}
-              className="rounded-lg p-1 text-primary transition-colors hover:bg-muted"
+              className="touch-target rounded-lg p-1 text-primary transition-colors hover:bg-muted"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -1566,7 +1575,7 @@ function UnifiedDatePicker({
               type="button"
               aria-label="Next month"
               onClick={() => shiftMonth(1)}
-              className="rounded-lg p-1 text-primary transition-colors hover:bg-muted"
+              className="touch-target rounded-lg p-1 text-primary transition-colors hover:bg-muted"
             >
               <ChevronRight className="size-4" />
             </button>

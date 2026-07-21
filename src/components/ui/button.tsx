@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { LoaderCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
@@ -38,15 +39,48 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /**
+   * Work is in flight. Swaps the leading content for a spinner, blocks further
+   * presses, and marks the button busy for assistive tech — so a slow submit
+   * can't be fired twice and doesn't look ignored.
+   *
+   * Ignored under `asChild`: the caller owns that element's content, and a
+   * `Slot` accepts exactly one child, so there is nowhere to put the spinner.
+   */
+  loading?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant, size, block, asChild = false, ...props },
+  { className, variant, size, block, asChild = false, loading = false, disabled, children, ...props },
   ref,
 ) {
   const Comp = asChild ? Slot : "button";
+  const busy = loading && !asChild;
   return (
-    <Comp ref={ref} className={cn(buttonVariants({ variant, size, block }), className)} {...props} />
+    <Comp
+      ref={ref}
+      className={cn(buttonVariants({ variant, size, block }), className)}
+      // `disabled` alone would drop the button out of the tab order mid-task and
+      // throw focus to the body; `aria-busy` is what actually says "working".
+      disabled={disabled || busy}
+      aria-busy={busy || undefined}
+      {...props}
+    >
+      {busy ? (
+        <>
+          {/* Gated on motion preference: the global reduced-motion rule freezes
+              animations, which would leave a stationary spinner reading as a
+              stuck icon rather than as progress. */}
+          <LoaderCircle
+            aria-hidden
+            className="motion-safe:animate-spin motion-reduce:opacity-60"
+          />
+          {children}
+        </>
+      ) : (
+        children
+      )}
+    </Comp>
   );
 });
 

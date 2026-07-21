@@ -7,6 +7,8 @@ import { useCartStore } from "@/store/use-cart-store";
 import { useOrdersStore } from "@/store/use-orders-store";
 import { useOrderEditStore } from "@/store/use-order-edit-store";
 import { useUiStore } from "@/store/use-ui-store";
+import { makeLineId } from "@/data/orders";
+import { currentRecipeVersion } from "@/data/recipe-versions";
 import type { Order, OrderDay } from "@/data/types";
 
 /**
@@ -104,12 +106,17 @@ export function useOrderEdit() {
     const days: OrderDay[] = dates.map((date) => ({
       date,
       deliveryWindow: cart.windows[date] ?? fallbackWindow,
-      items: cart.itemsForDate(date).map((l) => ({
+      // An edited order is re-lined from the cart, so every line is minted the
+      // same way a placed order's is — id and recipe pin included, or the saved
+      // order comes back unratable.
+      items: cart.itemsForDate(date).map((l, i) => ({
+        lineId: makeLineId(id, date, l.itemId, i),
         itemId: l.itemId,
         name: l.name,
         qty: l.qty,
         addOns: l.addOns.map((a) => a.name),
         price: l.unitPrice,
+        recipeVersion: currentRecipeVersion(l.itemId),
       })),
     }));
     updateOrder(id, {

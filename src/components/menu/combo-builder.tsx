@@ -248,7 +248,7 @@ export function ComboBlock({
               type="button"
               onClick={onOpen}
               aria-label={`Edit customization ${index + 1}`}
-              className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="touch-target rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <Pencil className="size-3.5" />
             </button>
@@ -327,14 +327,23 @@ function QtyStepper({
   onChange: (qty: number) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
+    // The −/+ pair sits shoulder to shoulder, so the `touch-target` trick is out:
+    // two invisible 44px boxes would overlap and the upper one would swallow taps
+    // meant for its neighbour. Grow the real target instead (same split the cart
+    // line-item stepper uses): the button is a size-11 tap area with a size-7
+    // disc painted inside it, and both collapse to size-7 once a precise pointer
+    // is driving. The gap closes on touch so the wider buttons don't spread the
+    // control out.
+    <div className="flex shrink-0 items-center gap-0 sm:gap-1.5">
       <button
         type="button"
         aria-label={qty > 1 ? `One fewer ${label}` : `Remove ${label}`}
         onClick={() => onChange(qty - 1)}
-        className="flex size-7 items-center justify-center rounded-full border border-border bg-card text-foreground hover:bg-muted"
+        className="flex size-11 items-center justify-center sm:size-7"
       >
-        {qty > 1 ? <Minus className="size-3" /> : <Trash2 className="size-3" />}
+        <span className="flex size-7 items-center justify-center rounded-full border border-border bg-card text-foreground hover:bg-muted">
+          {qty > 1 ? <Minus className="size-3" /> : <Trash2 className="size-3" />}
+        </span>
       </button>
       <span className="w-5 text-center text-[13px] font-semibold nums" aria-live="polite">
         {qty}
@@ -343,9 +352,11 @@ function QtyStepper({
         type="button"
         aria-label={`One more ${label}`}
         onClick={() => onChange(qty + 1)}
-        className="flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep"
+        className="flex size-11 items-center justify-center sm:size-7"
       >
-        <Plus className="size-3" />
+        <span className="flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep">
+          <Plus className="size-3" />
+        </span>
       </button>
     </div>
   );

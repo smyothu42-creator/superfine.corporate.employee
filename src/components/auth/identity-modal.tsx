@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { IdentityFlow } from "@/features/auth/identity-flow";
+import { useDialog } from "@/lib/use-dialog";
 import type { Account } from "@/store/use-session-store";
 
 /**
@@ -24,14 +25,10 @@ export function IdentityModal({
   onClose: () => void;
   onDone?: (account: Account) => void;
 }) {
-  // Escape closes. Bound only while open, so a background page doesn't keep a
-  // listener alive that swallows Escape from whatever dialog is actually up.
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Escape, the focus trap, focus restore and the scroll lock all come from the
+  // hook. It has to be called above the early-return below, and no-ops on
+  // `open: false`, which is why `open` goes in rather than gating the call.
+  const dialog = useDialog({ open, onClose });
 
   if (!open || typeof document === "undefined") return null;
 
@@ -46,6 +43,7 @@ export function IdentityModal({
         role="dialog"
         aria-modal="true"
         aria-label="Sign in or continue as a guest"
+        {...dialog.props}
         className="relative w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-raised animate-fade-in"
       >
         <button

@@ -13,6 +13,8 @@ import {
   Clock,
   CreditCard,
   MessageSquare,
+  Star,
+  Link2,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,9 @@ import { getItem } from "@/data/menu";
 import { orderPayment } from "@/data/orders";
 import { program } from "@/data/program";
 import { useOrdersStore } from "@/store/use-orders-store";
+import { useRatingsStore } from "@/store/use-ratings-store";
+import { RateItems } from "@/features/ratings/rate-items";
+import { encodeRatingToken } from "@/lib/rating-token";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
@@ -38,6 +43,93 @@ const PAYMENT_LABEL: Record<PaymentChoice, string> = {
   pay_later: "Invoice to company",
   pay_now: "Paid with Square",
 };
+
+/**
+ * "Rate your meals", on a delivered order. Collapsed to a prompt until it's
+ * opened — the page is here to answer "what did I order and what did it cost",
+ * and a star grid unfolded across the top would answer a question nobody asked
+ * on the way in.
+ *
+ * Once every line is rated it stops being a prompt and becomes a record: the
+ * card would otherwise sit there inviting an action the store rejects.
+ */
+function RateOrderCard({ order }: { order: Order }) {
+  // Select the whole list and narrow it here. Filtering *inside* the selector
+  // returns a new array on every store read, which zustand compares by identity
+  // — it never matches, so the component re-renders forever.
+  const all = useRatingsStore((s) => s.ratings);
+  const ratings = React.useMemo(
+    () => all.filter((r) => r.orderId === order.id),
+    [all, order.id],
+  );
+  const [open, setOpen] = React.useState(false);
+
+  const lines = order.days.flatMap((d) => d.items);
+  const rated = new Set(ratings.map((r) => r.lineId));
+  const left = lines.filter((l) => !rated.has(l.lineId)).length;
+
+  // Collapses to the record only when it isn't open. Folding the moment the last
+  // rating lands would tear the thank-you screen out from under the tap that
+  // caused it — the card closes when its Done is pressed, not before.
+  if (left === 0 && !open) {
+    const avg =
+      ratings.reduce((n, r) => n + r.stars, 0) / Math.max(ratings.length, 1);
+    return (
+      <Card>
+        <CardBody className="flex items-center gap-3 py-3.5">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-yellow/20 text-teal-deep">
+            <Star className="size-4 fill-yellow text-yellow" />
+          </span>
+          <p className="text-[13px] text-muted-foreground">
+            You rated {ratings.length} {ratings.length === 1 ? "meal" : "meals"} from this order
+            {ratings.length ? ` · ${Math.round(avg * 10) / 10} average` : ""}.
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardBody className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-yellow/20 text-teal-deep">
+            <Star className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold">Rate your meals</p>
+            <p className="text-2xs text-muted-foreground">
+              {open
+                ? "Rate one, some or all — anything you skip stays open"
+                : `${left} of ${lines.length} not yet rated · rate one, some or all`}
+            </p>
+          </div>
+          {!open ? (
+            <Button size="sm" onClick={() => setOpen(true)}>
+              Rate items
+            </Button>
+          ) : null}
+        </div>
+        {open ? <RateItems order={order} source="account" onDone={() => setOpen(false)} /> : null}
+
+        {/* Stands in for the "how was lunch?" email. The link is the real
+            artefact of this feature — it has to be reachable to be testable,
+            and in production this row is the mail, not a button. */}
+        <button
+          type="button"
+          onClick={() => {
+            const url = `${window.location.origin}/r/${encodeRatingToken(order.id)}`;
+            void navigator.clipboard?.writeText(url);
+            toast.success("Rating link copied", "The same link we email after delivery.");
+          }}
+          className="flex items-center gap-1.5 text-2xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Link2 className="size-3.5" /> Copy the rating link
+        </button>
+      </CardBody>
+    </Card>
+  );
+}
 
 export function OrderDetailView({ order: initialOrder }: { order: Order }) {
   const router = useRouter();
@@ -88,6 +180,12 @@ export function OrderDetailView({ order: initialOrder }: { order: Order }) {
           </CardBody>
         </Card>
       ) : null}
+
+      {/* Rating lives above the order's own detail on a delivered order: it's the
+          one thing left to *do* here, and below three day-cards it would be
+          found only by someone already scrolling for it. Delivered only —
+          nobody can rate a lunch that hasn't arrived. */}
+      {order.status === "delivered" ? <RateOrderCard order={order} /> : null}
 
       {/* When must this be edited by — or is it locked? One prominent, type-aware banner. */}
       {active ? (

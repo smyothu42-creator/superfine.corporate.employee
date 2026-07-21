@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Field } from "@/components/ui/input";
 import { checkZip, neighborhoodFor } from "@/data/service-areas";
 import { useSessionStore } from "@/store/use-session-store";
+import { useDialog } from "@/lib/use-dialog";
 
 /**
  * Where the browse-without-an-account path resolves a delivery ZIP.
@@ -69,12 +70,11 @@ export function LocationDialog({
     }
   }, [open, phase, detectedZip]);
 
-  React.useEffect(() => {
-    if (!open || blocking) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose?.();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, blocking, onClose]);
+  // Withholding `onClose` is how the blocking variant stays undismissable: the
+  // hook then leaves Escape alone. The focus trap still applies, which is the
+  // point — a gate you can't answer and can't tab past is worse than one you
+  // can't answer. Called before the early return below; it no-ops on `!open`.
+  const dialog = useDialog({ open, onClose: blocking ? undefined : onClose });
 
   if (!open || typeof document === "undefined") return null;
 
@@ -99,6 +99,7 @@ export function LocationDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Delivery location"
+        {...dialog.props}
         className="relative w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-raised animate-fade-in"
       >
         {blocking ? null : (
@@ -210,6 +211,11 @@ export function LocationDialog({
                 placeholder="94103"
                 autoComplete="postal-code"
                 autoFocus
+                // The whole dialog exists to collect this one field, so it wins
+                // the dialog's initial focus over the close button that happens
+                // to come first in the DOM. `autoFocus` alone loses that race —
+                // React fires it on mount, before the focus trap engages.
+                data-autofocus
               />
               {/* Confirm the hit as they type — five digits with no feedback is
                   five digits you re-read before trusting the button. */}

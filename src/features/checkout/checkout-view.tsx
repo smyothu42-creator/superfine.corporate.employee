@@ -11,7 +11,6 @@ import {
   CalendarDays,
   Lock,
   Mail,
-  LogIn,
   ShoppingBag,
   X,
   Pencil,
@@ -21,9 +20,12 @@ import {
   ArrowRight,
   Package,
   Recycle,
+  Leaf,
   ChevronRight,
   MessageSquare,
   Building2,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,6 +41,7 @@ import { IdentityModal } from "@/components/auth/identity-modal";
 import { useUiStore } from "@/store/use-ui-store";
 import { useOrderEditStore } from "@/store/use-order-edit-store";
 import { useOrderEdit } from "@/features/orders/use-order-edit";
+import { useCheckoutProgress } from "@/features/checkout/use-checkout-progress";
 import {
   useSessionStore,
   isSubsidized,
@@ -46,12 +49,26 @@ import {
   type Account,
 } from "@/store/use-session-store";
 import { useCartStore, type PackagingChoice } from "@/store/use-cart-store";
+import { useCardsStore, type SavedCard } from "@/store/use-cards-store";
+import {
+  brandLabel,
+  cardDigits,
+  cardNumberValid,
+  cvcLength,
+  cvcValid,
+  detectBrand,
+  expiryValid,
+  formatCardNumber,
+  formatExpiry,
+  type CardBrand,
+} from "@/lib/card";
 import { toast } from "@/store/use-toast-store";
 import { program, addresses, getAddress, reusablePackagingFee } from "@/data/program";
 import { checkZip, deliveryFeeForZip } from "@/data/service-areas";
 import { me } from "@/data/me";
 import { fromISODate, formatDay, startOfToday, toISODate, addDays } from "@/lib/dates";
 import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
+import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { PaymentChoice } from "@/data/types";
 
@@ -173,17 +190,57 @@ export function CheckoutView() {
    * without opening anything.
    */
   /**
-   * Payment opens a dialog rather than a panel: Square's card form is its own
-   * hosted surface, and it needs a container it can own rather than a row that
-   * folds shut underneath it.
+   * Payment opens a dialog rather than a panel: a card form is its own
+   * focus-trapping surface, and it needs a container it can own rather than a
+   * row that folds shut underneath it.
    */
   const [paymentOpen, setPaymentOpen] = React.useState(false);
+  /**
+   * The card the order would be charged to — the wallet's selection, restored
+   * from the last order, so a returning customer arrives with payment already
+   * answered instead of retyping sixteen digits.
+   */
+  const savedCards = useCardsStore((s) => s.cards);
+  const selectedCardId = useCardsStore((s) => s.selectedId);
+  const selectedCard = savedCards.find((c) => c.id === selectedCardId) ?? null;
+  /**
+   * Deferring to a company invoice has no card to point at, so it needs its own
+   * record of having been chosen — the pay-later default is what this page
+   * *assumed*, and assuming is not consenting.
+   */
+  const [invoiceConfirmed, setInvoiceConfirmed] = React.useState(false);
+  /** Where "Enter payment" scrolls to — the Payment section, not the dialog. */
+  const paymentRef = React.useRef<HTMLDivElement>(null);
   const [openRow, setOpenRow] = React.useState<RowName | null>(null);
   const toggleRow = React.useCallback(
     (r: RowName) => setOpenRow((cur) => (cur === r ? null : r)),
     [],
   );
   const closeRow = React.useCallback(() => setOpenRow(null), []);
+
+  /**
+   * The gate to placing an order: the first step still unmet (sign in, or an
+   * individual's delivery address), or null when the order is ready. The docked
+   * CTA reads it to decide whether a tap places the order or jumps to the field
+   * at fault — so a blocked button leads somewhere instead of sitting greyed out.
+   *
+   * Derived above the early returns below — Rules of Hooks — so it's computed on
+   * every render, blocked or ready.
+   */
+  const { firstIncomplete } = useCheckoutProgress();
+
+  /**
+   * The tap that clears the first incomplete step: open the sign-in dialog, or
+   * open and scroll to the address row. Fired by the docked CTA when the order
+   * isn't ready to place yet.
+   */
+  const runStep = React.useCallback(
+    (id: string) => {
+      if (id === "identity") setIdentityOpen(true);
+      else if (id === "address") setOpenRow("address");
+    },
+    [setOpenRow],
+  );
 
   // Promo code (applied against the employee-paid balance).
   const [promoInput, setPromoInput] = React.useState("");
@@ -256,32 +313,63 @@ export function CheckoutView() {
   const packagingValue =
     cart.packaging === "reusable"
       ? `Reusable · pickup ${cart.pickupWindow || "not set"}`
-      : "Disposable · nothing to return";
+      : cart.packaging === "compostable"
+        ? "Compostable · nothing to return"
+        : "Disposable · nothing to return";
+
+  /**
+   * The last gate, after the session checklist: a balance to settle and nothing
+   * to settle it with — no card in the wallet, or an invoice nobody has opted
+   * into. Nothing owed means nothing to choose, so a fully covered order never
+   * waits on this.
+   */
+  const paymentPending =
+    finalOwed > 0 &&
+    (effectivePayment === "pay_later" ? !invoiceConfirmed : !selectedCard);
 
   const paymentValue =
     corporate && owed === 0
       ? `Fully covered by ${program.company}`
       : effectivePayment === "pay_later"
         ? "Company invoice · nothing to pay now"
-        : "Square · •••• 4242";
+        : selectedCard
+          ? `${brandLabel(selectedCard.brand)} •••• ${selectedCard.last4}`
+          : "Add a card";
 
   /**
-   * The CTA renders twice — docked on a phone, in the rail on desktop — so its
-   * label and its enabled-ness are derived once here. Two copies of this ternary
-   * is two chances for one button to place an order the other one is blocking.
-   *
-   * An individual's order can't be driven anywhere without a street and a phone,
-   * so the button waits on them the same way it waits on an account. Corporate
-   * orders skip that check: the address is the contract's.
+   * The docked CTA's label — the next unmet step while blocked, else the commit.
    */
-  const placeDisabled = !account || (!corporate && !deliveryComplete(delivery));
-  const ctaLabel = !account
-    ? "Sign in to continue"
-    : !corporate && !deliveryComplete(delivery)
-      ? "Add a delivery address"
+  const ctaLabel = firstIncomplete
+    ? firstIncomplete.label
+    : paymentPending
+      ? "Enter payment"
       : editActive
         ? "Save changes"
         : "Place order";
+
+  /** True while the tap leads somewhere rather than commits. */
+  const ctaLeads = Boolean(firstIncomplete) || paymentPending;
+
+  /**
+   * The one primary action the docked bar fires. While the checklist has a hole
+   * it jumps to that step instead of placing the order; only once every step is
+   * clear does it place (or, mid-edit, save). A blocked button that leads
+   * somewhere beats a disabled one that only tells you it can't.
+   */
+  function primaryAction() {
+    if (firstIncomplete) {
+      runStep(firstIncomplete.id);
+      return;
+    }
+    // Scroll to the section rather than throwing the dialog straight up: the
+    // Payment card carries the charge-timing promise and the flagged row, and
+    // someone deciding how to pay should see both before the sheet covers them.
+    if (paymentPending) {
+      paymentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    placeOrder();
+  }
 
   // Per-day cutoff status — order type drives which rule applies (individual =
   // 4 PM day before, family = 72 h ahead), resolved inside CutoffIndicator.
@@ -354,13 +442,6 @@ export function CheckoutView() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          {/* Identity — a guest is asked who they are first, because everything
-              below (subsidy, address rules, payment) depends on the answer.
-              Once signed in — corporate or individual — the sidebar already shows
-              who they are, so we don't repeat it with an "Ordering as" card. */}
-          {!corporate && !account ? (
-            <IdentityGate onOpen={() => setIdentityOpen(true)} />
-          ) : null}
 
           {/* Cutoff check — the one thing here that isn't a setting to change, so
               it stays a plain strip rather than a row that opens nothing. */}
@@ -439,6 +520,9 @@ export function CheckoutView() {
             </RowGroup>
           </Card>
 
+          {/* Wrapped so "Enter payment" has something to scroll to — Card takes no
+              ref, and `scroll-mt-20` keeps the heading clear of the topbar. */}
+          <div ref={paymentRef} className="scroll-mt-20">
           <Card className={SECTION_CARD}>
             <CardHeader className={cn("flex-wrap", SECTION_HEADER)}>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -457,6 +541,11 @@ export function CheckoutView() {
                 icon={corporate && owed === 0 ? CheckCircle2 : CreditCard}
                 label="Payment method"
                 value={paymentValue}
+                /* Not flagged amber while it waits. Yellow on this card read as
+                   a warning about the payment itself — a card problem — when
+                   nothing is wrong; the row simply hasn't been answered yet.
+                   "Choose how to pay" says that, and the docked CTA that scrolls
+                   here says the rest. */
                 /* Never disabled, even with one method: this row is where someone
                    checks which card is about to be charged, and a greyed-out row
                    answers that by refusing to open. */
@@ -464,6 +553,7 @@ export function CheckoutView() {
               />
             </RowGroup>
           </Card>
+          </div>
         </div>
 
         {/* Summary. On desktop the rail sticks and the *item list* is what
@@ -619,8 +709,8 @@ export function CheckoutView() {
           Opaque `bg-card`, not `bg-card/95`: this bar sits over live content, and
           at 95% the rows behind it ghosted through the total.
 
-          `bottom-dock` rests it on the tab bar on a phone and on the floor on
-          desktop; `pb-safe` keeps the iPhone home indicator off it. */}
+          `bottom-dock` rests it on the viewport floor; `pb-safe` keeps the
+          iPhone home indicator off it. */}
       <div className="h-24" aria-hidden />
       <div className="bottom-dock pb-safe fixed inset-x-0 z-30 border-t border-border bg-card shadow-[0_-4px_16px_-8px_rgb(0_0_0/0.15)] lg:left-[var(--sidebar-w)]">
         {/* The safe-area inset is the outer element's padding and the bar's own
@@ -639,11 +729,13 @@ export function CheckoutView() {
           </div>
           <Button
             size="lg"
-            onClick={placeOrder}
-            disabled={placeDisabled}
+            onClick={primaryAction}
             className="min-w-0 shrink lg:min-w-[16rem]"
           >
             <span className="truncate">{ctaLabel}</span>
+            {/* An arrow when the tap leads to the next step rather than commits —
+                the button is taking you somewhere, not refusing you. */}
+            {ctaLeads ? <ArrowRight className="size-4 shrink-0" /> : null}
           </Button>
         </div>
       </div>
@@ -657,7 +749,12 @@ export function CheckoutView() {
       {paymentOpen ? (
         <PaymentModal
           value={effectivePayment}
-          onChange={setPayment}
+          /* Picking a method *is* entering payment — a saved card or an opted-in
+             invoice is what flips the docked CTA to the commit. */
+          onChange={(p) => {
+            setPayment(p);
+            if (p === "pay_later") setInvoiceConfirmed(true);
+          }}
           payLaterAvailable={payLaterAvailable}
           covered={corporate && owed === 0}
           onClose={() => setPaymentOpen(false)}
@@ -920,14 +1017,19 @@ function IndividualAddressPanel() {
             type="tel"
             value={delivery.phone}
             onChange={(e) => set("phone", e.target.value)}
+            inputMode="tel"
             placeholder="+1 (555) 123-4567"
             autoComplete="tel"
           />
         </Field>
       </div>
 
+      {/* `role="alert"` (assertive) rather than a polite region: this appears
+          asynchronously, after the ZIP lookup resolves, and it blocks the order
+          outright. Waiting for a pause in speech would let someone carry on
+          filling the form toward a checkout that can't dispatch. */}
       {zipStatus === "unserviceable" ? (
-        <Notice tone="warning">
+        <Notice tone="warning" role="alert">
           We don&apos;t deliver to {delivery.zip} yet. Use an address in our service area, or your
           order can&apos;t be dispatched.
         </Notice>
@@ -970,13 +1072,16 @@ function InstructionsPanel({ onRemoved }: { onRemoved: () => void }) {
 }
 
 /**
- * How you're paying. A dialog, not a panel: this is where Square's card form
- * will mount, and a hosted payment surface needs a container of its own — not a
- * row that can fold shut under it while it's collecting a card number.
+ * How you're paying: the wallet, and the form that adds to it.
  *
- * Opens even when there's only one method: the row is where someone goes to
- * check *what card they're about to be charged on*, and a greyed-out row answers
- * that question by refusing to.
+ * A dialog, not a panel. A card form is a hosted, focus-trapping surface in any
+ * real integration, and it can't live in a row that folds shut under it while
+ * it's collecting a number. Same reason it opens even when there's only one
+ * saved card: this is where someone checks *which card is about to be charged*,
+ * and a row that refuses to open doesn't answer that.
+ *
+ * Nothing here is charged. The card is captured now and charged 24 hours before
+ * delivery, which is what the note under the title promises.
  */
 function PaymentModal({
   value,
@@ -991,26 +1096,36 @@ function PaymentModal({
   covered: boolean;
   onClose: () => void;
 }) {
+  const cards = useCardsStore((s) => s.cards);
+  const selectedId = useCardsStore((s) => s.selectedId);
+  const selectCard = useCardsStore((s) => s.select);
+  const removeCard = useCardsStore((s) => s.remove);
+
+  /**
+   * An empty wallet opens straight into the form: a list holding one "Add a
+   * card" button is a menu whose only item is "open the thing you actually
+   * wanted". Unless there's an invoice to defer to — then there *is* a choice,
+   * and opening on the form would hide the option that needs no card at all.
+   */
+  const [adding, setAdding] = React.useState(cards.length === 0 && !payLaterAvailable);
+
   const [shown, setShown] = React.useState(false);
 
   React.useEffect(() => {
     const id = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
+
+  function useCard(id: string) {
+    selectCard(id);
+    onChange("pay_now");
+    onClose();
+  }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <button
         type="button"
         aria-label="Close"
@@ -1020,7 +1135,13 @@ function PaymentModal({
           shown ? "opacity-100" : "opacity-0",
         )}
       />
+      {/* The dialog is the panel, not the box that also holds the scrim, so the
+          trap ends where the panel does. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Payment method"
+        {...dialog.props}
         className={cn(
           "relative flex max-h-[85dvh] w-full max-w-md flex-col rounded-3xl bg-card text-left shadow-raised transition-all duration-200",
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0",
@@ -1031,10 +1152,13 @@ function PaymentModal({
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
             <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
-              <CreditCard className="size-4 shrink-0 text-primary" /> Payment method
+              <CreditCard className="size-4 shrink-0 text-primary" />
+              {adding && !covered ? "Add a card" : "Payment method"}
             </h3>
             <p className="text-[13px] text-muted-foreground">
-              {covered ? "Nothing to pay on this order." : "How would you like to pay?"}
+              {covered
+                ? "Nothing to pay on this order."
+                : "Charged 24 hours before delivery — nothing today."}
             </p>
           </div>
           <button
@@ -1054,36 +1178,327 @@ function PaymentModal({
               {program.company}. <strong>No payment needed</strong>, so there&apos;s no method to
               choose.
             </Notice>
+          ) : adding ? (
+            <CardForm
+              onSaved={onClose}
+              /* No way back out of the form when the wallet is empty — "Cancel"
+                 would land on an empty list with nothing to do but re-open it. */
+              onCancel={cards.length ? () => setAdding(false) : undefined}
+            />
           ) : (
-            <div className="space-y-2" role="radiogroup" aria-label="Payment method">
-              <PayOption
-                active={value === "pay_now"}
-                onClick={() => {
-                  onChange("pay_now");
-                  onClose();
-                }}
-                icon={CreditCard}
-                title="Square · •••• 4242"
-                subtitle="Charged 24 hours before delivery"
-              />
-              {/* Deferring to an invoice needs a company to send it to. */}
-              {payLaterAvailable ? (
-                <PayOption
-                  active={value === "pay_later"}
-                  onClick={() => {
-                    onChange("pay_later");
-                    onClose();
-                  }}
-                  icon={Building2}
-                  title="Company invoice"
-                  subtitle="On your company's monthly invoice. Nothing to pay now"
-                />
-              ) : null}
+            <div className="space-y-4">
+              <div className="space-y-2" role="radiogroup" aria-label="Payment method">
+                {cards.map((card) => (
+                  <SavedCardRow
+                    key={card.id}
+                    card={card}
+                    active={value === "pay_now" && card.id === selectedId}
+                    onSelect={() => useCard(card.id)}
+                    onRemove={() => removeCard(card.id)}
+                  />
+                ))}
+
+                {/* Deferring to an invoice needs a company to send it to. */}
+                {payLaterAvailable ? (
+                  <PayOption
+                    active={value === "pay_later"}
+                    onClick={() => {
+                      onChange("pay_later");
+                      onClose();
+                    }}
+                    icon={Building2}
+                    title="Company invoice"
+                    subtitle="On your company's monthly invoice. Nothing to pay now"
+                  />
+                ) : null}
+              </div>
+
+              <Button variant="outline" className="w-full" onClick={() => setAdding(true)}>
+                <Plus className="size-4" /> Add a card
+              </Button>
+
+              <SecurityNote />
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * One saved card: the radio that charges it, and a separate control that forgets
+ * it. Two buttons side by side rather than one inside the other — a button
+ * nested in a button is invalid, and the inner one swallows the tap that was
+ * meant for the row.
+ */
+function SavedCardRow({
+  card,
+  active,
+  onSelect,
+  onRemove,
+}: {
+  card: SavedCard;
+  active: boolean;
+  onSelect: () => void;
+  onRemove: () => void;
+}) {
+  const expired = isExpired(card);
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1 rounded-xl border pr-1.5 transition-colors",
+        active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+      )}
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={active}
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left text-[13px]"
+      >
+        <span
+          className={cn(
+            "flex size-5 shrink-0 items-center justify-center rounded-full border",
+            active ? "border-primary" : "border-border",
+          )}
+        >
+          {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
+        </span>
+        <BrandMark brand={card.brand} />
+        <span className="min-w-0 flex-1">
+          <strong className="nums">•••• {card.last4}</strong>
+          <span className={cn("block text-2xs", expired ? "text-danger" : "text-muted-foreground")}>
+            {expired ? "Expired" : "Expires"} {expiryLabel(card)} · {card.name}
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove card ending ${card.last4}`}
+        className="shrink-0 rounded-full touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-danger"
+      >
+        <Trash2 className="size-4" />
+      </button>
+    </div>
+  );
+}
+
+/** `08/2029` → `08/29`, the way it's printed on the card. */
+function expiryLabel(card: SavedCard) {
+  return `${String(card.expMonth).padStart(2, "0")}/${String(card.expYear).slice(-2)}`;
+}
+
+/** A card is good through the last day of its printed month. */
+function isExpired(card: SavedCard) {
+  return new Date(card.expYear, card.expMonth, 1) <= new Date();
+}
+
+/**
+ * The brand, as a wordmark rather than a logo. Real marks are trademarked
+ * artwork we don't have licence to ship, and a generic card glyph on every row
+ * makes four saved cards look identical at a glance — the name is what tells
+ * them apart.
+ */
+function BrandMark({ brand }: { brand: CardBrand }) {
+  return (
+    <span className="flex h-7 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+      {brandLabel(brand)}
+    </span>
+  );
+}
+
+/** What happens to the number after Save. Said once, where it's being typed. */
+function SecurityNote() {
+  return (
+    <p className="flex items-start gap-1.5 text-2xs text-muted-foreground">
+      <Lock className="mt-px size-3 shrink-0 text-success" />
+      Encrypted in transit. We keep only the brand, the last four digits and the expiry — never
+      the full number or the security code.
+    </p>
+  );
+}
+
+/**
+ * The card form. Everything here is checked in the browser before anything is
+ * sent: the brand comes from the leading digits, the number has to pass its own
+ * checksum, and the expiry has to be a month that hasn't happened. A typo caught
+ * under the field beats a decline several seconds later with no explanation.
+ *
+ * Errors appear on blur, not on every keystroke — a half-typed card number is
+ * invalid by definition, and saying so while it's being typed is nagging.
+ */
+function CardForm({ onSaved, onCancel }: { onSaved: () => void; onCancel?: () => void }) {
+  const addCard = useCardsStore((s) => s.add);
+
+  const [number, setNumber] = React.useState("");
+  const [expiry, setExpiry] = React.useState("");
+  const [cvc, setCvc] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [zip, setZip] = React.useState("");
+  const [touched, setTouched] = React.useState<Record<string, boolean>>({});
+
+  const brand = detectBrand(number);
+  const errors = {
+    number: cardNumberValid(number) ? "" : "Check this card number.",
+    expiry: expiryValid(expiry) ? "" : "Use a future MM/YY.",
+    cvc: cvcValid(cvc, brand) ? "" : `${cvcLength(brand)} digits, from the back of the card.`,
+    name: name.trim() ? "" : "Add the name as printed.",
+    zip: /^\d{5}$/.test(zip) ? "" : "5-digit billing ZIP.",
+  };
+  const valid = Object.values(errors).every((e) => !e);
+  const show = (field: keyof typeof errors) => (touched[field] ? errors[field] : "");
+  const blur = (field: string) => () => setTouched((t) => ({ ...t, [field]: true }));
+
+  function save() {
+    if (!valid) {
+      // Reveal every hole at once rather than one per attempt.
+      setTouched({ number: true, expiry: true, cvc: true, name: true, zip: true });
+      return;
+    }
+    const digits = cardDigits(expiry);
+    addCard({
+      brand,
+      // The only part of the number that's kept — see `use-cards-store`.
+      last4: cardDigits(number).slice(-4),
+      expMonth: Number(digits.slice(0, 2)),
+      expYear: 2000 + Number(digits.slice(2)),
+      name: name.trim(),
+      zip,
+    });
+    toast.success("Card saved", `${brandLabel(brand)} ending ${cardDigits(number).slice(-4)}.`);
+    onSaved();
+  }
+
+  return (
+    <div className="space-y-3">
+      <Field>
+        <Label htmlFor="c-number">Card number</Label>
+        <div className="relative">
+          <Input
+            id="c-number"
+            value={number}
+            onChange={(e) => setNumber(formatCardNumber(e.target.value))}
+            onBlur={blur("number")}
+            inputMode="numeric"
+            autoComplete="cc-number"
+            placeholder="1234 5678 9012 3456"
+            aria-invalid={Boolean(show("number"))}
+            className={cn("pr-16", show("number") && "border-danger")}
+            autoFocus
+          />
+          {/* The brand appears as soon as the leading digits say what it is —
+              the same confirmation a card reader gives you. */}
+          {brand !== "unknown" ? (
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
+              <BrandMark brand={brand} />
+            </span>
+          ) : null}
+        </div>
+        <FieldError message={show("number")} />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field>
+          <Label htmlFor="c-expiry">Expiry</Label>
+          <Input
+            id="c-expiry"
+            value={expiry}
+            onChange={(e) => setExpiry(formatExpiry(e.target.value))}
+            onBlur={blur("expiry")}
+            inputMode="numeric"
+            autoComplete="cc-exp"
+            placeholder="MM/YY"
+            aria-invalid={Boolean(show("expiry"))}
+            className={cn(show("expiry") && "border-danger")}
+          />
+          <FieldError message={show("expiry")} />
+        </Field>
+        <Field>
+          <Label htmlFor="c-cvc">{brand === "amex" ? "CID" : "CVC"}</Label>
+          <Input
+            id="c-cvc"
+            value={cvc}
+            onChange={(e) => setCvc(cardDigits(e.target.value).slice(0, cvcLength(brand)))}
+            onBlur={blur("cvc")}
+            inputMode="numeric"
+            autoComplete="cc-csc"
+            placeholder={brand === "amex" ? "4 digits" : "3 digits"}
+            aria-invalid={Boolean(show("cvc"))}
+            className={cn(show("cvc") && "border-danger")}
+          />
+          <FieldError message={show("cvc")} />
+        </Field>
+      </div>
+
+      <Field>
+        <Label htmlFor="c-name">Name on card</Label>
+        <Input
+          id="c-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={blur("name")}
+          autoComplete="cc-name"
+          placeholder="Sam Rivera"
+          aria-invalid={Boolean(show("name"))}
+          className={cn(show("name") && "border-danger")}
+        />
+        <FieldError message={show("name")} />
+      </Field>
+
+      <Field>
+        <Label htmlFor="c-zip">Billing ZIP</Label>
+        <Input
+          id="c-zip"
+          value={zip}
+          onChange={(e) => setZip(cardDigits(e.target.value).slice(0, 5))}
+          onBlur={blur("zip")}
+          inputMode="numeric"
+          autoComplete="billing postal-code"
+          placeholder="94105"
+          aria-invalid={Boolean(show("zip"))}
+          className={cn(show("zip") && "border-danger")}
+        />
+        {/* Why we're asking, so it doesn't read as one more field for its own
+            sake: the ZIP is what the bank checks the charge against. The hint
+            steps aside for the error rather than stacking two lines under one
+            field. */}
+        {show("zip") ? (
+          <FieldError message={show("zip")} />
+        ) : (
+          <p className="mt-1 text-2xs text-muted-foreground">
+            Checked against your bank&apos;s records when the card is charged.
+          </p>
+        )}
+      </Field>
+
+      <SecurityNote />
+
+      <div className="flex gap-2 pt-1">
+        {onCancel ? (
+          <Button variant="outline" className="flex-1" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : null}
+        {/* Never disabled: a greyed-out Save leaves someone tapping a dead button
+            with no idea which field is wrong. It presses, and points. */}
+        <Button className="flex-1" onClick={save}>
+          <Lock className="size-4" /> Save card
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** One field's complaint, in the one place complaints appear. */
+function FieldError({ message }: { message: string }) {
+  if (!message) return null;
+  return (
+    <p role="alert" className="mt-1 text-2xs font-medium text-danger">
+      {message}
+    </p>
   );
 }
 
@@ -1184,45 +1599,6 @@ function AddressPanel({ onDone }: { onDone: () => void }) {
     </div>
   );
 }
-
-/* ---------------------------------------------------------------------- */
-/* Identity — guest → individual or corporate, resolved here at checkout    */
-/* ---------------------------------------------------------------------- */
-
-/**
- * The guest's branch point. Nothing above it required an account.
- *
- * The dialog asks the actual question; this card is what's left behind if they
- * close it. It has to stand on its own, because a dismissed modal is otherwise
- * a dead end — the address below is locked and nothing on screen would say why.
- */
-function IdentityGate({ onOpen }: { onOpen: () => void }) {
-  return (
-    <Card>
-      <CardBody className="space-y-4">
-        <div className="flex items-start gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-teal-wash text-primary">
-            <LogIn className="size-5" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="font-display text-xl font-semibold tracking-tight">
-              Sign in to continue checkout
-            </h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-              Sign in or create an account to place your order. If your company covers lunch,
-              signing in with your work email unlocks the subsidy before you pay.
-            </p>
-          </div>
-        </div>
-        <Button block size="lg" onClick={onOpen}>
-          Sign in to continue <ArrowRight className="size-4" />
-        </Button>
-      </CardBody>
-    </Card>
-  );
-}
-
-
 
 /**
  * Delivery time. A multi-day order picks one window for the lot or one per day;
@@ -1346,6 +1722,7 @@ function Confirmation({
   // company an individual has no relationship with is worse than saying nothing.
   const corporate = isSubsidized(account);
   const email = account?.email ?? me.email;
+  const card = useCardsStore((s) => s.cards.find((c) => c.id === s.selectedId) ?? null);
 
   return (
     <Card className="overflow-hidden">
@@ -1372,14 +1749,15 @@ function Confirmation({
           ) : corporate && payment === "pay_later" ? (
             <>The {formatCurrency(owed)} balance will appear on your company invoice.</>
           ) : (
-            <>Square will charge your card {formatCurrency(owed)} 24 hours before delivery.</>
+            /* Names the card that will actually be charged — "your card" is the
+               one detail someone re-reads a confirmation for. */
+            <>
+              We&apos;ll charge{" "}
+              {card ? `your ${brandLabel(card.brand)} •••• ${card.last4}` : "your card"}{" "}
+              {formatCurrency(owed)} 24 hours before delivery.
+            </>
           )}
         </p>
-
-        <Notice tone="info" className="max-w-md text-left text-xs">
-          <Mail className="inline size-3.5" /> You&apos;ll get one email now, and a heads-up the day before
-          delivery. No surprise &quot;payment taken&quot; emails.
-        </Notice>
 
         <div className="grid w-full max-w-md grid-cols-1 gap-2.5 pt-1 sm:grid-cols-2">
           <Button asChild block size="lg">
@@ -1454,70 +1832,22 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
-
 /**
- * Two options, so a toggle rather than a row that opens a list to hold two
- * items. It sits where the chevron used to: the chevron promised somewhere to
- * go, and the choice is right here.
- */
-function SegmentedToggle<T extends string>({
-  value,
-  onChange,
-  options,
-  ariaLabel,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string; hint?: string }[];
-  ariaLabel: string;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label={ariaLabel}
-      className="flex shrink-0 items-center gap-0.5 rounded-full bg-muted p-1"
-    >
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onChange(o.value)}
-            className={cn(
-              "flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-2xs font-semibold transition-colors",
-              active
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {o.label}
-            {/* The price rides on the segment so the cost of switching is on the
-                control itself, not only in the panel it opens. */}
-            {o.hint ? (
-              <span className={cn("font-bold", active ? "text-primary" : "opacity-70")}>
-                {o.hint}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * Reusable-vs-disposable for an individual order. Reusable adds a flat fee that
- * scales with container count and needs a pickup window; a pickup outside the
- * admin's included windows adds a ZIP-based fee. Every charge lands in the
- * checkout total — there is no deposit-and-refund.
+ * How an individual order is packed: single-trip disposable, single-trip
+ * compostable, or reusable containers that come back to the kitchen. Only
+ * reusable arranges anything — it adds a flat fee that scales with container
+ * count and needs a pickup window, and a pickup outside the admin's included
+ * windows adds a ZIP-based fee. Every charge lands in the checkout total; there
+ * is no deposit-and-refund.
  *
- * Not a `SettingRow`: this row *contains* controls, and a button wrapping
- * buttons is neither valid nor clickable in the way either one wants. It renders
- * a fragment so the row and its dropdown land as siblings in the RowGroup, and
- * the group's hairline divider falls between them like every other row.
+ * A row that opens a panel, not a segmented control. Two choices fit on the row
+ * beside the label; three don't — the segments wrapped or squeezed the value out
+ * on a phone — and each of these needs a line explaining what happens to the
+ * container afterwards, which is the whole difference between disposable and
+ * compostable. Same shape as the address and payment rows around it.
+ *
+ * Renders a fragment so the row and its panel land as siblings in the RowGroup
+ * and the group's hairline divider falls between them like every other row.
  */
 function PackagingRow({ zip, value }: { zip: string; value: string }) {
   const cart = useCartStore();
@@ -1526,126 +1856,119 @@ function PackagingRow({ zip, value }: { zip: string; value: string }) {
   const fee = reusablePackagingFee(qty);
   const specialFee = deliveryFeeForZip(zip);
 
-  const [pickupOpen, setPickupOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
   const [customOpen, setCustomOpen] = React.useState(false);
 
   /**
    * Reusable containers have to get back to the kitchen, so choosing reusable
-   * drops the window list open — the question is part of the choice, not a
-   * follow-up someone has to think to go looking for. The default window is set
-   * first, so collapsing the list again still leaves a schedulable pickup rather
-   * than an order no driver collects.
+   * settles a default window in the same tap — the pickup question is part of
+   * the choice, not a follow-up someone has to think to go looking for. Leaving
+   * reusable drops the pickup (the store does that) and closes the custom-time
+   * dialog with it.
    *
-   * Tapping "Reusable" while already on reusable folds the list back up: with no
-   * chevron on this row, the segment is the only handle on it.
+   * The panel stays open on a tap: the three options are a comparison, and
+   * folding it on the first one makes changing your mind cost a re-open.
    */
   function choose(next: PackagingChoice) {
-    if (next === "disposable") {
-      cart.setPackaging("disposable");
-      setPickupOpen(false);
+    cart.setPackaging(next);
+    if (next === "reusable") {
+      if (!cart.pickupWindow && !cart.specialPickup) cart.setPickupWindow(windows[0] ?? "");
+    } else {
       setCustomOpen(false);
-      return;
     }
-    const alreadyReusable = cart.packaging === "reusable";
-    cart.setPackaging("reusable");
-    if (!cart.pickupWindow && !cart.specialPickup) cart.setPickupWindow(windows[0] ?? "");
-    setPickupOpen(alreadyReusable ? !pickupOpen : true);
   }
 
-  const Icon = cart.packaging === "reusable" ? Recycle : Package;
-  const open = cart.packaging === "reusable" && pickupOpen;
-
-  /**
-   * Bring the row to the top when the list drops open, so the windows are on
-   * screen instead of somewhere below the fold. Anchored on the *row*, not the
-   * panel: the panel can be taller than what's left of the viewport, and
-   * scrolling that into view would put its middle on screen and the "Pickup
-   * window" heading above it. `scroll-mt-20` keeps it clear of the sticky topbar.
-   */
-  const rowRef = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => {
-    if (!open) return;
-    rowRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [open]);
+  const reusable = cart.packaging === "reusable";
+  const Icon = reusable ? Recycle : cart.packaging === "compostable" ? Leaf : Package;
 
   return (
     <>
-      <div
-        ref={rowRef}
-        className={cn("flex w-full scroll-mt-20 items-center gap-3 px-4 py-3", open && "bg-muted/30")}
-      >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-teal-wash text-primary">
-          <Icon className="size-4" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold">Packaging</span>
-          <span className="block truncate text-2xs text-muted-foreground">{value}</span>
-        </span>
-        <SegmentedToggle
-          ariaLabel="Packaging"
-          value={cart.packaging}
-          onChange={choose}
-          options={[
-            // No price on Disposable — it's the default and it's free, so the
-            // only number worth carrying is the one switching would add.
-            { value: "disposable", label: "Disposable" },
-            {
-              value: "reusable",
-              label: "Reusable",
-              hint: qty > 0 ? formatCurrency(fee) : "Free",
-            },
-          ]}
-        />
-      </div>
+      <SettingRow
+        icon={Icon}
+        label="Packaging"
+        value={value}
+        expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      />
 
       {open ? (
         <RowPanel>
           <div className="space-y-3">
-            {/* At the top, and highlighted: this is what reusable *costs*, and
-                at the foot of the list it was a footnote to a decision already
-                made. */}
-            <Notice tone="info" className="text-xs">
-              Reusable packaging is{" "}
-              <strong className="font-semibold">
-                {qty > 0 ? formatCurrency(fee) : "free"}
-              </strong>{" "}
-              for {qty} {qty === 1 ? "meal" : "meals"}, added to your total. Pickup in an included
-              window is free; a custom time adds {formatCurrency(specialFee)}.
-            </Notice>
-
-            <div className="text-overline">Pickup window</div>
-            {/* Tapping a window is the answer — it applies and folds up, no Save
-                to hunt for. Custom is the one row that opens something. */}
-            <div className="space-y-2" role="radiogroup" aria-label="Pickup window">
-              {windows.map((w) => (
-                <PackOption
-                  key={w}
-                  active={!cart.specialPickup && cart.pickupWindow === w}
-                  onClick={() => {
-                    // Stays open on purpose: the windows are a comparison, and
-                    // folding the list on the first tap makes changing your mind
-                    // cost a re-open. The segment is what closes it.
-                    cart.setPickupWindow(w);
-                    setCustomOpen(false);
-                  }}
-                  // No "Included — no extra charge" per row: the notice above
-                  // already says an included window is free, and repeating it
-                  // three times turned each option into two lines to say a time.
-                  title={w}
-                />
-              ))}
+            <div className="space-y-2" role="radiogroup" aria-label="Packaging">
+              {/* Both single-trip options say what happens to the container
+                  after the meal — that's the only thing separating them, and
+                  "Disposable" vs "Compostable" alone leaves it to be guessed. */}
               <PackOption
-                active={cart.specialPickup}
-                onClick={() => setCustomOpen(true)}
-                title="Custom pickup time"
-                subtitle={
-                  cart.specialPickup && cart.pickupWindow
-                    ? cart.pickupWindow
-                    : "Outside the windows above — pick your own."
-                }
-                trailing={`+${formatCurrency(specialFee)}`}
+                active={cart.packaging === "disposable"}
+                onClick={() => choose("disposable")}
+                title="Disposable"
+                subtitle="Recyclable containers. Nothing to return."
+                trailing="Free"
+              />
+              <PackOption
+                active={cart.packaging === "compostable"}
+                onClick={() => choose("compostable")}
+                title="Compostable"
+                subtitle="Plant-based containers for your compost or green bin."
+                trailing="Free"
+              />
+              <PackOption
+                active={reusable}
+                onClick={() => choose("reusable")}
+                title="Reusable"
+                subtitle="Sturdy containers we collect at a pickup you choose."
+                trailing={qty > 0 ? formatCurrency(fee) : "Free"}
               />
             </div>
+
+            {/* Only reusable has a follow-up, and it unfolds under the option
+                that caused it rather than in a sheet of its own. */}
+            {reusable ? (
+              <div className="space-y-3 border-t border-border pt-3">
+                {/* At the top, and highlighted: this is what reusable *costs*, and
+                    at the foot of the list it was a footnote to a decision already
+                    made. */}
+                <Notice tone="info" className="text-xs">
+                  Reusable packaging is{" "}
+                  <strong className="font-semibold">
+                    {qty > 0 ? formatCurrency(fee) : "free"}
+                  </strong>{" "}
+                  for {qty} {qty === 1 ? "meal" : "meals"}, added to your total. Pickup in an
+                  included window is free; a custom time adds {formatCurrency(specialFee)}.
+                </Notice>
+
+                <div className="text-overline">Pickup window</div>
+                {/* Tapping a window is the answer — it applies in place, no Save
+                    to hunt for. Custom is the one row that opens something. */}
+                <div className="space-y-2" role="radiogroup" aria-label="Pickup window">
+                  {windows.map((w) => (
+                    <PackOption
+                      key={w}
+                      active={!cart.specialPickup && cart.pickupWindow === w}
+                      onClick={() => {
+                        cart.setPickupWindow(w);
+                        setCustomOpen(false);
+                      }}
+                      // No "Included — no extra charge" per row: the notice above
+                      // already says an included window is free, and repeating it
+                      // three times turned each option into two lines to say a time.
+                      title={w}
+                    />
+                  ))}
+                  <PackOption
+                    active={cart.specialPickup}
+                    onClick={() => setCustomOpen(true)}
+                    title="Custom pickup time"
+                    subtitle={
+                      cart.specialPickup && cart.pickupWindow
+                        ? cart.pickupWindow
+                        : "Outside the windows above — pick your own."
+                    }
+                    trailing={`+${formatCurrency(specialFee)}`}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         </RowPanel>
       ) : null}
@@ -1699,13 +2022,8 @@ function CustomPickupModal({
     const id = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
 
   // Valid once a day and a start are set; if an end is given it must be later.
   const orderedTimes = !end || start < end;
@@ -1715,11 +2033,7 @@ function CustomPickupModal({
     : "";
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <button
         type="button"
         aria-label="Close"
@@ -1729,7 +2043,13 @@ function CustomPickupModal({
           shown ? "opacity-100" : "opacity-0",
         )}
       />
+      {/* The dialog is the panel, not the box that also holds the scrim, so the
+          trap ends where the panel does. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Custom pickup time"
+        {...dialog.props}
         className={cn(
           "relative flex max-h-[85dvh] w-full max-w-md flex-col rounded-3xl bg-card text-left shadow-raised transition-all duration-200",
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0",

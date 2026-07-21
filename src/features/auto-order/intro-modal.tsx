@@ -4,6 +4,7 @@ import * as React from "react";
 import { Repeat, CalendarClock, Mail, PlusCircle, X, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useDialog } from "@/lib/use-dialog";
 import { TOUR_START_EVENT } from "./walkthrough";
 
 const SEEN_KEY = "sfk:auto-order-intro-seen-v2";
@@ -45,14 +46,9 @@ export function AutoOrderIntroModal() {
     setOpen(false);
   }, []);
 
-  React.useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") dismiss();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, dismiss]);
+  // Called before the early return below — the hook has to run on every render,
+  // and it already no-ops on `open: false`.
+  const dialog = useDialog({ open, onClose: dismiss });
 
   if (!open) return null;
 
@@ -63,19 +59,20 @@ export function AutoOrderIntroModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[65] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Welcome to Auto-Order"
-    >
+    <div className="fixed inset-0 z-[65] flex items-end justify-center sm:items-center">
       <button
         type="button"
         aria-label="Close"
         onClick={dismiss}
         className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
       />
+      {/* The dialog role moves to the panel so the focus trap's subtree excludes
+          the scrim button above it. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Welcome to Auto-Order"
+        {...dialog.props}
         className={cn(
           "relative w-full max-w-md rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
           shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",

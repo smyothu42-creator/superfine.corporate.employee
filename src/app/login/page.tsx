@@ -56,11 +56,15 @@ function LoginCard() {
             wanted to be legible without being a second card competing with the
             form. It runs the browse flow in place — sending them back to `/` to
             press the same button again would be a loop, not a shortcut. */}
-        <div className="mt-6 border-t border-border pt-5 text-center">
+        <div className="mt-6 text-center">
           <Button
             variant="link"
             size="sm"
-            className="h-auto p-0 text-[13px] underline"
+            // `whitespace-normal` undoes the button base's `nowrap`. This label
+            // is a sentence, not a verb, and at 320px an unwrappable sentence
+            // sets the grid track's min-content width — which pushed the whole
+            // column past the viewport and put the page into horizontal scroll.
+            className="h-auto whitespace-normal p-0 text-center text-[13px] underline"
             disabled={locating}
             onClick={browse}
           >

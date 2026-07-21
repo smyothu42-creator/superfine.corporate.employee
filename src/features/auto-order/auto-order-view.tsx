@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Repeat, UtensilsCrossed, CalendarClock, Mail, PlusCircle, BookOpen } from "lucide-react";
+import { Repeat, UtensilsCrossed, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/store/use-toast-store";
@@ -11,6 +11,8 @@ import { useAutoOrderStore } from "@/store/use-auto-order-store";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { SetupWizard } from "./setup-wizard";
 import { ActiveDashboard } from "./active-dashboard";
+import { AutoOrderNotEnabled } from "./not-enabled";
+import { AUTO_ORDER_BENEFITS, Benefit } from "./benefits";
 import { AutoOrderWalkthrough, TOUR_START_EVENT } from "./walkthrough";
 
 export function AutoOrderView() {
@@ -34,15 +36,22 @@ export function AutoOrderView() {
   const setConfig = useAutoOrderStore((s) => s.setConfig);
   const [setupOpen, setSetupOpen] = React.useState(false);
 
+  // Whether the company's contract includes the feature at all. This gates
+  // every state below — including an already-active config, because a contract
+  // that stops covering Auto-Order stops it running too.
+  const companyEnabled = useAutoOrderStore((s) => s.companyEnabled);
+
   // Drive the topbar title per state: while picking meals it's "Edit Your Auto
   // Order" when an active/paused config already exists (you came in via Edit),
   // else "Build Your Auto Order". Once active it's "Auto Order Dashboard",
   // otherwise plain "Auto-Order".
   const setNavTitle = useAutoOrderStore((s) => s.setNavTitle);
   React.useEffect(() => {
-    const active = config.status === "active" || config.status === "paused";
+    // Not enabled: the page is an explainer, so it keeps the plain nav title —
+    // "Dashboard" would name a thing that isn't there.
+    const active = companyEnabled && (config.status === "active" || config.status === "paused");
     setNavTitle(
-      setupOpen
+      setupOpen && companyEnabled
         ? active
           ? "Edit Your Auto Order"
           : "Build Your Auto Order"
@@ -51,7 +60,7 @@ export function AutoOrderView() {
           : "Auto-Order",
     );
     return () => setNavTitle(null);
-  }, [setupOpen, config.status, setNavTitle]);
+  }, [setupOpen, config.status, companyEnabled, setNavTitle]);
 
   // While the meal-picking wizard is open, let the Topbar show the "See how it
   // works" tour trigger. (The Back button lives on the wizard page itself.)
@@ -81,6 +90,21 @@ export function AutoOrderView() {
     );
   }
 
+  // Ahead of every other state, including an active config: if the contract
+  // stopped covering Auto-Order, the dashboard for a running one would be a
+  // screen full of controls that no longer do anything.
+  if (!companyEnabled) {
+    return (
+      <>
+        <AutoOrderWalkthrough />
+        <div className="w-full space-y-4">
+          <AutoOrderNotEnabled />
+          <DemoContractToggle enabled={false} />
+        </div>
+      </>
+    );
+  }
+
   if (setupOpen) {
     const editing = config.status === "active" || config.status === "paused";
     return (
@@ -91,6 +115,7 @@ export function AutoOrderView() {
         initialFavorites={editing ? config.favorites : []}
         initialCustomizations={editing ? config.customizations ?? {} : {}}
         initialSoldOut={editing ? config.soldOut : "notify"}
+        initialDays={editing ? config.days : undefined}
         onActivate={(c) => {
           setConfig(c);
           setSetupOpen(false);
@@ -111,7 +136,10 @@ export function AutoOrderView() {
     return (
       <>
         <AutoOrderWalkthrough />
-        <ActiveDashboard config={config} setConfig={setConfig} onEditSetup={() => setSetupOpen(true)} />
+        <div className="w-full space-y-4">
+          <ActiveDashboard config={config} setConfig={setConfig} onEditSetup={() => setSetupOpen(true)} />
+          <DemoContractToggle enabled />
+        </div>
       </>
     );
   }
@@ -121,7 +149,7 @@ export function AutoOrderView() {
   return (
     <>
     <AutoOrderWalkthrough />
-    <div className="w-full">
+    <div className="w-full space-y-4">
       <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-card">
         <div className="bg-hero-yellow px-6 py-8 text-teal-deep">
           <span className="flex size-12 items-center justify-center rounded-2xl bg-white/40">
@@ -135,26 +163,9 @@ export function AutoOrderView() {
         </div>
 
         <div className="space-y-5 p-6 sm:p-7">
-          <Benefit
-            icon={Repeat}
-            title="Pick your meals once"
-            desc="Choose one to repeat daily or a few to rotate."
-          />
-          <Benefit
-            icon={CalendarClock}
-            title="We draft 48 hours before cutoff"
-            desc="Each day's order is built automatically from your pool, nothing to remember."
-          />
-          <Benefit
-            icon={Mail}
-            title="Review before it's placed"
-            desc="Get an email to keep it, swap the meal, or add sides & drinks."
-          />
-          <Benefit
-            icon={PlusCircle}
-            title="Add-ons happen at review"
-            desc="Sides and beverages aren't part of setup. You add them per draft."
-          />
+          {AUTO_ORDER_BENEFITS.map((b) => (
+            <Benefit key={b.title} icon={b.icon} title={b.title} desc={b.desc} />
+          ))}
 
           {hasFavorites ? (
             <div className="grid gap-2 pt-2 sm:grid-cols-2">
@@ -191,29 +202,36 @@ export function AutoOrderView() {
           )}
         </div>
       </div>
+      <DemoContractToggle enabled />
     </div>
     </>
   );
 }
 
-function Benefit({
-  icon: Icon,
-  title,
-  desc,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  desc: string;
-}) {
+/**
+ * Demo affordance: flips the company's contract setting so both sides of it can
+ * be seen without editing `program.ts` and reloading.
+ *
+ * Deliberately quiet and deliberately last — it's a switch no real employee has,
+ * and styling it as a normal control would teach the wrong thing about who
+ * decides this. It matches the other demo doorways in the app (the corporate
+ * email filler on sign-in, the subsidy-model switch), which use the same
+ * muted-underline treatment for the same reason.
+ */
+function DemoContractToggle({ enabled }: { enabled: boolean }) {
+  const setCompanyEnabled = useAutoOrderStore((s) => s.setCompanyEnabled);
   return (
-    <div className="flex items-start gap-3">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-teal-wash text-primary">
-        <Icon className="size-4" />
-      </span>
-      <div>
-        <p className="text-sm font-semibold">{title}</p>
-        <p className="text-2xs text-muted-foreground">{desc}</p>
-      </div>
-    </div>
+    <p className="px-1 text-center text-2xs text-muted-foreground/70">
+      <button
+        type="button"
+        onClick={() => setCompanyEnabled(!enabled)}
+        className="underline underline-offset-2 hover:text-muted-foreground"
+      >
+        Demo:{" "}
+        {enabled
+          ? "preview this page with Auto-Order not enabled by the company"
+          : "switch back to a company that has Auto-Order enabled"}
+      </button>
+    </p>
   );
 }

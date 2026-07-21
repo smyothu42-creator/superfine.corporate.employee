@@ -256,31 +256,43 @@ export function CartDayList() {
                     {program.showPrices ? (
                       <span className="font-semibold nums">{formatCurrency(line.unitPrice * line.qty)}</span>
                     ) : null}
-                    <div className="flex items-center gap-1 sm:gap-1.5">
+                    {/* The circles read smaller on the phone than the 44px tap
+                        target they need, so the button is the target and the
+                        inner span is the circle: size-11 of tappable area, a
+                        size-9 disc drawn inside it. Desktop wants no such split
+                        (a pointer is precise), so both collapse to size-8 there.
+                        Icons stay 3.5 at every width. */}
+                    <div className="flex items-center gap-0 sm:gap-1.5">
                       <button
                         type="button"
                         aria-label={`Decrease ${line.name}`}
                         onClick={() => cart.setQty(line.uid, line.qty - 1)}
-                        className="flex size-11 items-center justify-center rounded-full sm:size-8 border border-border bg-card hover:bg-muted"
+                        className="flex size-11 items-center justify-center sm:size-8"
                       >
-                        <Minus className="size-3.5" />
+                        <span className="flex size-9 items-center justify-center rounded-full border border-border bg-card hover:bg-muted sm:size-8">
+                          <Minus className="size-3.5" />
+                        </span>
                       </button>
                       <span className="w-6 text-center text-sm font-semibold nums">{line.qty}</span>
                       <button
                         type="button"
                         aria-label={`Increase ${line.name}`}
                         onClick={() => cart.setQty(line.uid, line.qty + 1)}
-                        className="flex size-11 items-center justify-center rounded-full sm:size-8 bg-primary text-primary-foreground hover:bg-teal-deep"
+                        className="flex size-11 items-center justify-center sm:size-8"
                       >
-                        <Plus className="size-3.5" />
+                        <span className="flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-teal-deep sm:size-8">
+                          <Plus className="size-3.5" />
+                        </span>
                       </button>
                       <button
                         type="button"
                         aria-label={`Remove ${line.name}`}
                         onClick={() => cart.remove(line.uid)}
-                        className="flex size-11 items-center justify-center rounded-full sm:size-8 border border-border bg-card text-danger hover:bg-danger-bg"
+                        className="flex size-11 items-center justify-center sm:size-8"
                       >
-                        <Trash2 className="size-3.5" />
+                        <span className="flex size-9 items-center justify-center rounded-full border border-border bg-card text-danger hover:bg-danger-bg sm:size-8">
+                          <Trash2 className="size-3.5" />
+                        </span>
                       </button>
                     </div>
                   </div>

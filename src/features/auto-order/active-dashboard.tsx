@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Lock,
   Settings2,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
@@ -20,7 +21,8 @@ import { confirm } from "@/store/use-confirm-store";
 import { useAutoOrderStore } from "@/store/use-auto-order-store";
 import { formatCurrency, cn } from "@/lib/utils";
 import { nextServiceDays, addDays, formatDay, formatDayLong } from "@/lib/dates";
-import { safeFavorites, type AutoConfig } from "./shared";
+import { safeFavorites, formatAutoDays, type AutoConfig } from "./shared";
+import { AutoDayPicker } from "./day-picker";
 
 export function ActiveDashboard({
   config,
@@ -38,9 +40,11 @@ export function ActiveDashboard({
   // The next service day we'll build a draft for, and when that draft lands.
   // Cutoff is 4PM the day before delivery; the draft is created 48h before that
   // cutoff — i.e. three days before delivery at 4PM (Mon delivery → Fri 4PM draft).
+  // Narrowed to the days actually selected, not every day the company serves —
+  // naming a day the employee just switched off would read as us ignoring it.
   const nextDelivery = React.useMemo(
-    () => nextServiceDays(new Date(), program.serviceDayNums, 1)[0],
-    [],
+    () => nextServiceDays(new Date(), config.days, 1)[0],
+    [config.days],
   );
   const draftDay = nextDelivery ? addDays(nextDelivery, -3) : undefined;
 
@@ -125,8 +129,17 @@ export function ActiveDashboard({
         ) : null}
       </div>
 
-      {/* Meal pool */}
-      <div data-tour="dash-pool" className="rounded-3xl border border-border bg-card p-5 shadow-card">
+      {/* Ordering days + meal pool share one card — the two settings a person
+          tweaks after setup, kept together so the dashboard reads as one
+          "what's on rotation" panel rather than a stack of boxes.
+          Ordering days edits in place (behind Edit) rather than routing through
+          the full setup wizard, since it's the setting that shifts week to week
+          (a day off, a client lunch). */}
+      <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-card">
+        <OrderingDaysCard config={config} setConfig={setConfig} />
+
+        {/* Meal pool */}
+        <div data-tour="dash-pool" className="border-t border-border p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <p className="text-overline">Your meal pool</p>
@@ -173,8 +186,94 @@ export function ActiveDashboard({
             .
           </p>
         )}
+        </div>
       </div>
 
+    </div>
+  );
+}
+
+function sameDays(a: number[], b: number[]) {
+  return a.length === b.length && a.every((d) => b.includes(d));
+}
+
+/**
+ * Ordering days, guarded behind an explicit Edit. The schedule is the one thing
+ * on this page a person tweaks casually and would hate to change by accident, so
+ * the chips sit read-only until Edit is tapped; edits land on a draft and only
+ * take effect on Save, with Cancel to back out. Same AutoDayPicker the setup
+ * modal uses, so the editable chips look identical to where they first picked
+ * them.
+ */
+function OrderingDaysCard({
+  config,
+  setConfig,
+}: {
+  config: AutoConfig;
+  setConfig: (c: AutoConfig) => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState<number[]>(config.days);
+
+  const dirty = !sameDays(draft, config.days);
+
+  function startEdit() {
+    setDraft(config.days);
+    setEditing(true);
+  }
+  function cancel() {
+    setEditing(false);
+  }
+  function save() {
+    setConfig({ ...config, days: draft });
+    setEditing(false);
+  }
+
+  return (
+    <div className="p-5">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-display text-[15px] font-semibold tracking-tight">Ordering days</p>
+          <p className="mt-0.5 text-[13px] font-semibold text-teal-deep">
+            {formatAutoDays(editing ? draft : config.days)}
+          </p>
+        </div>
+        {editing ? null : (
+          <Button
+            variant="link"
+            size="sm"
+            onClick={startEdit}
+            className="h-auto shrink-0 px-0"
+          >
+            <Pencil className="size-3.5" /> Edit
+          </Button>
+        )}
+      </div>
+
+      {editing ? (
+        <>
+          <p className="mb-3 text-2xs text-muted-foreground">
+            Tap a day to turn ordering on or off. Changes apply to drafts that haven&apos;t been
+            built yet.
+          </p>
+          <AutoDayPicker size="sm" days={draft} onChange={setDraft} />
+          {!draft.length ? (
+            <p className="mt-2 text-2xs font-semibold text-warning">
+              No days selected — nothing will be ordered until you pick one.
+            </p>
+          ) : null}
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={cancel}>
+              Cancel
+            </Button>
+            <Button variant="brand" size="sm" onClick={save} disabled={!dirty || !draft.length}>
+              Save days
+            </Button>
+          </div>
+        </>
+      ) : (
+        <AutoDayPicker size="sm" days={config.days} readOnly />
+      )}
     </div>
   );
 }

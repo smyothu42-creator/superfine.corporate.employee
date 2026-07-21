@@ -220,9 +220,9 @@ export function CalendarStep({
         </p>
       ) : null}
 
-      {/* Sticky footer — on phones it clears the fixed bottom tab bar (which
-          would otherwise cover it); on lg+ there is no tab bar to clear. */}
-      <div className="sticky bottom-[calc(var(--tab-bar-h)+env(safe-area-inset-bottom,0px))] -mx-1 flex items-center justify-between gap-3 border-t border-border bg-card/95 px-1 py-3 backdrop-blur lg:bottom-0">
+      {/* Sticky footer — held off the home indicator on a phone, which would
+          otherwise draw straight through the count and the button. */}
+      <div className="sticky bottom-[env(safe-area-inset-bottom,0px)] -mx-1 flex items-center justify-between gap-3 border-t border-border bg-card/95 px-1 py-3 backdrop-blur lg:bottom-0">
         <span className="text-sm font-semibold">
           {selected.length} {selected.length === 1 ? "day" : "days"} selected
         </span>

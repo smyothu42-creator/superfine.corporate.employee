@@ -18,6 +18,7 @@ import { lookupCorporate, demoCorporateEmail, demoGoogleEmail, demoMicrosoftEmai
 import { useSessionStore, type Account } from "@/store/use-session-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { useOrderEditStore } from "@/store/use-order-edit-store";
+import { useUiStore } from "@/store/use-ui-store";
 
 type Step = "form" | "verify" | "exists" | "forgot" | "reset-sent";
 
@@ -78,8 +79,29 @@ export function IdentityFlow({
   const [confirm, setConfirm] = React.useState("");
   /** Whether the "resend" affordance on the confirmation step was just used. */
   const [resent, setResent] = React.useState(false);
+  /**
+   * Set the moment credentials resolve. The hand-off screen itself is raised
+   * on the UI store (it has to outlive this component); this flag is the local
+   * half — it locks the form out of a second submit while the commit is in
+   * flight, which is the same job a disabled button would do but covers every
+   * path in, including the OAuth buttons and the demo confirmation link.
+   */
+  const [committing, setCommitting] = React.useState(false);
+  const commitTimer = React.useRef<number | null>(null);
+
+  // A flow abandoned mid-hand-off must not still sign someone in a beat later.
+  React.useEffect(
+    () => () => {
+      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
+    },
+    [],
+  );
 
   function complete(account: Account) {
+    // Every entry point funnels through here, so one guard covers the form, the
+    // OAuth buttons and the confirmation link alike.
+    if (committing) return;
+    setCommitting(true);
     // Signing in or up at the front door (`/login`) is a clean start: an empty
     // cart, not whatever a previous guest on this browser left behind, and no
     // stale edit session. `resetLocation` marks that front door — at checkout and
@@ -89,8 +111,15 @@ export function IdentityFlow({
       clearCart();
       endEdit();
     }
-    signIn(account);
-    onDone?.(account);
+    // Paint the hand-off screen first, then commit. Signing in swaps the whole
+    // app shell underneath — nav rail, subsidy pricing, cart — and doing that
+    // behind a branded cover reads as arriving somewhere, where doing it live
+    // reads as the page glitching.
+    useUiStore.getState().beginAuthHandoff(handoffCopy(account, mode));
+    commitTimer.current = window.setTimeout(() => {
+      signIn(account);
+      onDone?.(account);
+    }, HANDOFF_MS);
   }
 
   /** A corporate session for a proved address on a contracted domain, or null. */
@@ -261,7 +290,7 @@ export function IdentityFlow({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               className="pl-10"
-              autoComplete="off"
+              autoComplete="email"
             />
           </div>
         </Field>
@@ -305,7 +334,7 @@ export function IdentityFlow({
           screen is, and a second marker just pushes the email field down. */}
       <Header
         title={signup ? "Create your account" : "Sign in"}
-        subtitle="Order lunch, track deliveries, and manage your plan in one place."
+        subtitle="Order lunch and manage your plan in one place."
       />
 
       {/* Email and password lead. They're what the screen is named after, and a
@@ -335,7 +364,13 @@ export function IdentityFlow({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               className="pl-10"
-              autoComplete="off"
+              // The browser fills this either way — Chrome ignores `off` on
+              // credential fields, which is why globals.css bothers to restyle
+              // the autofill background. Naming the fields properly is what
+              // lets a password manager pick the right entry instead of
+              // guessing, and on a phone it is the difference between the
+              // saved-logins bar appearing and not.
+              autoComplete="username"
             />
           </div>
         </Field>
@@ -365,7 +400,9 @@ export function IdentityFlow({
               onChange={(e) => setPassword(e.target.value)}
               placeholder={signup ? `At least ${MIN_PASSWORD} characters` : "••••••••"}
               className="pl-10"
-              autoComplete="off"
+              // `new-password` is what tells a manager to offer to generate and
+              // save one rather than to fill the existing one back in.
+              autoComplete={signup ? "new-password" : "current-password"}
             />
           </div>
           {signup && tooShort ? (
@@ -388,7 +425,7 @@ export function IdentityFlow({
                 onChange={(e) => setConfirm(e.target.value)}
                 placeholder="Type it again"
                 className="pl-10"
-                autoComplete="off"
+                autoComplete="new-password"
                 aria-invalid={mismatch || undefined}
               />
             </div>
@@ -442,6 +479,43 @@ export function IdentityFlow({
 
 /** Long enough to be worth having, short enough that nobody writes it on a note. */
 const MIN_PASSWORD = 8;
+
+/**
+ * How long the branded hand-off screen holds before the session is committed
+ * and the caller navigates.
+ *
+ * Long enough to register as a deliberate screen rather than a flash — under
+ * roughly half a second an overlay reads as a rendering fault — and short
+ * enough to stay under the one-second mark where waiting starts to feel like
+ * waiting. Real work (the store write, the route change, the menu's first
+ * paint) continues underneath and usually outlasts it, so this is a floor on
+ * the hand-off, not the whole of it.
+ */
+const HANDOFF_MS = 850;
+
+type Handoff = { title: string; detail: string };
+
+/**
+ * What the hand-off screen says, in terms of what the person just did. A
+ * corporate employee's company is the news — their subsidised prices are the
+ * reason they signed in — so it leads. Everyone else gets the plain verb for
+ * the door they came through.
+ */
+function handoffCopy(account: Account, mode: AuthMode): Handoff {
+  if (account.kind === "corporate") {
+    return {
+      title: "Signing you in",
+      detail: `Loading your ${account.company} meal program and today's subsidised prices.`,
+    };
+  }
+  if (mode === "signup") {
+    return {
+      title: "Creating your account",
+      detail: "Setting things up so you can start ordering. This only takes a moment.",
+    };
+  }
+  return { title: "Signing you in", detail: "Getting today's menu ready for you." };
+}
 
 /**
  * A friendly starter name derived from the email's local part, since we no

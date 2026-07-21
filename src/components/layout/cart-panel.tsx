@@ -8,6 +8,7 @@ import { useUiStore } from "@/store/use-ui-store";
 import { useCartStore } from "@/store/use-cart-store";
 import { useOrderEditStore } from "@/store/use-order-edit-store";
 import { CartPanelBody } from "@/features/cart/cart-view";
+import { useDialog } from "@/lib/use-dialog";
 import { cn } from "@/lib/utils";
 
 const WIDTH = "w-[400px]";
@@ -39,15 +40,39 @@ export function CartPanel() {
     close();
   }, [pathname, close]);
 
-  // Close on Escape.
+  /**
+   * Only the small-screen render is a modal. Above `lg` the cart is a push
+   * sibling: the page beside it stays scrollable and fully usable, so trapping
+   * focus inside it and freezing the body — both of which `useDialog` does —
+   * would be wrong there. This is the one thing the CSS breakpoint can't tell
+   * us, because `lg:hidden` decides which aside is visible at paint time and
+   * the hook has to decide the same thing at render time.
+   *
+   * Starts false so a server render and the first client paint agree, and so a
+   * mistimed lock can never be the thing that freezes the page.
+   */
+  const [overlay, setOverlay] = React.useState(false);
   React.useEffect(() => {
-    if (!open) return;
+    const mq = window.matchMedia("(max-width: 1023.98px)");
+    const sync = () => setOverlay(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const dialog = useDialog({ open: open && overlay, onClose: close });
+
+  // Escape for the desktop push panel, where the hook is deliberately stood
+  // down. Gated on `!overlay` so exactly one of the two handlers is ever live —
+  // the drawer's Escape is the hook's, and this is the other half of it.
+  React.useEffect(() => {
+    if (!open || overlay) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") close();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, close]);
+  }, [open, overlay, close]);
 
   const header = (
     <div
@@ -130,6 +155,11 @@ export function CartPanel() {
         />
         <aside
           aria-label="Cart"
+          // Only announced as a modal while it's actually covering the page —
+          // the closed drawer is parked offscreen, not holding the page inert.
+          role={open && overlay ? "dialog" : undefined}
+          aria-modal={open && overlay ? true : undefined}
+          {...dialog.props}
           className={cn(
             "fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-background transition-transform duration-300 ease-out",
             // Shadow only while open — offscreen at translate-x-full its blur

@@ -1,5 +1,6 @@
-import type { Order } from "./types";
+import type { Order, OrderDay, OrderItem } from "./types";
 import { program } from "./program";
+import { currentRecipeVersion } from "./recipe-versions";
 import { startOfToday, fromISODate, toISODate, addDays } from "@/lib/dates";
 import { isCutoffPassed } from "@/lib/cutoff";
 
@@ -24,7 +25,16 @@ export function orderPayment(order: Order, corporate: boolean) {
  * for changes"). Dates below are authored around the demo anchor (Sun Jun 28,
  * 2026) and then re-anchored to the real calendar at load — see `orders` below.
  */
-const seedOrders: Order[] = [
+/**
+ * The seed rows as authored: no `lineId` or `recipeVersion`, because both are
+ * assigned when the order is built rather than typed out 21 times by hand.
+ */
+type SeedItem = Omit<OrderItem, "lineId" | "recipeVersion">;
+type SeedOrder = Omit<Order, "days"> & {
+  days: (Omit<OrderDay, "items"> & { items: SeedItem[] })[];
+};
+
+const seedOrders: SeedOrder[] = [
   {
     // Multi-meal order — three meals on the same day.
     id: "ORD-2891",
@@ -417,6 +427,34 @@ const seedOrders: Order[] = [
     invoiceId: "INV-2858",
     source: "auto",
   },
+  {
+    // Delivered — three meals on one day. The multi-meal delivered case is what
+    // item-level rating exists for: rate the one that disappointed, leave the
+    // others alone.
+    id: "ORD-2861",
+    date: "2026-06-25",
+    type: "individual",
+    days: [
+      {
+        date: "2026-06-25",
+        deliveryWindow: "12:00 PM – 12:30 PM",
+        items: [
+          { itemId: "bibimbap", name: "Veggie Bibimbap", qty: 1, addOns: ["Crispy tofu"], price: 14.0 },
+          { itemId: "chicken-shawarma", name: "Chicken Shawarma Plate", qty: 1, addOns: [], price: 15.5 },
+          { itemId: "beef-pho", name: "Beef Pho", qty: 1, addOns: [], price: 14.5 },
+        ],
+      },
+    ],
+    address: "HQ · Floor 3 Kitchen",
+    subtotal: 44.0,
+    subsidy: 15.0,
+    employeePaid: 29.0,
+    payment: "pay_later",
+    status: "delivered",
+    locked: true,
+    placedAt: "2026-06-24 3:20 PM",
+    invoiceId: "INV-2861",
+  },
 ];
 
 /** The demo anchor the seed dates were authored against (Sunday). */
@@ -445,12 +483,37 @@ const shiftPlacedAt = (placedAt: string) => {
  * `locked` recomputed from the live cutoff so editability tracks the real clock
  * (an order is locked exactly when its change cutoff has passed).
  */
+/**
+ * A line's stable id: the order, the day it was delivered on, the meal, and its
+ * position within that day. Position is what separates two of the same meal on
+ * one day with different add-ons — the pair a rating would otherwise have no way
+ * to tell apart. Deterministic on purpose: the same seed always yields the same
+ * ids, so a rating saved before a reload still points at its line after one.
+ */
+export function makeLineId(orderId: string, date: string, itemId: string, index: number) {
+  return `${orderId}__${date}__${itemId}__${index}`;
+}
+
 export const orders: Order[] = seedOrders.map((o) => {
   const date = shiftISO(o.date);
   return {
     ...o,
     date,
-    days: o.days.map((d) => ({ ...d, date: shiftISO(d.date) })),
+    days: o.days.map((d) => {
+      const dayDate = shiftISO(d.date);
+      return {
+        ...d,
+        date: dayDate,
+        // Ids and the recipe pin are assigned here, at the one place an order
+        // comes into existence — see `OrderItem` for why a rating can't just
+        // point at `itemId`.
+        items: d.items.map((it, i) => ({
+          ...it,
+          lineId: makeLineId(o.id, dayDate, it.itemId, i),
+          recipeVersion: currentRecipeVersion(it.itemId),
+        })),
+      };
+    }),
     placedAt: shiftPlacedAt(o.placedAt),
     locked: isCutoffPassed(date, o.type),
   };

@@ -272,6 +272,13 @@ export interface MealProgram {
   /** When false, the employee never sees retail prices — only the budget. */
   showPrices: boolean;
   mealsPerDay: number;
+  /**
+   * Whether the contract includes Auto-Order. This is the company's call, not
+   * the employee's: when false the feature is still explained on its own page —
+   * people ask for what they can see — but nothing on it can switch it on.
+   * Only the company's program admin can, through their own admin surface.
+   */
+  autoOrderEnabled: boolean;
   /** Which weekdays the program runs, e.g. "Mon–Wed". */
   serviceDays: string;
   /** Weekday numbers (1=Mon) the program delivers. */
@@ -318,6 +325,14 @@ export interface ReusablePackaging {
 
 /** A line on a placed/draft order, including resolved add-ons. */
 export interface OrderItem {
+  /**
+   * Stable id for this line within its order — what a rating points at.
+   *
+   * `itemId` can't do that job: the same meal can appear twice in one order on
+   * different days, or twice on one day with different add-ons, and a rating
+   * that landed on "the Bibimbap" would be unattributable to a delivery.
+   */
+  lineId: string;
   itemId: string;
   name: string;
   qty: number;
@@ -325,6 +340,13 @@ export interface OrderItem {
   addOns: string[];
   /** Unit price incl. add-ons. */
   price: number;
+  /**
+   * The recipe as *delivered*, pinned at order time. Ratings copy it, so
+   * changing a recipe later never retroactively re-attributes the scores it
+   * earned in its old form — which is the whole basis of the before/after
+   * comparison in the admin rollups.
+   */
+  recipeVersion: number;
 }
 
 /** One day's worth of meals within an order. */

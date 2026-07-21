@@ -4,6 +4,7 @@ import * as React from "react";
 import { AlertTriangle, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirmStore } from "@/store/use-confirm-store";
+import { useDialog } from "@/lib/use-dialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -15,15 +16,19 @@ function ConfirmDialog() {
   const { open, options, respond } = useConfirmStore();
   const confirmRef = React.useRef<HTMLButtonElement>(null);
 
+  // Dismissing is answering "no" — a confirm that goes away without a verdict
+  // would leave the caller's promise hanging forever.
+  const cancel = React.useCallback(() => respond(false), [respond]);
+  const dialog = useDialog({ open, onClose: cancel });
+
+  // The hook opens on the first thing you can act on, which here is Cancel. This
+  // dialog has always opened on Confirm instead — it's the answer the caller is
+  // waiting for, and Escape and the backdrop already make "no" the cheap one to
+  // reach. Declared after the hook so it runs second and wins.
   React.useEffect(() => {
     if (!open) return;
-    confirmRef.current?.focus();
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") respond(false);
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, respond]);
+    confirmRef.current?.focus({ preventScroll: true });
+  }, [open]);
 
   if (!open || !options) return null;
 
@@ -35,7 +40,7 @@ function ConfirmDialog() {
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-teal-deep/50 animate-fade-in"
-        onClick={() => respond(false)}
+        onClick={cancel}
         aria-hidden
       />
       <div
@@ -43,6 +48,7 @@ function ConfirmDialog() {
         aria-modal="true"
         aria-labelledby="confirm-title"
         aria-describedby={options.description ? "confirm-desc" : undefined}
+        {...dialog.props}
         className="relative w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-raised animate-fade-in"
       >
         <div className="flex items-start gap-3.5">
@@ -67,7 +73,7 @@ function ConfirmDialog() {
         </div>
 
         <div className="mt-6 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => respond(false)}>
+          <Button variant="ghost" onClick={cancel}>
             {options.cancelLabel ?? "Cancel"}
           </Button>
           <Button

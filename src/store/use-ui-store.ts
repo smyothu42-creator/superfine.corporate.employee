@@ -61,6 +61,27 @@ interface UiState {
   signInPromptNext: string | null;
   openSignInPrompt: (next?: string | null) => void;
   closeSignInPrompt: () => void;
+  /**
+   * Set for the length of a deliberate sign-out. Leaving an account-only screen
+   * by signing out looks identical to a guest wandering onto one — both are
+   * "no account, gated path" — but they want opposite endings: the wanderer
+   * gets the menu with the prompt raised, the leaver gets the sign-in page.
+   * `AccessGate` reads this to tell them apart and stand down for the latter.
+   */
+  signingOut: boolean;
+  beginSignOut: () => void;
+  endSignOut: () => void;
+  /**
+   * The branded screen that covers the gap between proving who you are and
+   * landing in the app. It lives here rather than inside the sign-in flow
+   * because it has to outlive that flow: signing in from the guest wall closes
+   * the modal the form was rendered in, and signing in from `/login` navigates
+   * away from the page it was rendered on. Either would unmount a locally-held
+   * overlay at exactly the moment it is meant to be covering something.
+   */
+  authHandoff: { title: string; detail: string } | null;
+  beginAuthHandoff: (handoff: { title: string; detail: string }) => void;
+  endAuthHandoff: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -98,4 +119,13 @@ export const useUiStore = create<UiState>((set) => ({
   signInPromptNext: null,
   openSignInPrompt: (next = null) => set({ signInPromptOpen: true, signInPromptNext: next }),
   closeSignInPrompt: () => set({ signInPromptOpen: false, signInPromptNext: null }),
+  signingOut: false,
+  // Clearing the prompt on the way out matters: a gate may already have raised
+  // it in the same tick the session dropped, and it would otherwise ride along
+  // to the sign-in page as a dialog on top of the very form it duplicates.
+  beginSignOut: () => set({ signingOut: true, signInPromptOpen: false, signInPromptNext: null }),
+  endSignOut: () => set({ signingOut: false }),
+  authHandoff: null,
+  beginAuthHandoff: (authHandoff) => set({ authHandoff }),
+  endAuthHandoff: () => set({ authHandoff: null }),
 }));

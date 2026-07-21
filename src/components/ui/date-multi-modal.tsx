@@ -3,6 +3,7 @@
 import * as React from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useDialog } from "@/lib/use-dialog";
 import { cn } from "@/lib/utils";
 import { fromISODate, toISODate, sameDay, startOfToday, isServiceDay, formatDay, weekdayOffset } from "@/lib/dates";
 
@@ -57,13 +58,8 @@ export function DateMultiModal({
     const id = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
 
   const cells = monthMatrix(cursor.y, cursor.m);
   const monthLabel = new Date(cursor.y, cursor.m, 1).toLocaleDateString("en-US", {
@@ -83,14 +79,20 @@ export function DateMultiModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
         className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
       />
+      {/* The dialog is the calendar card, not the box that also holds the scrim
+          — the trap has to end where the panel does. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        {...dialog.props}
         className={cn(
           "relative w-full max-w-sm rounded-3xl bg-card p-5 shadow-raised transition-all duration-200",
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0",

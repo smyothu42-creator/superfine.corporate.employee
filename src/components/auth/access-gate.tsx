@@ -26,8 +26,13 @@ export function AccessGate({ children }: { children: React.ReactNode }) {
   const hydrated = useSessionStore((s) => s.hydrated);
   const account = useSessionStore((s) => s.account);
   const openSignInPrompt = useUiStore((s) => s.openSignInPrompt);
+  const signingOut = useUiStore((s) => s.signingOut);
 
-  const gated = hydrated && requiresAccount(pathname) && !account;
+  // Signing out *from* an account-only screen looks exactly like a guest
+  // landing on one, so without this the gate would race the sign-out's own
+  // navigation and win — dropping the user on the menu under a sign-in dialog
+  // instead of on the sign-in page they asked for.
+  const gated = hydrated && requiresAccount(pathname) && !account && !signingOut;
 
   React.useEffect(() => {
     if (gated) {
@@ -36,8 +41,21 @@ export function AccessGate({ children }: { children: React.ReactNode }) {
     }
   }, [gated, pathname, openSignInPrompt, router]);
 
+  // The flag is a handoff, not a mode: once the sign-out's navigation has
+  // actually left the gated path, drop it so the gate guards again.
+  const endSignOut = useUiStore((s) => s.endSignOut);
+  React.useEffect(() => {
+    if (signingOut && !requiresAccount(pathname)) endSignOut();
+  }, [signingOut, pathname, endSignOut]);
+
   // Render through the un-hydrated tick, so a returning visitor with a saved
   // session doesn't get a flash of nothing on every navigation.
-  if (gated) return null;
+  //
+  // `leaving` is the same blank, for the tick or two between the session
+  // dropping and the sign-out's navigation landing. The gate is deliberately
+  // standing down there, so without it the account screen would render against
+  // a null account and throw on the way out the door.
+  const leaving = hydrated && requiresAccount(pathname) && !account && signingOut;
+  if (gated || leaving) return null;
   return <LocationGate>{children}</LocationGate>;
 }

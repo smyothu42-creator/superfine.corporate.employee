@@ -6,6 +6,7 @@ import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { program } from "@/data/program";
 import { formatCurrency, cn } from "@/lib/utils";
+import { useDialog } from "@/lib/use-dialog";
 import { mealPool, hasAllergen, shortDate } from "./shared";
 
 interface SwapSheetProps {
@@ -36,13 +37,8 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
     const id = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while open, so the dialog is open for its whole lifetime.
+  const dialog = useDialog({ open: true, onClose });
 
   const favItems = favorites.map((id) => getItem(id)).filter(Boolean);
   // When the full menu is handed off to the main page, the in-popup browse tab
@@ -52,14 +48,21 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
   const list = (activeTab === "favorites" ? favItems : mealPool).filter((item) => item && !hasAllergen(item));
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
         className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
       />
+      {/* role="dialog" sits on the panel, not the fixed wrapper: the wrapper also
+          holds the scrim, and the focus trap keys off this element's subtree —
+          the scrim must stay outside it or Tab would cycle through the backdrop. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title ?? `Swap ${weekday}`}
+        {...dialog.props}
         className={cn(
           "relative flex max-h-[80dvh] w-full max-w-[460px] flex-col rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
           shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",

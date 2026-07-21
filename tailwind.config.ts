@@ -84,10 +84,25 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(-10px)", maxHeight: "0" },
           to: { opacity: "1", transform: "translateY(0)", maxHeight: "1000px" },
         },
+        // Indeterminate progress: a short segment that sweeps the full track.
+        // The track is `overflow-hidden`, so the segment enters and leaves off
+        // both edges rather than bouncing inside the visible box.
+        "track-sweep": {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(340%)" },
+        },
+        // The brand mark settling in as the loading screen takes over. Small
+        // travel, so it reads as arrival rather than as another thing to watch.
+        "rise-in": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.3s ease-out",
         "slide-in-down": "slide-in-down 0.32s cubic-bezier(.4,0,.2,1)",
+        "track-sweep": "track-sweep 1.15s cubic-bezier(.65,0,.35,1) infinite",
+        "rise-in": "rise-in 0.36s cubic-bezier(.4,0,.2,1) both",
       },
     },
   },

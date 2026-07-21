@@ -4,6 +4,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { StoreHydrator } from "@/store/store-hydrator";
+import { AuthHandoff } from "@/components/brand/auth-handoff";
 
 /**
  * Single typeface for the whole site — Geist across headings, body,
@@ -36,6 +37,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans">
         <StoreHydrator />
         {children}
+        {/* Outside `children` so it survives the route change it is covering. */}
+        <AuthHandoff />
       </body>
     </html>
   );

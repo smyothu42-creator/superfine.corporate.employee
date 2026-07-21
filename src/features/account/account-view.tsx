@@ -21,7 +21,13 @@ import {
   Trash2,
   CalendarOff,
   KeyRound,
+  Bell,
+  ChevronRight,
+  ArrowLeft,
+  Phone,
+  Mail,
   type LucideIcon,
+  LogOut,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,17 +45,19 @@ import {
   type DeliveryDetails,
 } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
+import { useSignOut } from "@/features/auth/use-sign-out";
 import {
   useAddressesStore,
   type SavedAddress,
   type AddressInput,
 } from "@/store/use-addresses-store";
+import { useDefaultAddressStore } from "@/store/use-default-address-store";
 import { dietaryPreferences, allergenOptions } from "@/data/menu";
 import { program, addresses } from "@/data/program";
 import { me } from "@/data/me";
 import { toast } from "@/store/use-toast-store";
 import { useOOOStore } from "@/store/use-ooo-store";
-import { fromISODate, formatShort } from "@/lib/dates";
+import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 
 const dietaryIcons: Record<string, LucideIcon> = {
@@ -61,6 +69,18 @@ const dietaryIcons: Record<string, LucideIcon> = {
   "Dairy-Free": MilkOff,
 };
 
+type SectionId =
+  | "dietary"
+  | "program"
+  | "permissions"
+  | "addresses"
+  | "password"
+  | "notifications"
+  | "delete";
+
+/** Group order for the phone list; sections render under these in this order. */
+const sectionGroups = ["Preferences", "Company", "Delivery", "Security"] as const;
+
 export function AccountView() {
   // Shared with the menu, which seeds its filters from these — so a preference
   // saved here shows up pre-applied the next time the menu is opened.
@@ -69,6 +89,10 @@ export function AccountView() {
   const setDietary = useProfileStore((s) => s.setDietary);
   const setAllergens = useProfileStore((s) => s.setAllergens);
   const [prefs, setPrefs] = React.useState(me.notifications);
+  // Which company site the employee treats as their default. The addresses
+  // themselves are contract-locked, but the default among them is theirs to set.
+  const defaultAddressId = useDefaultAddressStore((s) => s.defaultId);
+  const setDefaultAddress = useDefaultAddressStore((s) => s.setDefault);
   // An individual has no company program, no allowance and no company-set
   // addresses — those whole cards are corporate furniture and are omitted rather
   // than shown empty.
@@ -76,7 +100,10 @@ export function AccountView() {
   const corporate = isSubsidized(account);
   const delivery = useSessionStore((s) => s.delivery);
   const setAccountName = useSessionStore((s) => s.setAccountName);
+  const setAccountPhone = useSessionStore((s) => s.setAccountPhone);
   const name = account?.name ?? me.name;
+  const email = account?.email ?? me.email;
+  const phone = account?.phone ?? me.phone;
 
   // Inline name editing — available to any signed-in account (individual or
   // corporate). Guests have no account to rename, so the pencil is hidden.
@@ -102,58 +129,122 @@ export function AccountView() {
     setPrefs((p) => ({ ...p, [k]: v }));
   }
 
+  // One selection model for both widths: `null` is "general information" (the
+  // identity card + program tiles), a section id is that section on its own.
+  // The phone reaches it through a settings list and a back link, the desktop
+  // through the rail — but only ever one panel is on screen either way.
+  const [openSection, setOpenSection] = React.useState<SectionId | null>(null);
+
+  // Sign out is the one settings entry that isn't a section — it does its thing
+  // and leaves, so it sits below the groups rather than inside `rows`, which is
+  // keyed by `SectionId` and drives which panel is on screen.
+  const handleSignOut = useSignOut();
+
+  const rows: { id: SectionId; group: string; label: string; icon: LucideIcon }[] = [
+    { id: "dietary", group: "Preferences", label: "Dietary preferences", icon: Leaf },
+    { id: "notifications", group: "Preferences", label: "Notifications", icon: Bell },
+    ...(corporate
+      ? ([
+          { id: "program", group: "Company", label: "Meal program", icon: Wallet },
+          { id: "permissions", group: "Company", label: "Permissions", icon: ShieldCheck },
+        ] as const)
+      : []),
+    { id: "addresses", group: "Delivery", label: "Delivery addresses", icon: MapPin },
+    { id: "password", group: "Security", label: "Change password", icon: KeyRound },
+    { id: "delete", group: "Security", label: "Delete account", icon: Trash2 },
+  ];
+  const openRow = rows.find((r) => r.id === openSection);
+  // Desktop always has a section on show — there's no list screen to fall back
+  // to — so an unset selection resolves to the first one. The phone keeps `null`
+  // meaning "the settings list".
+  const desktopSection = openSection ?? rows[0].id;
+
   return (
-    <div className="space-y-5">
-      {/* Profile header */}
+    <div className="space-y-6">
+      {/* Phone back link out of a section. Mirrors the inline ArrowLeft
+          drill-down used by the item and order detail screens. */}
+      {openRow ? (
+        <button
+          type="button"
+          onClick={() => setOpenSection(null)}
+          className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-primary hover:underline lg:hidden"
+        >
+          <ArrowLeft className="size-4" /> Account
+        </button>
+      ) : null}
+
+      {/* Identity + program tiles head the page at both widths. On the phone
+          they're the top of the settings list, so a drill-down hides them. */}
+      <div className={cn("space-y-5", openSection ? "hidden lg:block" : null)}>
+      {/* Profile header — identity up top, then contact details grouped into a
+          labelled list so email and phone read at a glance and phone edits in
+          place. Job role is intentionally not shown: it's not a setting anyone
+          acts on here. */}
       <Card>
-        <CardBody className="flex flex-wrap items-center gap-4">
-          <Avatar name={name} className="size-14 shrink-0 bg-yellow text-lg text-teal-deep" />
-          {/* basis-52 keeps the name/role column readable: without a floor,
-              flex-1 lets the out-of-office button squeeze it to one word per
-              line on phones — the button wraps to its own row instead. */}
-          <div className="min-w-0 flex-1 basis-52">
-            {editingName ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  value={nameDraft}
-                  onChange={(e) => setNameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveName();
-                    if (e.key === "Escape") setEditingName(false);
-                  }}
-                  aria-label="Your name"
-                  autoFocus
-                  className="h-9 max-w-[16rem]"
-                />
-                <Button size="sm" onClick={saveName} disabled={!nameDraft.trim()}>
-                  Save
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditingName(false)}>
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <h2 className="font-display text-xl font-semibold tracking-tight">{name}</h2>
-                {account ? (
-                  <button
-                    type="button"
-                    onClick={startEditName}
-                    aria-label="Edit name"
-                    className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <Pencil className="size-4" />
-                  </button>
-                ) : null}
-              </div>
-            )}
-            <p className="text-[13px] text-muted-foreground">
-              {corporate ? `${me.role} · ${account?.company ?? me.company}` : "Individual account"}
-            </p>
-            <p className="text-[13px] text-muted-foreground">{account?.email ?? me.email}</p>
+        <CardBody className="space-y-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <Avatar name={name} className="size-14 shrink-0 bg-yellow text-lg text-teal-deep" />
+            {/* basis-52 keeps the name column readable: without a floor, flex-1
+                lets the out-of-office button squeeze it to one word per line on
+                phones — the button wraps to its own row instead. */}
+            <div className="min-w-0 flex-1 basis-52">
+              {editingName ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveName();
+                      if (e.key === "Escape") setEditingName(false);
+                    }}
+                    aria-label="Your name"
+                    autoFocus
+                    className="h-9 max-w-[16rem]"
+                  />
+                  <Button size="sm" onClick={saveName} disabled={!nameDraft.trim()}>
+                    Save
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingName(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <h2 className="font-display text-xl font-semibold tracking-tight">{name}</h2>
+                  {account ? (
+                    <button
+                      type="button"
+                      onClick={startEditName}
+                      aria-label="Edit name"
+                      className="touch-target rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <Pencil className="size-4" />
+                    </button>
+                  ) : null}
+                </div>
+              )}
+              <p className="text-[13px] text-muted-foreground">
+                {corporate ? account?.company ?? me.company : "Individual account"}
+              </p>
+            </div>
+            {/* Out-of-office pauses company auto-orders — a corporate-only concept. */}
+            {corporate ? <OOOHeaderButton /> : null}
           </div>
-          {/* Out-of-office pauses company auto-orders — a corporate-only concept. */}
-          {corporate ? <OOOHeaderButton /> : null}
+
+          {/* Contact details */}
+          <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+            <ContactRow icon={Mail} label="Email" hint="Used to sign in">
+              <span className="break-all">{email}</span>
+            </ContactRow>
+            <PhoneRow
+              phone={phone}
+              canEdit={Boolean(account)}
+              onSave={(v) => {
+                setAccountPhone(v);
+                toast.success("Phone updated", "Your phone number has been saved.");
+              }}
+            />
+          </div>
         </CardBody>
       </Card>
 
@@ -199,18 +290,131 @@ export function AccountView() {
           icon={<CalendarClock className="size-4" />}
         />
       </div>
+      </div>
+
+      {/* Desktop: rail and section share one card, split by the rail's right
+          border, so the page reads as a single settings panel. On the phone
+          this wrapper is inert — the list and the section are separate cards
+          there, because they're separate screens. */}
+      <div className="lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)] lg:overflow-hidden lg:rounded-2xl lg:border lg:border-border lg:bg-card lg:shadow-card">
+      {/* pt-5 rather than a flat p-3: the section header alongside is py-4 with
+          a taller line box, so its title lands ~20px down. Matching that keeps
+          the rail's first overline on the same optical line. */}
+      <nav
+        aria-label="Account sections"
+        className="hidden px-3 pb-3 pt-5 lg:block lg:border-r lg:border-border"
+      >
+        {sectionGroups.map((group, i) => {
+          const inGroup = rows.filter((r) => r.group === group);
+          if (!inGroup.length) return null;
+          return (
+            <div key={group} className={i > 0 ? "mt-4" : undefined}>
+              <h2 className="text-overline mb-1 px-3">{group}</h2>
+              {inGroup.map((r) => (
+                <RailItem
+                  key={r.id}
+                  active={desktopSection === r.id}
+                  onClick={() => setOpenSection(r.id)}
+                  icon={r.icon}
+                  label={r.label}
+                  danger={r.id === "delete"}
+                />
+              ))}
+            </div>
+          );
+        })}
+        {/* Same slot on both widths: last thing in the list, under its own
+            heading, so it never reads as one more panel to open. */}
+        <div className="mt-4">
+          <h2 className="text-overline mb-1 px-3">Session</h2>
+          <RailItem active={false} onClick={handleSignOut} icon={LogOut} label="Sign out" />
+        </div>
+      </nav>
+
+      <div className="min-w-0 space-y-5">
+      {/* The phone's counterpart to the rail. */}
+      {openSection ? null : (
+        <nav aria-label="Account settings" className="space-y-5 lg:hidden">
+          {sectionGroups.map((group) => {
+            const inGroup = rows.filter((r) => r.group === group);
+            if (!inGroup.length) return null;
+            return (
+              <div key={group}>
+                <h2 className="text-overline mb-2 px-1">{group}</h2>
+                <Card className="overflow-hidden">
+                  <div className="divide-y divide-border">
+                    {inGroup.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setOpenSection(r.id)}
+                        className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted active:bg-muted"
+                      >
+                        <r.icon
+                          className={cn(
+                            "size-4 shrink-0",
+                            r.id === "delete" ? "text-danger" : "text-primary",
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            "min-w-0 flex-1 text-[13px] font-semibold",
+                            r.id === "delete" ? "text-danger" : null,
+                          )}
+                        >
+                          {r.label}
+                        </span>
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      </button>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            );
+          })}
+          <div>
+            <h2 className="text-overline mb-2 px-1">Session</h2>
+            <Card className="overflow-hidden">
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted active:bg-muted"
+              >
+                <LogOut className="size-4 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1 text-[13px] font-semibold">Sign out</span>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </button>
+            </Card>
+          </div>
+        </nav>
+      )}
 
       {/* Dietary & allergens (editable) */}
+      <SectionPanel open={openSection === "dietary"} desktopOpen={desktopSection === "dietary"}>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Dietary preferences</CardTitle>
           <span className="text-2xs text-muted-foreground">Used to tag &amp; filter your menu</span>
         </CardHeader>
-        <CardBody className="space-y-6">
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-overline">Dietary tags</span>
-              <span className="text-2xs font-medium text-muted-foreground">
+        {/* Two sections, not two stacked blocks. They answer opposite questions
+            — what to show me, what to keep away from me — and read as one long
+            list when they share a surface, which is how an allergen ends up
+            skimmed past. Each gets its own bordered panel and heading. */}
+        <CardBody className="space-y-4">
+          <section
+            aria-labelledby="dietary-tags-heading"
+            className="rounded-xl border border-border bg-muted/30 p-4"
+          >
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <div>
+                <h3 id="dietary-tags-heading" className="text-sm font-semibold text-foreground">
+                  Dietary tags
+                </h3>
+                <p className="mt-0.5 text-2xs text-muted-foreground">
+                  Highlights meals that match how you eat.
+                </p>
+              </div>
+              <span className="shrink-0 text-2xs font-medium text-muted-foreground">
                 {dietary.length ? `${dietary.length} selected` : "None selected"}
               </span>
             </div>
@@ -238,11 +442,22 @@ export function AccountView() {
                 );
               })}
             </div>
-          </div>
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-overline">Allergens to avoid</span>
-              <span className="text-2xs font-medium text-muted-foreground">
+          </section>
+
+          <section
+            aria-labelledby="allergens-heading"
+            className="rounded-xl border border-border bg-muted/30 p-4"
+          >
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <div>
+                <h3 id="allergens-heading" className="text-sm font-semibold text-foreground">
+                  Allergens to avoid
+                </h3>
+                <p className="mt-0.5 text-2xs text-muted-foreground">
+                  Hides meals containing these, everywhere on your menu.
+                </p>
+              </div>
+              <span className="shrink-0 text-2xs font-medium text-muted-foreground">
                 {allergens.length ? `${allergens.length} selected` : "None selected"}
               </span>
             </div>
@@ -254,13 +469,15 @@ export function AccountView() {
               aria-label="Search and add allergens to avoid"
               separateChips
             />
-          </div>
+          </section>
         </CardBody>
       </Card>
+      </SectionPanel>
 
       {/* Meal program policy (read-only). Corporate contract terms only — an
           individual isn't on a company program, so this whole card is omitted
           for them (their cutoff info lives in the tiles above). */}
+      <SectionPanel open={openSection === "program"} desktopOpen={desktopSection === "program"}>
       {corporate ? (
         <Card>
           <CardHeader>
@@ -279,9 +496,11 @@ export function AccountView() {
           </CardBody>
         </Card>
       ) : null}
+      </SectionPanel>
 
       {/* Permissions (read-only) — SFK grants these against a company, so the
           card is corporate-only. */}
+      <SectionPanel open={openSection === "permissions"} desktopOpen={desktopSection === "permissions"}>
       {corporate ? (
         <Card>
           <CardHeader>
@@ -296,39 +515,65 @@ export function AccountView() {
           </CardBody>
         </Card>
       ) : null}
+      </SectionPanel>
 
       {/* Delivery addresses. A corporate employee sees the contract-locked
           company sites (view-only); an individual owns an address book they can
           add to, edit, and set a default in. */}
+      <SectionPanel open={openSection === "addresses"} desktopOpen={desktopSection === "addresses"}>
       {corporate ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Delivery addresses</CardTitle>
             <Badge tone="neutral">Company-set</Badge>
           </CardHeader>
-          <CardBody className="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-            {addresses.map((a) => (
-              <div key={a.id} className="flex items-start gap-3 py-3">
-                <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
-                <div className="min-w-0 flex-1 text-[13px]">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">{a.name}</span>
-                    {a.id === me.defaultAddressId ? <Badge tone="success">Default</Badge> : null}
+          <CardBody className="space-y-3">
+            <p className="text-2xs text-muted-foreground">
+              Your company sets these sites. Pick the one you want as your default.
+            </p>
+            <div className="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+              {addresses.map((a) => {
+                const isDefault = a.id === defaultAddressId;
+                return (
+                  <div key={a.id} className="flex items-start gap-3 py-3">
+                    <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1 text-[13px]">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{a.name}</span>
+                        {isDefault ? <Badge tone="success">Default</Badge> : null}
+                      </div>
+                      <div className="text-muted-foreground">{a.address}</div>
+                      {!isDefault ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDefaultAddress(a.id);
+                            toast.success("Default updated", `${a.name} is now your default site.`);
+                          }}
+                          className="-ml-2 mt-2 rounded-lg px-2 py-1.5 text-[13px] font-semibold text-primary hover:bg-teal-wash"
+                        >
+                          Set as default
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="text-muted-foreground">{a.address}</div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
+            </div>
           </CardBody>
         </Card>
       ) : (
         <IndividualAddressBook seed={delivery} />
       )}
+      </SectionPanel>
 
       {/* Password — change the sign-in password (both account types). */}
-      <ChangePasswordCard />
+      <SectionPanel open={openSection === "password"} desktopOpen={desktopSection === "password"}>
+        <ChangePasswordCard onDone={() => setOpenSection(null)} />
+      </SectionPanel>
 
       {/* Notification preferences */}
+      <SectionPanel open={openSection === "notifications"} desktopOpen={desktopSection === "notifications"}>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Notification preferences</CardTitle>
@@ -360,10 +605,96 @@ export function AccountView() {
           />
         </CardBody>
       </Card>
+      </SectionPanel>
 
       {/* Delete account — the last, most destructive action on the page. */}
-      <DeleteAccountCard />
+      <SectionPanel open={openSection === "delete"} desktopOpen={desktopSection === "delete"}>
+        <DeleteAccountCard />
+      </SectionPanel>
+      </div>
+      </div>
     </div>
+  );
+}
+
+/** One account section. The two widths select independently: the phone shows a
+ *  section only after it's tapped (nothing selected means the settings list),
+ *  while the desktop always has one open. Children stay mounted either way —
+ *  hiding is CSS, so a half-filled address form survives a trip to another
+ *  section and back. */
+function SectionPanel({
+  open,
+  desktopOpen,
+  children,
+}: {
+  open: boolean;
+  desktopOpen: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        open ? "block" : "hidden",
+        desktopOpen ? "lg:block" : "lg:hidden",
+        // On desktop the section sits *inside* the shared settings card, so its
+        // own card chrome would draw a box in a box. Each section's root is a
+        // <Card>, so strip the border/radius/shadow off that direct child —
+        // `lg:` utilities are emitted after the base ones, so these win.
+        "lg:[&>*]:rounded-none lg:[&>*]:border-0 lg:[&>*]:shadow-none",
+        // The parent's `space-y-5` still counts the `lg:hidden` mobile nav as a
+        // preceding sibling (its selector keys off the `hidden` *attribute*, not
+        // `display:none`), so it hands this a phantom 20px top margin on desktop
+        // that the rail alongside doesn't get. Drop it so both start flush.
+        // `!` because space-y's `> :not([hidden]) ~ :not([hidden])` outranks a
+        // plain utility on specificity.
+        "lg:!mt-0",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** A row in the desktop section rail. */
+function RailItem({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+  danger,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: LucideIcon;
+  label: string;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition-colors",
+        // Destructive keeps its tint when selected — a teal highlight would
+        // quietly strip the one row that needs to look different.
+        danger
+          ? active
+            ? "bg-danger-bg text-danger"
+            : "text-danger hover:bg-danger-bg/60"
+          : active
+            ? "bg-teal-wash text-teal-deep"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          danger ? "text-danger" : active ? "text-primary" : "text-muted-foreground",
+        )}
+      />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </button>
   );
 }
 
@@ -375,12 +706,17 @@ function OOOHeaderButton() {
 
   return (
     <>
-      <div className="flex flex-col items-end gap-1.5">
-        <Button variant="outline" size="sm" onClick={() => setPicker(true)}>
-          <CalendarOff className="size-4" /> {active ? "Edit out of office" : "Set out of office"}
-        </Button>
-        {active ? <OutOfOfficeDates dates={dates} /> : null}
-      </div>
+      {/* When away, the day count rides inside the button as a filled pill —
+          replacing the separate status line + date chips that used to sit
+          under it. One control carries both the action and the state. */}
+      <Button variant="outline" size="sm" onClick={() => setPicker(true)}>
+        <CalendarOff className="size-4" /> {active ? "Edit out of office" : "Set out of office"}
+        {active ? (
+          <span className="-mr-1 ml-0.5 rounded-full bg-danger px-2 py-0.5 text-2xs font-semibold text-white">
+            {dates.length} day{dates.length > 1 ? "s" : ""}
+          </span>
+        ) : null}
+      </Button>
       {picker ? (
         <DateMultiModal
           title="Out of office"
@@ -402,38 +738,6 @@ function OOOHeaderButton() {
         />
       ) : null}
     </>
-  );
-}
-
-/** Clean, compact summary of the out-of-office days: a count line plus a row of
- *  date chips (capped, with a "+N" overflow) so long ranges never wrap messily. */
-function OutOfOfficeDates({ dates }: { dates: string[] }) {
-  const MAX = 4;
-  const sorted = [...dates].sort();
-  const shown = sorted.slice(0, MAX);
-  const extra = sorted.length - shown.length;
-
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <span className="text-2xs font-semibold text-danger">
-        Away · {dates.length} day{dates.length > 1 ? "s" : ""}
-      </span>
-      <div className="flex flex-wrap justify-end gap-1">
-        {shown.map((d) => (
-          <span
-            key={d}
-            className="rounded-full border border-danger-border bg-danger-bg px-2 py-0.5 text-2xs font-semibold text-danger"
-          >
-            {formatShort(fromISODate(d))}
-          </span>
-        ))}
-        {extra > 0 ? (
-          <span className="rounded-full border border-border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">
-            +{extra}
-          </span>
-        ) : null}
-      </div>
-    </div>
   );
 }
 
@@ -601,13 +905,8 @@ function AddressFormModal({
     form.zip.trim() &&
     form.phone.trim();
 
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
 
   function submit() {
     if (!valid) return;
@@ -623,14 +922,17 @@ function AddressFormModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-    >
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
       <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[90dvh] w-full flex-col rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl">
+      {/* The dialog is the sheet, not the box that also holds the scrim, so the
+          trap ends where the panel does. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        {...dialog.props}
+        className="relative z-10 flex max-h-[90dvh] w-full flex-col rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl"
+      >
         <div className="flex items-start justify-between gap-3 border-b border-border p-5">
           <h2 className="font-display text-lg font-semibold tracking-tight">{title}</h2>
           <button
@@ -749,27 +1051,41 @@ const MIN_PASSWORD = 8;
  * password they log in with. Opens a modal that asks for the current password
  * and a new one, twice.
  */
-function ChangePasswordCard() {
-  const [open, setOpen] = React.useState(false);
+/**
+ * Password section — the section *is* the form. Picking "Change password" from
+ * the rail or the phone list already committed the user to changing it, so a
+ * panel holding nothing but a second button to open a dialog is a step that
+ * asks for a click and gives nothing back.
+ */
+function ChangePasswordCard({ onDone }: { onDone?: () => void }) {
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardHeader>
-        <CardTitle className="text-base">Password</CardTitle>
-        <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-          <KeyRound className="size-4" /> Change password
-        </Button>
+        <CardTitle className="text-base">Change password</CardTitle>
+        <span className="text-2xs text-muted-foreground">
+          Update the password you use to sign in
+        </span>
       </CardHeader>
-      <CardBody>
-        <p className="text-[13px] text-muted-foreground">
-          Update the password you use to sign in.
-        </p>
-      </CardBody>
-      {open ? <ChangePasswordModal onClose={() => setOpen(false)} /> : null}
+      <ChangePasswordForm idPrefix="cp" onDone={() => onDone?.()} />
     </Card>
   );
 }
 
-function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+/**
+ * The password fields themselves. `idPrefix` namespaces the label/input pairs
+ * so a second instance on the page can never steal the first one's labels.
+ */
+function ChangePasswordForm({
+  idPrefix,
+  onDone,
+  onCancel,
+  className,
+}: {
+  idPrefix: string;
+  onDone: () => void;
+  onCancel?: () => void;
+  className?: string;
+}) {
   const [current, setCurrent] = React.useState("");
   const [next, setNext] = React.useState("");
   const [confirmPw, setConfirmPw] = React.useState("");
@@ -778,100 +1094,74 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const mismatch = confirmPw.length > 0 && confirmPw !== next;
   const ready = current.trim().length > 0 && next.length >= MIN_PASSWORD && confirmPw === next;
 
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!ready) return;
+    setCurrent("");
+    setNext("");
+    setConfirmPw("");
     toast.success("Password changed", "Use your new password next time you sign in.");
-    onClose();
+    onDone();
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Change password"
-    >
-      <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
-      <form
-        onSubmit={submit}
-        className="relative z-10 flex max-h-[90dvh] w-full flex-col rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl"
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-border p-5">
-          <h2 className="font-display text-lg font-semibold tracking-tight">Change password</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
-          >
-            <X className="size-4" />
-          </button>
+    <form onSubmit={submit} className={cn("flex min-h-0 flex-col", className)}>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+        <div>
+          <Label htmlFor={`${idPrefix}-current`}>Current password</Label>
+          <Input
+            id={`${idPrefix}-current`}
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            placeholder="••••••••"
+            autoComplete="current-password"
+          />
         </div>
-
-        <div className="flex-1 space-y-4 overflow-y-auto p-5">
-          <div>
-            <Label htmlFor="cp-current">Current password</Label>
-            <Input
-              id="cp-current"
-              type="password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
-            />
-          </div>
-          <div>
-            <Label htmlFor="cp-new">New password</Label>
-            <Input
-              id="cp-new"
-              type="password"
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              placeholder={`At least ${MIN_PASSWORD} characters`}
-              autoComplete="new-password"
-            />
-            {tooShort ? (
-              <p className="mt-1.5 text-2xs font-medium text-danger">
-                At least {MIN_PASSWORD} characters.
-              </p>
-            ) : null}
-          </div>
-          <div>
-            <Label htmlFor="cp-confirm">Confirm new password</Label>
-            <Input
-              id="cp-confirm"
-              type="password"
-              value={confirmPw}
-              onChange={(e) => setConfirmPw(e.target.value)}
-              placeholder="Type it again"
-              autoComplete="new-password"
-              aria-invalid={mismatch || undefined}
-            />
-            {mismatch ? (
-              <p className="mt-1.5 text-2xs font-medium text-danger">Both passwords must match.</p>
-            ) : null}
-          </div>
+        <div>
+          <Label htmlFor={`${idPrefix}-new`}>New password</Label>
+          <Input
+            id={`${idPrefix}-new`}
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            placeholder={`At least ${MIN_PASSWORD} characters`}
+            autoComplete="new-password"
+          />
+          {tooShort ? (
+            <p className="mt-1.5 text-2xs font-medium text-danger">
+              At least {MIN_PASSWORD} characters.
+            </p>
+          ) : null}
         </div>
+        <div>
+          <Label htmlFor={`${idPrefix}-confirm`}>Confirm new password</Label>
+          <Input
+            id={`${idPrefix}-confirm`}
+            type="password"
+            value={confirmPw}
+            onChange={(e) => setConfirmPw(e.target.value)}
+            placeholder="Type it again"
+            autoComplete="new-password"
+            aria-invalid={mismatch || undefined}
+          />
+          {mismatch ? (
+            <p className="mt-1.5 text-2xs font-medium text-danger">Both passwords must match.</p>
+          ) : null}
+        </div>
+      </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border p-5">
-          <Button type="button" variant="ghost" onClick={onClose}>
+      <div className="flex items-center justify-end gap-2 border-t border-border p-5">
+        {onCancel ? (
+          <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" disabled={!ready}>
-            Change password
-          </Button>
-        </div>
-      </form>
-    </div>
+        ) : null}
+        <Button type="submit" disabled={!ready}>
+          Change password
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -907,13 +1197,8 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = React.useState("");
   const ready = password.trim().length > 0;
 
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -925,58 +1210,175 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Delete account"
-    >
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
       <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
-      <form
-        onSubmit={submit}
+      {/* The panel is a div wrapping the form rather than being the form: the
+          dialog ref is a div ref, and the sheet's own chrome — sizing, rounding,
+          the scrim it sits over — belongs to the layer, not to the submission.
+          The form fills it, so the rendered result is unchanged. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete account"
+        {...dialog.props}
         className="relative z-10 flex max-h-[90dvh] w-full flex-col rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl"
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border p-5">
-          <h2 className="font-display text-lg font-semibold tracking-tight">Delete account</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+            <h2 className="font-display text-lg font-semibold tracking-tight">Delete account</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto p-5">
-          <p className="rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] font-medium text-danger">
-            This permanently deletes your account and all its data — your profile, saved addresses and
-            preferences. This can&apos;t be undone.
-          </p>
-          <div>
-            <Label htmlFor="del-password">Enter your password to confirm</Label>
+          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+            <p className="rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] font-medium text-danger">
+              This permanently deletes your account and all its data — your profile, saved addresses and
+              preferences. This can&apos;t be undone.
+            </p>
+            <div>
+              <Label htmlFor="del-password">Enter your password to confirm</Label>
+              {/* `data-autofocus` rather than `autoFocus`: React fires the latter
+                  on mount, before the dialog's focus effect runs, so the panel
+                  would focus straight over it and land on the close button. */}
+              <Input
+                id="del-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                data-autofocus
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-border p-5">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="danger" disabled={!ready}>
+              <Trash2 className="size-4" /> Delete account
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** A labelled contact line (Email / Phone) in the identity card. `action` is an
+ *  optional trailing control, e.g. the phone's Edit pencil. */
+function ContactRow({
+  icon: Icon,
+  label,
+  hint,
+  action,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  hint?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+          {hint ? <span className="ml-1.5 normal-case tracking-normal opacity-70">· {hint}</span> : null}
+        </p>
+        <div className="mt-0.5 text-[13px] font-medium text-foreground">{children}</div>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/** Phone contact line with inline editing. Read-only until the pencil is tapped
+ *  (only shown for a signed-in account), then an input + Save/Cancel in place. */
+function PhoneRow({
+  phone,
+  canEdit,
+  onSave,
+}: {
+  phone: string;
+  canEdit: boolean;
+  onSave: (phone: string) => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState("");
+
+  function start() {
+    setDraft(phone);
+    setEditing(true);
+  }
+  function save() {
+    const v = draft.trim();
+    if (!v) return;
+    onSave(v);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-start gap-3 px-4 py-3">
+        <Phone className="mt-2 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <Label htmlFor="account-phone">Phone</Label>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <Input
-              id="del-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
+              id="account-phone"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") save();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
               autoFocus
+              className="h-9 max-w-[16rem]"
             />
+            <Button size="sm" onClick={save} disabled={!draft.trim()}>
+              Save
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
           </div>
         </div>
+      </div>
+    );
+  }
 
-        <div className="flex items-center justify-end gap-2 border-t border-border p-5">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="danger" disabled={!ready}>
-            <Trash2 className="size-4" /> Delete account
-          </Button>
-        </div>
-      </form>
-    </div>
+  return (
+    <ContactRow
+      icon={Phone}
+      label="Phone"
+      action={
+        canEdit ? (
+          <button
+            type="button"
+            onClick={start}
+            aria-label="Edit phone number"
+            className="touch-target rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Pencil className="size-4" />
+          </button>
+        ) : null
+      }
+    >
+      {phone ? phone : <span className="text-muted-foreground">Not set</span>}
+    </ContactRow>
   );
 }
 

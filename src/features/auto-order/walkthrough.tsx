@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useDialog } from "@/lib/use-dialog";
 
 /**
  * Guided tour for the Auto-Order flow ("Take a quick tour" on the intro card /
@@ -113,30 +114,35 @@ function TourModal({ onExit }: { onExit: () => void }) {
   }, []);
   const back = React.useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
 
+  // Escape now comes from useDialog; only the tour's own arrow-key paging is
+  // left here, since nothing generic knows about steps.
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onExit();
-      else if (e.key === "ArrowRight") setIndex((i) => (i >= STEPS.length - 1 ? i : i + 1));
+      if (e.key === "ArrowRight") setIndex((i) => (i >= STEPS.length - 1 ? i : i + 1));
       else if (e.key === "ArrowLeft") setIndex((i) => Math.max(0, i - 1));
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onExit]);
+  }, []);
+
+  // Mounted only while the tour is running, so it is open for its whole life.
+  const dialog = useDialog({ open: true, onClose: onExit });
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Auto-Order tour"
-    >
+    <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center">
       <button
         type="button"
         aria-label="Close"
         onClick={onExit}
         className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
       />
+      {/* The dialog role belongs on the panel, so the focus trap's subtree stops
+          short of the scrim button. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Auto-Order tour"
+        {...dialog.props}
         className={cn(
           "relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-300 sm:rounded-3xl",
           shown ? "translate-y-0 sm:opacity-100" : "translate-y-full sm:translate-y-2 sm:opacity-0",

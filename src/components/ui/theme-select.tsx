@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ThemeSelectOption {
@@ -24,6 +24,12 @@ interface ThemeSelectProps {
   className?: string;
   /** Extra classes merged onto the trigger button (e.g. to override height). */
   triggerClassName?: string;
+  /** Leading icon in the trigger. Lets the control read as an icon button when
+   *  its label is hidden (see `labelClassName`). */
+  icon?: LucideIcon;
+  /** Extra classes on the trigger's label span — e.g. `hidden sm:inline` to
+   *  collapse to an icon-only trigger on small screens. */
+  labelClassName?: string;
 }
 
 /** Air between the trigger and its open list, and between the list and the viewport edge. */
@@ -66,6 +72,8 @@ export function ThemeSelect({
   align = "left",
   className,
   triggerClassName,
+  icon: Icon,
+  labelClassName,
   ...props
 }: ThemeSelectProps) {
   const [open, setOpen] = React.useState(false);
@@ -153,7 +161,8 @@ export function ThemeSelect({
           triggerClassName,
         )}
       >
-        <span className="truncate">{current?.label}</span>
+        {Icon ? <Icon className="size-4 shrink-0 text-primary" /> : null}
+        <span className={cn("truncate", labelClassName)}>{current?.label}</span>
         <ChevronDown
           className={cn("size-4 shrink-0 text-primary transition-transform", open && "rotate-180")}
         />

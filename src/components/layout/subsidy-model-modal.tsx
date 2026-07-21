@@ -4,6 +4,7 @@ import * as React from "react";
 import { Wallet, Percent, FlaskConical, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/store/use-ui-store";
+import { useDialog } from "@/lib/use-dialog";
 import { program } from "@/data/program";
 import { formatCurrency, cn } from "@/lib/utils";
 
@@ -17,17 +18,11 @@ function SubsidyModelModal() {
   const open = useUiStore((s) => s.subsidyModalOpen);
   const mode = useUiStore((s) => s.subsidyMode);
   const close = useUiStore((s) => s.closeSubsidyModal);
-  const dismissRef = React.useRef<HTMLButtonElement>(null);
 
-  React.useEffect(() => {
-    if (!open) return;
-    dismissRef.current?.focus();
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, close]);
+  // "Got it" is the only control in the panel, so the hook's "focus the first
+  // thing you can act on" lands exactly where the old hand-rolled ref did — the
+  // ref existed only to do that, and goes with it.
+  const dialog = useDialog({ open, onClose: close });
 
   if (!open) return null;
 
@@ -40,6 +35,7 @@ function SubsidyModelModal() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="subsidy-model-title"
+        {...dialog.props}
         className="relative w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-raised animate-fade-in"
       >
         <span className="inline-flex items-center gap-1.5 rounded-full border border-warning-border bg-warning-bg px-2.5 py-1 text-2xs font-semibold text-coral-deep">
@@ -85,9 +81,7 @@ function SubsidyModelModal() {
             <FlaskConical className="size-3.5 shrink-0" /> Demo purposes only. Nothing here changes
             real billing.
           </p>
-          <Button ref={dismissRef} onClick={close}>
-            Got it
-          </Button>
+          <Button onClick={close}>Got it</Button>
         </div>
       </div>
     </div>

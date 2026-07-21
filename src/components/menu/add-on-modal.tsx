@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { X, Plus, Minus, Copy, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useComboBuilder, ComboBlock, type BuiltCombo } from "@/components/menu/combo-builder";
+import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 import { program } from "@/data/program";
 import type { MenuItem, AddOnGroup } from "@/data/types";
@@ -81,6 +82,12 @@ export function AddOnModal({
    * what keeps "two of this meal" from looking like "start a different meal".
    */
   const solo = rows === 1;
+
+  // Embedded is not a layer — it's a column of the meal detail page, with the
+  // page's own scroll and tab order still in play. Passing `open: !embedded`
+  // keeps the hook call unconditional (it sits above the embedded early-return)
+  // while standing the trap and the scroll lock down for that render.
+  const dialog = useDialog({ open: !embedded, onClose });
 
   // Only one combo is expanded at a time. Finishing one advances to the next
   // unanswered combo, so building three in a row is three uninterrupted passes.
@@ -241,20 +248,16 @@ export function AddOnModal({
       {showQuantity && groups.length && rows === 1 ? (
         <MealQtyStepper qty={built[0].qty} onChange={(n) => handleSetComboQty(0, n)} />
       ) : null}
-      {/* One button in two strengths, never two different buttons: the coral
-          pill at full strength once it can add, and checkout's waiting look —
-          the same pill at half — while a question is open. "Not yet" then reads
-          the same here as it does on "Add a delivery address".
-
-          Half-strength but *not* `disabled`, which is the one thing it doesn't
-          borrow from checkout: there, the button waits on an address only the
-          user can supply, so there's nothing to tap it for. Here what's missing
-          is a few rows up this very sheet, so the button stays a signpost — it
-          takes the tap and jumps to the customization that's blocking. The
-          hover override is what keeps that from leaking: without it the pill
-          brightens under the cursor and starts claiming it's ready. */}
+      {/* One button throughout, at full strength throughout. It used to dim to
+          half while a question was open, borrowing checkout's waiting look — but
+          the two aren't the same situation. Checkout's button waits on an
+          address only the user can supply, so there's nothing to tap it for.
+          This one is always live: "Choose Protein" takes the tap and jumps to
+          the customization that's blocking. Dimming it read as disabled and
+          discouraged the very tap that moves things forward, so the label alone
+          carries what's left to do. */}
       <Button
-        className={cn(ctaClassName, blocked && "opacity-50 hover:bg-coral")}
+        className={ctaClassName}
         size="lg"
         onClick={() => (blocked ? focusCombo(firstIncomplete) : onConfirm(built))}
       >
@@ -308,7 +311,7 @@ export function AddOnModal({
             spelled out there: `fixed` (the shell's `main` has a bottom padding a
             `sticky` bar could never escape), opaque `bg-card` (the option rows
             ghost through anything less), `lg:left-[var(--sidebar-w)]` to clear
-            the desktop rail, `bottom-dock` to rest on the phone tab bar, and
+            the desktop rail, `bottom-dock` to rest on the viewport floor, and
             `pb-safe` on the outer box only — it *sets* padding-bottom, so the
             bar's own padding has to live on a separate inner box or desktop
             (inset 0) silently loses it.
@@ -355,14 +358,18 @@ export function AddOnModal({
   // the menu tree would become the containing block for this `fixed` overlay and
   // clip it below the viewport top. From the body it always covers the full screen.
   return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Customize ${item.name} for ${dateLabel}`}
-    >
-      <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
+      <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} aria-hidden />
+      {/* The dialog is the sheet, not the box that also holds the scrim: the
+          focus trap has to end where the panel ends, or Tab would keep landing
+          on the backdrop the user is being kept away from. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Customize ${item.name} for ${dateLabel}`}
+        {...dialog.props}
+        className="relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl"
+      >
         <div className="flex items-start justify-between gap-3 border-b border-border p-5">
           <div>
             <h2 className="font-display text-lg font-semibold tracking-tight">{item.name}</h2>
@@ -490,7 +497,7 @@ function AddAnotherSection({
           type="button"
           onClick={onCancel}
           aria-label="Cancel"
-          className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="rounded-full touch-target p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="size-4" />
         </button>

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   CalendarOff,
   CalendarRange,
+  ArrowDownUp,
   XCircle,
   Pencil,
   ChevronRight,
@@ -37,6 +38,7 @@ import { toast } from "@/store/use-toast-store";
 import { useOOOStore } from "@/store/use-ooo-store";
 import { fromISODate, formatDay, toISODate, startOfToday } from "@/lib/dates";
 import { nextOpenDays, earliestDeliveryDate, isCutoffPassed } from "@/lib/cutoff";
+import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Order } from "@/data/types";
 
@@ -113,11 +115,13 @@ export function OrdersView() {
         </Notice>
       ) : null}
 
-      {/* flex-wrap: on phones the tab strip and the date/sort controls can't
-          share 390px, so the controls drop to a second row instead of crushing
-          the tabs into a clipped scroller. */}
-      <div className="sticky top-16 z-20 -mx-4 flex flex-wrap items-center justify-between gap-2 bg-background px-4 py-2 sm:-mx-6 sm:gap-3 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="min-w-0 max-w-full overflow-x-auto">
+      {/* One row at every width. The tab strip is the flexible part (shrinks and
+          scrolls), while the date/sort controls stay put — and collapse to
+          icon-only on phones so all three fit 390px instead of wrapping to a
+          second row. The date label reappears once a range is set, since then
+          it carries information the icon can't. */}
+      <div className="sticky top-16 z-20 -mx-4 flex items-center justify-between gap-2 bg-background px-4 py-2 sm:-mx-6 sm:gap-3 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="min-w-0 flex-1 overflow-x-auto">
           <Tabs
             tabs={[
               { id: "upcoming", label: `Upcoming (${upcoming.length})` },
@@ -137,20 +141,21 @@ export function OrdersView() {
               <button
                 type="button"
                 onClick={() => setRangeOpen(true)}
+                aria-label={range ? `Date range: ${rangeLabel}` : "Filter by date"}
                 className={cn(
-                  "flex h-10 items-center gap-1.5 rounded-full border bg-card pl-3.5 pr-3.5 text-[13px] font-semibold text-teal-deep shadow-sm outline-none transition-colors hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30",
+                  "flex h-10 items-center gap-1.5 rounded-full border bg-card px-3 text-[13px] font-semibold text-teal-deep shadow-sm outline-none transition-colors hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30 sm:px-3.5",
                   range ? "border-primary" : "border-border hover:border-primary/40",
                 )}
               >
-                <CalendarRange className="size-4 text-primary" />
-                <span className="truncate">{rangeLabel}</span>
+                <CalendarRange className="size-4 shrink-0 text-primary" />
+                <span className={cn("truncate", !range && "hidden sm:inline")}>{rangeLabel}</span>
               </button>
               {range ? (
                 <button
                   type="button"
                   onClick={() => setRange(null)}
                   aria-label="Clear date range"
-                  className="ml-1 rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="touch-target ml-1 rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <X className="size-3.5" />
                 </button>
@@ -163,6 +168,8 @@ export function OrdersView() {
               size="sm"
               align="right"
               aria-label="Sort orders"
+              icon={ArrowDownUp}
+              labelClassName="hidden sm:inline"
               className="w-auto"
               triggerClassName="h-10"
             />
@@ -329,26 +336,34 @@ function OrderCard({ order }: { order: Order }) {
         </div>
         {editable ? (
           <div className="flex shrink-0 items-center gap-2">
+            {/* Icon-only on phones, where the header band is tight and spelled-out
+                labels crowd the order id + date; the label returns from `sm` up.
+                aria-label + title keep the meaning while the text is hidden. */}
             <Button
               size="sm"
               variant="outline"
+              className="w-8 px-0 sm:w-auto sm:px-4"
+              aria-label="Edit order"
+              title="Edit order"
               onClick={(e) => {
                 stop(e);
                 startChange();
               }}
             >
-              <Pencil className="size-3.5" /> Edit
+              <Pencil className="size-3.5" /> <span className="hidden sm:inline">Edit</span>
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="border-danger text-danger hover:bg-danger/10"
+              className="w-8 border-danger px-0 text-danger hover:bg-danger/10 sm:w-auto sm:px-4"
+              aria-label="Cancel order"
+              title="Cancel order"
               onClick={(e) => {
                 stop(e);
                 cancel();
               }}
             >
-              <XCircle className="size-3.5" /> Cancel
+              <XCircle className="size-3.5" /> <span className="hidden sm:inline">Cancel</span>
             </Button>
           </div>
         ) : active && order.locked ? (
@@ -495,28 +510,24 @@ function ReOrderModal({
     const id = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Re-order ${order.id}`}
-    >
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
         className={cn("absolute inset-0 bg-black/50 transition-opacity", shown ? "opacity-100" : "opacity-0")}
       />
+      {/* The dialog is the sheet, not the box that also holds the scrim, so the
+          trap ends where the panel does. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Re-order ${order.id}`}
+        {...dialog.props}
         className={cn(
           "relative flex max-h-[85dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-200 sm:rounded-3xl",
           shown ? "translate-y-0 sm:scale-100 sm:opacity-100" : "translate-y-full sm:translate-y-0 sm:scale-95 sm:opacity-0",

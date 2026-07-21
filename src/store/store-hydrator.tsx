@@ -4,6 +4,8 @@ import * as React from "react";
 import { useCartStore } from "@/store/use-cart-store";
 import { useSessionStore } from "@/store/use-session-store";
 import { useAddressesStore } from "@/store/use-addresses-store";
+import { useCardsStore } from "@/store/use-cards-store";
+import { useRatingsStore } from "@/store/use-ratings-store";
 import { useOrderEditStore } from "@/store/use-order-edit-store";
 
 /**
@@ -26,6 +28,12 @@ export function StoreHydrator() {
     void useOrderEditStore.persist.rehydrate();
     // The individual's saved-address book — same skipHydration treatment.
     void useAddressesStore.persist.rehydrate();
+    // …and their wallet, so a returning customer's saved card is already the
+    // selected payment method by the time checkout paints.
+    void useCardsStore.persist.rehydrate();
+    // Meal ratings — restored so an already-rated meal shows as rated rather
+    // than inviting a second rating the store would then reject.
+    void useRatingsStore.persist.rehydrate();
     // Sets `hydrated`, which the gates wait for before deciding anything.
     void useSessionStore.persist.rehydrate();
   }, []);

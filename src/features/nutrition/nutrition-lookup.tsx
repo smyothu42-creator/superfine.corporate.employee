@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/input";
 import { OptionGroups, useItemOptions } from "@/components/menu/option-groups";
 import { menu, getItem, hasRequiredAddOns } from "@/data/menu";
 import { fetchNutrition } from "@/lib/nutrition";
+import { useDialog } from "@/lib/use-dialog";
 import { cn } from "@/lib/utils";
 import type { MenuItem, Nutrition } from "@/data/types";
 
@@ -361,24 +362,21 @@ function OptionsModal({
   onView: () => void;
   onClose: () => void;
 }) {
-  // Close on Escape while the modal is open.
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while it's up, so it's open for its whole life.
+  const dialog = useDialog({ open: true, onClose });
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Build ${item.name}`}
-    >
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
       <div className="absolute inset-0 bg-teal-deep/50" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl">
+      {/* The dialog is the sheet, not the box that also holds the scrim, so the
+          trap ends where the panel does. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Build ${item.name}`}
+        {...dialog.props}
+        className="relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-raised sm:max-w-md sm:rounded-3xl"
+      >
         <div className="flex items-start justify-between gap-3 border-b border-border p-5">
           <div>
             <h2 className="font-display text-lg font-semibold tracking-tight">{item.name}</h2>

@@ -24,7 +24,14 @@ function Tabs({ tabs, value, onValueChange, className }: TabsProps) {
             aria-selected={active}
             onClick={() => onValueChange(tab.id)}
             className={cn(
-              "whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold transition-colors sm:px-4 sm:py-1.5 sm:text-[13px]",
+              // Taller on phones than the label strictly needs: with the
+              // wrapper's `p-1` and border this brings the whole control to
+              // ~46px, the touch-target floor it previously sat 12px under.
+              // Height only — the horizontal padding and type size stay put,
+              // because on the menu this sits beside the date pill and any
+              // extra width drops that pill onto a second line. From `sm` up a
+              // mouse is doing the aiming, so the tighter proportions return.
+              "whitespace-nowrap rounded-full px-2 py-2.5 text-xs font-semibold transition-colors sm:px-4 sm:py-1.5 sm:text-[13px]",
               active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >

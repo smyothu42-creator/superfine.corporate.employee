@@ -4,6 +4,7 @@ import * as React from "react";
 import { X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, cn } from "@/lib/utils";
+import { useDialog } from "@/lib/use-dialog";
 import type { MenuItem } from "@/data/types";
 import type { PlanLine } from "./types";
 
@@ -32,13 +33,8 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
     return () => cancelAnimationFrame(id);
   }, []);
 
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Mounted only while open, so the sheet is open for its whole lifetime.
+  const dialog = useDialog({ open: true, onClose });
 
   function toggle(groupId: string, optionId: string, select: "single" | "multi", max?: number) {
     setPicked((prev) => {
@@ -78,7 +74,7 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
       <button
         type="button"
         aria-label="Close"
@@ -88,7 +84,13 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
           shown ? "opacity-100" : "opacity-0",
         )}
       />
+      {/* The dialog role lives on the sheet itself, so the focus trap's subtree
+          leaves the scrim button out. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${item.name} options`}
+        {...dialog.props}
         className={cn(
           "relative w-full max-w-[430px] rounded-t-3xl bg-card p-4 pb-6 shadow-raised transition-transform duration-300",
           shown ? "translate-y-0" : "translate-y-full",

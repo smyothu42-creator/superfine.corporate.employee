@@ -43,17 +43,24 @@ function useDismiss(open: boolean, close: () => void) {
       if (ref.current && !ref.current.contains(e.target as Node)) close();
     }
     function onKey(e: KeyboardEvent) {
-      // Stop here rather than letting the dialog behind us close too.
+      // Stop here rather than letting the dialog behind us close too: one Escape
+      // should shut the picker and leave the sheet that holds it open.
       if (e.key === "Escape") {
         e.stopPropagation();
         close();
       }
     }
     document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey, true);
+    // On `window`, not `document`. `useDialog` puts its own Escape handler on
+    // `document` in the capture phase, and it registers first — the sheet mounts
+    // before a picker inside it is opened. Two capture listeners on the same node
+    // fire in registration order, so a document-level listener here would run
+    // second, after the sheet had already closed itself. Capture reaches `window`
+    // before `document`, which is what lets stopPropagation above actually win.
+    window.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keydown", onKey, true);
     };
   }, [open, close]);
   return ref;
@@ -62,6 +69,13 @@ function useDismiss(open: boolean, close: () => void) {
 const TRIGGER =
   "flex h-11 w-full items-center justify-between gap-1.5 rounded-full border border-border bg-card pl-4 pr-3 text-sm font-semibold text-teal-deep shadow-sm outline-none transition-colors hover:border-primary/40 hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30";
 
+// Both pickers below are non-modal popovers anchored to their trigger, and are
+// deliberately role-less. They used to claim role="dialog", which tells a screen
+// reader to expect a layer that traps focus and seals off the page behind it —
+// none of which is true or wanted here. Tab is meant to walk out of a picker and
+// on to the next field, and the form behind stays live and scrollable. The
+// trigger's aria-expanded is what actually carries the open/closed state, and
+// useDismiss above supplies Escape and outside-click.
 const POPOVER =
   "absolute left-0 top-full z-50 mt-2 rounded-2xl border border-border bg-card p-3 shadow-raised";
 
@@ -113,7 +127,6 @@ export function DateField({
       <button
         type="button"
         aria-label={ariaLabel}
-        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={TRIGGER}
@@ -125,13 +138,13 @@ export function DateField({
       </button>
 
       {open ? (
-        <div className={cn(POPOVER, "w-[19rem]")} role="dialog" aria-label={ariaLabel}>
+        <div className={cn(POPOVER, "w-[19rem]")}>
           <div className="flex items-center justify-between">
             <button
               type="button"
               onClick={() => shiftMonth(-1)}
               aria-label="Previous month"
-              className="rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="touch-target rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -140,7 +153,7 @@ export function DateField({
               type="button"
               onClick={() => shiftMonth(1)}
               aria-label="Next month"
-              className="rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="touch-target rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <ChevronRight className="size-4" />
             </button>
@@ -251,7 +264,6 @@ export function TimeField({
       <button
         type="button"
         aria-label={ariaLabel}
-        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={TRIGGER}
@@ -263,7 +275,7 @@ export function TimeField({
       </button>
 
       {open ? (
-        <div className={cn(POPOVER, "w-[13rem]")} role="dialog" aria-label={ariaLabel}>
+        <div className={cn(POPOVER, "w-[13rem]")}>
           {/* Hour · minute · AM/PM, the same three columns the native picker
               shows — the interaction people already know, in the site's paint. */}
           <div className="flex gap-1">

@@ -9,15 +9,27 @@ import { cn } from "@/lib/utils";
  * `relative` (usually `overflow-hidden`) container and keep the real content
  * above it with `relative z-10`. Colour/opacity is a `text-*` class, overridable
  * via `className`.
+ *
+ * Two instances can share a page (the sign-in screen renders one in the desktop
+ * brand panel and one in the mobile banner), so the `<pattern>` id must be
+ * unique per instance — a duplicate id makes every later instance resolve
+ * `url(#…)` to the first one and render nothing. Pass `patternId` when a screen
+ * mounts more than one.
  */
-export function FoodDoodles({ className }: { className?: string }) {
+export function FoodDoodles({
+  className,
+  patternId = "food-doodles-wash",
+}: {
+  className?: string;
+  patternId?: string;
+}) {
   return (
     <svg
       aria-hidden
       className={cn("pointer-events-none absolute inset-0 size-full text-teal-deep/[0.05]", className)}
     >
       <defs>
-        <pattern id="food-doodles-wash" width="240" height="240" patternUnits="userSpaceOnUse">
+        <pattern id={patternId} width="240" height="240" patternUnits="userSpaceOnUse">
           <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             {/* Apple */}
             <g transform="translate(24 24)">
@@ -63,7 +75,7 @@ export function FoodDoodles({ className }: { className?: string }) {
           </g>
         </pattern>
       </defs>
-      <rect width="100%" height="100%" fill="url(#food-doodles-wash)" />
+      <rect width="100%" height="100%" fill={`url(#${patternId})`} />
     </svg>
   );
 }

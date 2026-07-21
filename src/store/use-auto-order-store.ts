@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { me } from "@/data/me";
-import type { AutoConfig } from "@/features/auto-order/shared";
+import { program } from "@/data/program";
+import { DEFAULT_AUTO_DAYS, type AutoConfig } from "@/features/auto-order/shared";
 
 /**
  * Bridges the Auto-Order dashboard's controls up to the global Topbar, so the
@@ -36,6 +37,16 @@ interface AutoOrderHeaderState {
    *  "See how it works" tour trigger. (The Back button lives on the page.) */
   inSetup: boolean;
   setInSetup: (inSetup: boolean) => void;
+  /**
+   * Whether the company's contract includes Auto-Order. Seeded from the program
+   * data; in production it would only ever change when the contract does.
+   *
+   * It's in the store purely so the demo toggle on the Auto-Order page can flip
+   * it live — a contract setting isn't something an employee can change, and
+   * this must not grow a UI outside that one demo affordance.
+   */
+  companyEnabled: boolean;
+  setCompanyEnabled: (companyEnabled: boolean) => void;
 }
 
 export const useAutoOrderStore = create<AutoOrderHeaderState>((set) => ({
@@ -43,6 +54,7 @@ export const useAutoOrderStore = create<AutoOrderHeaderState>((set) => ({
     status: me.autoOrder.enabled ? "active" : "inactive",
     favorites: me.autoOrder.favorites,
     soldOut: "notify",
+    days: DEFAULT_AUTO_DAYS,
   },
   setConfig: (config) => set({ config }),
   header: null,
@@ -51,4 +63,6 @@ export const useAutoOrderStore = create<AutoOrderHeaderState>((set) => ({
   setNavTitle: (navTitle) => set({ navTitle }),
   inSetup: false,
   setInSetup: (inSetup) => set({ inSetup }),
+  companyEnabled: program.autoOrderEnabled,
+  setCompanyEnabled: (companyEnabled) => set({ companyEnabled }),
 }));

@@ -1,10 +1,10 @@
 import * as React from "react";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
-import { MobileDrawer, MobileTabBar } from "./mobile-nav";
+import { MobileDrawer } from "./mobile-nav";
 import { CartPanel } from "./cart-panel";
 import { SubsidyModelModal } from "./subsidy-model-modal";
-import { FeedbackLauncher } from "./feedback-launcher";
+import { FeedbackModal } from "./feedback-modal";
 import { OrderEditBanner } from "./order-edit-banner";
 import { EditLeaveGuard } from "./edit-leave-guard";
 import { SignInModal } from "@/components/auth/sign-in-modal";
@@ -12,9 +12,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 /**
- * Application chrome: fixed dark rail on desktop, slide-in drawer + persistent
- * bottom tab bar on phones (the platform is mobile-first for employees), a
- * sticky topbar with the page title + cart, and a scrollable content well.
+ * Application chrome: fixed dark rail on desktop, slide-in drawer behind the
+ * topbar's hamburger on phones (one nav, the full one — a five-tab bar could
+ * only ever carry half of it, and it stole a strip of every page for the
+ * privilege), a sticky topbar with the page title + cart, and a scrollable
+ * content well.
  * Mounts the global toast region and confirmation dialog. Landmarks + a skip
  * link keep it keyboard- and screen-reader-friendly.
  */
@@ -44,9 +46,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
         <main
           id="main-content"
           tabIndex={-1}
-          // `pb-tab-bar` reserves the tab bar's height *plus* the home-indicator
-          // inset, so the last card on a page is always reachable.
-          className="pb-tab-bar flex-1 px-4 py-6 outline-none sm:px-6 lg:px-8"
+          // `pb-floor` keeps the last card off the home indicator, and clear of
+          // the docked CTA bars that several pages park on the viewport floor.
+          className="pb-floor flex-1 px-4 py-6 outline-none sm:px-6 lg:px-8"
         >
           {/* No transform/animation on this wrapper: a `transform` here (the old
               `animate-fade-in` used translateY) makes it the containing block for
@@ -64,11 +66,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* Slide-in cart — desktop push panel + mobile overlay drawer */}
       <CartPanel />
 
-      {/* Mobile bottom tab bar — first-class phone navigation */}
-      <MobileTabBar />
-
-      {/* Floating feedback button (post-login) + its modal */}
-      <FeedbackLauncher />
+      {/* Feedback sheet — opened from the rail's secondary links, or from a
+          past order's "Leave feedback". */}
+      <FeedbackModal />
 
       <Toaster />
       <ConfirmDialog />
