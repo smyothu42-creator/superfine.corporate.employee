@@ -51,6 +51,8 @@ function deriveTitle(pathname: string) {
 function Topbar() {
   const pathname = usePathname();
   const toggleMobileNav = useUiStore((s) => s.toggleMobileNav);
+  // Drives the dot on the hamburger — see the button below.
+  const unreadNotifications = useNotificationsStore((s) => s.items.filter((n) => !n.read).length);
   const toggleCart = useUiStore((s) => s.toggleCart);
   const cartOpen = useUiStore((s) => s.cartOpen);
   const activeOrderDate = useUiStore((s) => s.activeOrderDate);
@@ -79,13 +81,26 @@ function Topbar() {
   return (
     <header className="sticky top-0 z-30 flex h-[var(--topbar-h)] items-center justify-between border-b border-border bg-background px-4 sm:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-3">
+        {/* The hamburger carries the unread dot on a phone: with the nav folded
+            away behind it, the Notifications item — and the count on it — is
+            invisible until someone thinks to open the drawer. A dot, not a
+            number: the count is one tap away, and this button's job is to say
+            "there's something in here", not how much. */}
         <button
           type="button"
           onClick={toggleMobileNav}
-          aria-label="Open navigation"
-          className="touch-target -ml-1 shrink-0 rounded-full border border-border bg-card p-2 text-foreground hover:bg-muted lg:hidden"
+          aria-label={unreadNotifications > 0 ? "Open navigation, unread notifications" : "Open navigation"}
+          className="touch-target relative -ml-1 shrink-0 rounded-full border border-border bg-card p-2 text-foreground hover:bg-muted lg:hidden"
         >
           <Menu className="size-5" />
+          {unreadNotifications > 0 ? (
+            // Ringed in the topbar's own background so the dot reads as sitting
+            // on top of the button rather than being part of its border.
+            <span
+              aria-hidden
+              className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-coral ring-2 ring-background"
+            />
+          ) : null}
         </button>
         <h1 className="truncate font-display text-lg font-semibold tracking-tight">{title}</h1>
         {onAutoOrder && autoHeader ? (

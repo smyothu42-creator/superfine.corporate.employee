@@ -10,6 +10,20 @@
  * here, and nothing in this file pretends otherwise.
  */
 
+/**
+ * Whether the card form *enforces* the checks below.
+ *
+ * Off while this is a demo: nothing here reaches a processor, and a prototype
+ * that rejects `4111 1111 1111 1111` because it fails Luhn is refusing to
+ * demonstrate itself. The validators stay exactly as they are — flip this to
+ * `true` the day a real key is wired up and the form starts enforcing again,
+ * with no other change.
+ *
+ * Formatting, brand detection and the length hints are unaffected either way:
+ * they help someone type a number, they don't refuse one.
+ */
+export const STRICT_CARD_VALIDATION = false;
+
 export type CardBrand = "visa" | "mastercard" | "amex" | "discover" | "unknown";
 
 /** How each brand's numbers are shaped: display grouping, length, CVC length. */

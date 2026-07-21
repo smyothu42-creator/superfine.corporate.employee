@@ -51,6 +51,7 @@ import {
 import { useCartStore, type PackagingChoice } from "@/store/use-cart-store";
 import { useCardsStore, type SavedCard } from "@/store/use-cards-store";
 import {
+  STRICT_CARD_VALIDATION,
   brandLabel,
   cardDigits,
   cardNumberValid,
@@ -209,8 +210,6 @@ export function CheckoutView() {
    * *assumed*, and assuming is not consenting.
    */
   const [invoiceConfirmed, setInvoiceConfirmed] = React.useState(false);
-  /** Where "Enter payment" scrolls to — the Payment section, not the dialog. */
-  const paymentRef = React.useRef<HTMLDivElement>(null);
   const [openRow, setOpenRow] = React.useState<RowName | null>(null);
   const toggleRow = React.useCallback(
     (r: RowName) => setOpenRow((cur) => (cur === r ? null : r)),
@@ -361,11 +360,12 @@ export function CheckoutView() {
       runStep(firstIncomplete.id);
       return;
     }
-    // Scroll to the section rather than throwing the dialog straight up: the
-    // Payment card carries the charge-timing promise and the flagged row, and
-    // someone deciding how to pay should see both before the sheet covers them.
+    // Straight to the dialog. Scrolling to the Payment card first put a second
+    // tap between "Enter payment" and entering payment — the button names the
+    // thing it should just open, and the card it was scrolling to says nothing
+    // the dialog doesn't say better.
     if (paymentPending) {
-      paymentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setPaymentOpen(true);
       return;
     }
     placeOrder();
@@ -520,9 +520,6 @@ export function CheckoutView() {
             </RowGroup>
           </Card>
 
-          {/* Wrapped so "Enter payment" has something to scroll to — Card takes no
-              ref, and `scroll-mt-20` keeps the heading clear of the topbar. */}
-          <div ref={paymentRef} className="scroll-mt-20">
           <Card className={SECTION_CARD}>
             <CardHeader className={cn("flex-wrap", SECTION_HEADER)}>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -553,7 +550,6 @@ export function CheckoutView() {
               />
             </RowGroup>
           </Card>
-          </div>
         </div>
 
         {/* Summary. On desktop the rail sticks and the *item list* is what
@@ -1322,13 +1318,22 @@ function SecurityNote() {
 }
 
 /**
- * The card form. Everything here is checked in the browser before anything is
- * sent: the brand comes from the leading digits, the number has to pass its own
- * checksum, and the expiry has to be a month that hasn't happened. A typo caught
- * under the field beats a decline several seconds later with no explanation.
+ * The card form.
  *
- * Errors appear on blur, not on every keystroke — a half-typed card number is
- * invalid by definition, and saying so while it's being typed is nagging.
+ * The checks it *can* apply are real ones — brand from the leading digits, the
+ * number's own Luhn checksum, an expiry that hasn't happened — and a typo caught
+ * under the field beats a decline several seconds later with no explanation.
+ * They're switched off here: {@link STRICT_CARD_VALIDATION} is false while this
+ * is a demo, so any number, expiry and code are accepted and the only thing
+ * asked for is *some* number to take a last-four from. Flipping that one
+ * constant restores every rule below.
+ *
+ * Formatting and the brand chip stay on regardless — they help someone type a
+ * number rather than refuse the one they typed.
+ *
+ * Errors, when enforced, appear on blur rather than on every keystroke: a
+ * half-typed card number is invalid by definition, and saying so mid-type is
+ * nagging.
  */
 function CardForm({ onSaved, onCancel }: { onSaved: () => void; onCancel?: () => void }) {
   const addCard = useCardsStore((s) => s.add);
@@ -1341,13 +1346,23 @@ function CardForm({ onSaved, onCancel }: { onSaved: () => void; onCancel?: () =>
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
 
   const brand = detectBrand(number);
-  const errors = {
-    number: cardNumberValid(number) ? "" : "Check this card number.",
-    expiry: expiryValid(expiry) ? "" : "Use a future MM/YY.",
-    cvc: cvcValid(cvc, brand) ? "" : `${cvcLength(brand)} digits, from the back of the card.`,
-    name: name.trim() ? "" : "Add the name as printed.",
-    zip: /^\d{5}$/.test(zip) ? "" : "5-digit billing ZIP.",
-  };
+  const errors = STRICT_CARD_VALIDATION
+    ? {
+        number: cardNumberValid(number) ? "" : "Check this card number.",
+        expiry: expiryValid(expiry) ? "" : "Use a future MM/YY.",
+        cvc: cvcValid(cvc, brand) ? "" : `${cvcLength(brand)} digits, from the back of the card.`,
+        name: name.trim() ? "" : "Add the name as printed.",
+        zip: /^\d{5}$/.test(zip) ? "" : "5-digit billing ZIP.",
+      }
+    : {
+        // Demo: the one thing still asked for is a digit to take a last-four
+        // from, because a saved card reading "•••• " is not a card.
+        number: cardDigits(number) ? "" : "Type any number to continue.",
+        expiry: "",
+        cvc: "",
+        name: "",
+        zip: "",
+      };
   const valid = Object.values(errors).every((e) => !e);
   const show = (field: keyof typeof errors) => (touched[field] ? errors[field] : "");
   const blur = (field: string) => () => setTouched((t) => ({ ...t, [field]: true }));
@@ -1363,9 +1378,12 @@ function CardForm({ onSaved, onCancel }: { onSaved: () => void; onCancel?: () =>
       brand,
       // The only part of the number that's kept — see `use-cards-store`.
       last4: cardDigits(number).slice(-4),
-      expMonth: Number(digits.slice(0, 2)),
-      expYear: 2000 + Number(digits.slice(2)),
-      name: name.trim(),
+      // Fall back rather than store `NaN` from a blank or half-typed expiry:
+      // the row renders this, and "•••• 4242 · Expires NaN/NaN" is worse than a
+      // placeholder date on a card that was never going to be charged.
+      expMonth: Number(digits.slice(0, 2)) || 12,
+      expYear: digits.length === 4 ? 2000 + Number(digits.slice(2)) : new Date().getFullYear() + 3,
+      name: name.trim() || "Demo card",
       zip,
     });
     toast.success("Card saved", `${brandLabel(brand)} ending ${cardDigits(number).slice(-4)}.`);
@@ -1421,7 +1439,9 @@ function CardForm({ onSaved, onCancel }: { onSaved: () => void; onCancel?: () =>
           <Input
             id="c-cvc"
             value={cvc}
-            onChange={(e) => setCvc(cardDigits(e.target.value).slice(0, cvcLength(brand)))}
+            onChange={(e) =>
+              setCvc(cardDigits(e.target.value).slice(0, STRICT_CARD_VALIDATION ? cvcLength(brand) : 4))
+            }
             onBlur={blur("cvc")}
             inputMode="numeric"
             autoComplete="cc-csc"
@@ -1475,6 +1495,11 @@ function CardForm({ onSaved, onCancel }: { onSaved: () => void; onCancel?: () =>
       </Field>
 
       <SecurityNote />
+      {!STRICT_CARD_VALIDATION ? (
+        <Notice tone="info" className="text-2xs">
+          Demo checkout — any card details are accepted and nothing is ever charged.
+        </Notice>
+      ) : null}
 
       <div className="flex gap-2 pt-1">
         {onCancel ? (

@@ -7,6 +7,7 @@ import { LogOut, LogIn, Apple, MessageSquareHeart } from "lucide-react";
 import { NAV_ITEMS, isActive, visibleNav, requiresAccount } from "@/lib/nav";
 import { useUiStore } from "@/store/use-ui-store";
 import { useSessionStore } from "@/store/use-session-store";
+import { useNotificationsStore } from "@/store/use-notifications-store";
 import { Logo } from "@/components/brand/logo";
 import { Avatar } from "@/components/ui/avatar";
 import { useSignOut } from "@/features/auth/use-sign-out";
@@ -27,6 +28,7 @@ function Sidebar({ onNavigate }: SidebarProps) {
   const account = useSessionStore((s) => s.account);
   const openSignInPrompt = useUiStore((s) => s.openSignInPrompt);
   const openFeedback = useUiStore((s) => s.openFeedbackModal);
+  const unread = useNotificationsStore((s) => s.items.filter((n) => !n.read).length);
 
   const handleLogout = useSignOut(onNavigate);
 
@@ -65,7 +67,20 @@ function Sidebar({ onNavigate }: SidebarProps) {
               )}
             >
               <Icon className="size-[18px] shrink-0" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {/* The count, on the row it belongs to. The hamburger only says
+                  "something is in here"; this is the row that says how much, and
+                  it's the same answer in the drawer and the desktop rail. */}
+              {item.href === "/notifications" && unread > 0 ? (
+                <span
+                  className={cn(
+                    "flex min-w-[20px] items-center justify-center rounded-full px-1.5 text-2xs font-bold leading-5",
+                    active ? "bg-teal-deep text-white" : "bg-coral text-white",
+                  )}
+                >
+                  {unread}
+                </span>
+              ) : null}
             </Link>
           );
         })}
