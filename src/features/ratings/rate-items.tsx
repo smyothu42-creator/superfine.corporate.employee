@@ -13,7 +13,6 @@ import {
   type RatingInput,
   type ItemRating,
 } from "@/store/use-ratings-store";
-import { lockedAmong, LOCK_HOURS } from "@/lib/rating-lock";
 import { fromISODate, formatDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { Order, OrderItem } from "@/data/types";
@@ -30,11 +29,16 @@ function linesOf(order: Order): RateableLine[] {
 /**
  * Rate the meals in one order — the whole flow, minus its container.
  *
- * The same component behind all three doors: the rail's "Share your feedback",
- * a delivered order in My Orders, and the emailed public link. One
+ * The same component behind all three doors: the rail's "Rate a meal or report
+ * a problem", a delivered order in My Orders, and the emailed public link. One
  * implementation because they are one interaction, and three copies of a star
  * control is three chances for the lock, the validation and the wording to
  * drift apart.
+ *
+ * Stars, tags and the note here are about the meal and nothing else — the tags
+ * are Portion, Temperature, Flavour, Freshness for exactly that reason. A late
+ * or missing delivery has its own door ("Problem with your order?") and must
+ * not be answered with a low score against a recipe that was fine.
  *
  * Ratings are per line, and any subset is a complete answer: rating one meal and
  * ignoring the other three is the normal case, not an abandoned form.
@@ -44,6 +48,7 @@ export function RateItems({
   source,
   onDone,
   compact,
+  lineId,
 }: {
   order: Order;
   source: ItemRating["source"];
@@ -51,23 +56,24 @@ export function RateItems({
   onDone?: () => void;
   /** Tighter type and spacing, for the feedback sheet. */
   compact?: boolean;
+  /**
+   * Narrow the flow to a single line. Used by the per-item popup on a past
+   * order, where the row that was pressed names the meal — showing its three
+   * siblings underneath would answer a question nobody asked.
+   *
+   * A `lineId` that isn't in this order falls back to the whole order rather
+   * than rendering an empty sheet.
+   */
+  lineId?: string;
 }) {
-  const lines = React.useMemo(() => linesOf(order), [order]);
+  const lines = React.useMemo(() => {
+    const all = linesOf(order);
+    if (!lineId) return all;
+    const one = all.filter((l) => l.lineId === lineId);
+    return one.length ? one : all;
+  }, [order, lineId]);
   const submit = useRatingsStore((s) => s.submit);
   const saved = useRatingsStore((s) => s.ratings);
-
-  /**
-   * The cookie lock is read once, on mount, rather than per render: it's a
-   * `document.cookie` parse, and the answer can't change while the sheet is
-   * open except by this component's own submit — which updates `saved` anyway.
-   *
-   * Read in an effect, never during render: the server has no cookies, and a
-   * lock consulted during the first render would paint rows the server didn't.
-   */
-  const [locked, setLocked] = React.useState<Set<string>>(new Set());
-  React.useEffect(() => {
-    setLocked(lockedAmong(lines.map((l) => l.lineId)));
-  }, [lines]);
 
   const byLine = React.useMemo(
     () => new Map(saved.map((r) => [r.lineId, r])),
@@ -135,10 +141,6 @@ export function RateItems({
               line={line}
               multiDay={order.days.length > 1}
               rated={already}
-              /* A line locked by the cookie but with no stored rating is this
-                 device having rated it under a wallet the store has since
-                 forgotten — treat it as rated either way, and say why. */
-              lockedOnly={!already && locked.has(line.lineId)}
               draft={draft[line.lineId]}
               onStars={(n) => setStars(line.lineId, n)}
               onTag={(t) => toggleTag(line.lineId, t)}
@@ -148,11 +150,21 @@ export function RateItems({
         })}
       </div>
 
-      <Button block size="lg" disabled={pending.length === 0} onClick={send}>
-        {pending.length === 0
-          ? "Pick a rating to send"
-          : `Submit ${pending.length} rating${pending.length === 1 ? "" : "s"}`}
-      </Button>
+      {/* With every meal already rated there is nothing the button can do, and a
+          permanently disabled control reads as a fault. Say what happened
+          instead — the stars above are the record, and they're right there. */}
+      {lines.every((l) => byLine.has(l.lineId)) ? (
+        <p className="text-center text-[13px] text-muted-foreground">
+          You&apos;ve rated {lines.length === 1 ? "this meal" : "every meal in this order"} — the
+          stars above are what you said.
+        </p>
+      ) : (
+        <Button block size="lg" disabled={pending.length === 0} onClick={send}>
+          {pending.length === 0
+            ? "Pick a rating to send"
+            : `Submit ${pending.length} rating${pending.length === 1 ? "" : "s"}`}
+        </Button>
+      )}
     </div>
   );
 }
@@ -166,7 +178,6 @@ function LineCard({
   line,
   multiDay,
   rated,
-  lockedOnly,
   draft,
   onStars,
   onTag,
@@ -175,13 +186,16 @@ function LineCard({
   line: RateableLine;
   multiDay: boolean;
   rated?: ItemRating;
-  lockedOnly: boolean;
   draft?: { stars: number; tags: RatingTag[]; note: string };
   onStars: (n: number) => void;
   onTag: (t: RatingTag) => void;
   onNote: (v: string) => void;
 }) {
-  const settled = Boolean(rated) || lockedOnly;
+  /**
+   * Settled means there is a rating to show back, and nothing else. A line only
+   * ever reads "Rated" when the stars above it are the ones this person gave.
+   */
+  const settled = Boolean(rated);
   const stars = rated?.stars ?? draft?.stars ?? 0;
   const open = !settled && stars > 0;
 
@@ -218,11 +232,6 @@ function LineCard({
 
       <div className="mt-2.5">
         <Stars value={stars} readOnly={settled} onChange={onStars} />
-        {lockedOnly ? (
-          <p className="mt-1.5 text-2xs text-muted-foreground">
-            Rated from this device — you can rate it again {LOCK_HOURS} hours later.
-          </p>
-        ) : null}
       </div>
 
       {/* Tags and the note stay out of the way until there's a rating to explain
@@ -334,7 +343,7 @@ function ThankYou({
         <p className="text-[13px] text-muted-foreground">
           {result.saved} {result.saved === 1 ? "rating" : "ratings"} saved
           {result.locked
-            ? `. ${result.locked} ${result.locked === 1 ? "meal was" : "meals were"} already rated from this device.`
+            ? `. ${result.locked} ${result.locked === 1 ? "meal had" : "meals had"} already been rated.`
             : "."}
           {remaining > 0
             ? ` ${remaining} more ${remaining === 1 ? "meal is" : "meals are"} still open if you want to come back.`

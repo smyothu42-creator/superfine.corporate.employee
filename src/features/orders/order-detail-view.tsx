@@ -12,7 +12,7 @@ import {
   CalendarDays,
   Clock,
   CreditCard,
-  MessageSquare,
+  AlertTriangle,
   Star,
   Link2,
 } from "lucide-react";
@@ -323,21 +323,32 @@ export function OrderDetailView({ order: initialOrder }: { order: Order }) {
 }
 
 function FeedbackCard({ orderId }: { orderId: string }) {
-  // In-platform feedback form — opens a lightweight note sheet tagged to this
-  // order so the kitchen knows which one it's about.
+  // The logistics door for this order — late, missing, wrong, or a refund to
+  // chase. Deliberately not a rating: how the food tasted is the stars on each
+  // meal, and mixing the two turns a driver's bad day into a one-star recipe.
   const [open, setOpen] = React.useState(false);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Share your feedback</CardTitle>
+        <CardTitle className="text-base">Problem with your order?</CardTitle>
       </CardHeader>
       <CardBody className="space-y-3">
         <p className="text-[13px] text-muted-foreground">
-          Have a note about {orderId}? Tell us anything — the kitchen reads every one.
+          Late, missing, wrong item, or a delivery or billing issue with {orderId}? Tell our
+          operations team here. To say how the food itself was,{" "}
+          <Link
+            href={`/rate?order=${orderId}`}
+            className="font-semibold text-primary underline underline-offset-2"
+          >
+            rate the meals
+          </Link>{" "}
+          instead.
         </p>
+        {/* The card's own heading already asks the question, so the button
+            answers it rather than repeating it back. */}
         <Button size="sm" onClick={() => setOpen(true)}>
-          <MessageSquare className="size-4" /> Share your feedback
+          <AlertTriangle className="size-4" /> Report the problem
         </Button>
       </CardBody>
       {open ? <FeedbackModal orderId={orderId} onClose={() => setOpen(false)} /> : null}

@@ -30,10 +30,10 @@ export const NAV_ITEMS: NavItem[] = [
   // Auto-Order draws from a company subsidy, so it's corporate-only.
   { label: "Auto-Order", href: "/auto-order", icon: Repeat, corporateOnly: true },
   { label: "Notifications", href: "/notifications", icon: Bell },
-  // Feedback is deliberately not a nav item: it sits with the rail's quiet
-  // secondary links below this list, where it's available without asking to be
-  // noticed. The `/feedback` route still exists for the "Leave feedback" deep
-  // link from a past order.
+  // Rating and problem-reporting are deliberately not nav items: they sit with
+  // the rail's quiet secondary links below this list, where they're available
+  // without asking to be noticed. The `/feedback` route still exists for the
+  // "Problem with your order?" deep link from a past order.
   { label: "Account & Profile", href: "/account", icon: UserCog },
 ];
 

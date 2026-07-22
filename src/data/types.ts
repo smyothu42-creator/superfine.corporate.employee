@@ -360,6 +360,13 @@ export interface Order {
   id: string;
   /** Primary delivery date (first day for multi-day orders). */
   date: string;
+  /**
+   * The email the order was placed under. It is the second half of the
+   * credential on the signed-out rating path (`/rate`): an order number alone
+   * is guessable — they run in sequence — so the number is only accepted
+   * alongside the address the confirmation was sent to.
+   */
+  contactEmail: string;
   type: OrderType;
   days: OrderDay[];
   address: string;

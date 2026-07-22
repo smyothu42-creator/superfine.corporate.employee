@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { X, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea, Label } from "@/components/ui/input";
@@ -10,10 +11,14 @@ import { useDialog } from "@/lib/use-dialog";
 import { cn } from "@/lib/utils";
 
 /**
- * Lightweight in-platform feedback form for a specific order. A single free-text
- * note tied to the order — no ratings, no meal reviews, no photo attachments,
- * matching the generic feedback form used everywhere else. Modeled on the app's
- * other bottom-sheet/centered modals.
+ * The order-problem sheet — logistics only: a late, missing, wrong or
+ * mischarged delivery, tied to one order. A single free-text note, no stars.
+ *
+ * The stars deliberately live nowhere near it. When one control took both
+ * "the driver never came" and "the Bibimbap was bland", the first arrived as a
+ * one-star recipe score and the kitchen re-worked a dish that was never the
+ * problem. Two doors, two inboxes, and copy at every entrance that says which
+ * is which. Modeled on the app's other bottom-sheet/centered modals.
  */
 export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: () => void }) {
   const [shown, setShown] = React.useState(false);
@@ -39,7 +44,7 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
       relatedToOrder: true,
       source: "past-order",
     });
-    toast.success("Thanks for your feedback", `Your note about ${orderId} was sent to the kitchen.`);
+    toast.success("Thanks — we're on it", `Your report about ${orderId} went to our operations team.`);
     onClose();
   }
 
@@ -56,7 +61,7 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Leave feedback for ${orderId}`}
+        aria-label={`Report a problem with order ${orderId}`}
         {...dialog.props}
         className={cn(
           "relative flex max-h-[90dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-card shadow-raised transition-all duration-200 sm:rounded-3xl",
@@ -65,9 +70,12 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div>
-            <h3 className="font-display text-lg font-semibold tracking-tight">Share your feedback</h3>
+            <h3 className="font-display text-lg font-semibold tracking-tight">
+              Problem with your order?
+            </h3>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              A quick note on {orderId}. The kitchen reads every one.
+              Late, missing, wrong item, or a billing issue with {orderId}. Goes to our operations
+              team.
             </p>
           </div>
           <button
@@ -81,25 +89,42 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-          {/* Free-text feedback */}
+          {/* Free-text report */}
           <div>
-            <Label htmlFor="feedback-message">Your feedback</Label>
+            <Label htmlFor="feedback-message">What went wrong?</Label>
             <Textarea
               id="feedback-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Tell us what's on your mind."
+              placeholder="e.g. it arrived an hour late, a meal was missing, or I was charged twice."
               maxLength={500}
             />
           </div>
+
+          {/* The other door, named at the point of confusion — someone who came
+              here to say the salad was bland should leave with stars, not a
+              logistics ticket. */}
+          <p className="rounded-2xl bg-muted/60 p-3.5 text-2xs text-muted-foreground">
+            Was it the food itself?{" "}
+            <Link
+              href={`/rate?order=${orderId}`}
+              onClick={onClose}
+              className="font-semibold text-primary underline underline-offset-2"
+            >
+              Rate the meals
+            </Link>{" "}
+            instead — star ratings go to the kitchen and only cover how the meal was.
+          </p>
         </div>
 
         <div className="shrink-0 border-t border-border px-5 py-4">
           <Button block size="lg" disabled={!canSubmit} onClick={submit}>
-            <Send className="size-4" /> Submit feedback
+            <Send className="size-4" /> Report the problem
           </Button>
           {!canSubmit ? (
-            <p className="mt-2 text-center text-2xs text-muted-foreground">Add a note to submit.</p>
+            <p className="mt-2 text-center text-2xs text-muted-foreground">
+              Add a few words to submit.
+            </p>
           ) : null}
         </div>
       </div>

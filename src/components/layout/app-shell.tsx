@@ -4,7 +4,6 @@ import { Topbar } from "./topbar";
 import { MobileDrawer } from "./mobile-nav";
 import { CartPanel } from "./cart-panel";
 import { SubsidyModelModal } from "./subsidy-model-modal";
-import { FeedbackModal } from "./feedback-modal";
 import { OrderEditBanner } from "./order-edit-banner";
 import { EditLeaveGuard } from "./edit-leave-guard";
 import { SignInModal } from "@/components/auth/sign-in-modal";
@@ -66,9 +65,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* Slide-in cart — desktop push panel + mobile overlay drawer */}
       <CartPanel />
 
-      {/* Feedback sheet — opened from the rail's secondary links, or from a
-          past order's "Leave feedback". */}
-      <FeedbackModal />
 
       <Toaster />
       <ConfirmDialog />

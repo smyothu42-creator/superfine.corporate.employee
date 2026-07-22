@@ -9,11 +9,15 @@ import { useFeedbackStore, type FeedbackEntry } from "@/store/use-feedback-store
 import { cn } from "@/lib/utils";
 
 /**
- * The general feedback form — a single free-text field, plus an optional order
- * number for feedback that's about a specific order. No ratings, no meal
- * reviews, no photo attachments: just a simple, generic way to tell us
- * something. Shared by the full `/feedback` route and the floating-button modal
- * so both stay in lock-step.
+ * The order-problem form — a single free-text field, plus an optional order
+ * number when it's about a specific delivery. Deliberately star-free: this is
+ * the logistics door (late, missing, wrong, mischarged) and the stars on
+ * `/rate` are the food door, because a delivery that never arrived used to come
+ * back as a one-star recipe and the kitchen changed a dish that was fine.
+ *
+ * The same component behind every entrance — the `/feedback` route, the `/rate`
+ * note view, signed in or out — so the wording someone meets is the same
+ * wherever they came from and there is one place to change it.
  *
  * A blank or unrecognised order number is still accepted (recorded as unverified
  * for the kitchen); a valid one links the feedback and marks it verified.
@@ -58,7 +62,7 @@ export function FeedbackForm({
     <div className="space-y-5">
       {/* Is this about an order? (Yes/No) */}
       <div>
-        <Label>Is your feedback about an order?</Label>
+        <Label>Is this about a specific order?</Label>
         <div className="grid grid-cols-2 gap-2">
           {[
             { label: "Yes", value: true },
@@ -99,23 +103,43 @@ export function FeedbackForm({
         </div>
       ) : null}
 
-      {/* Free-text feedback */}
+      {/* Free-text report. The label follows the answer above: about an order,
+          it's a problem; otherwise it's anything at all, and pretending a
+          suggestion about packaging is a fault would be its own confusion. */}
       <div>
-        <Label htmlFor="fb-message">Your feedback</Label>
+        <Label htmlFor="fb-message">
+          {relatedToOrder ? "What went wrong?" : "What's on your mind?"}
+        </Label>
         <Textarea
           id="fb-message"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Tell us what's on your mind."
+          placeholder={
+            relatedToOrder
+              ? "e.g. it arrived an hour late, a meal was missing, or I was charged twice."
+              : "Anything about the service, the app, or your workplace plan."
+          }
           maxLength={800}
         />
       </div>
 
+      {/* The other door, named where the mistake gets made. */}
+      <p className="rounded-2xl bg-muted/60 p-3.5 text-2xs text-muted-foreground">
+        Was it the food itself?{" "}
+        <Link
+          href={orderNumber.trim() ? `/rate?order=${orderNumber.trim()}` : "/rate"}
+          className="font-semibold text-primary underline underline-offset-2"
+        >
+          Rate the meals
+        </Link>{" "}
+        instead — stars go to the kitchen and only cover how the meal was.
+      </p>
+
       <Button block size="lg" disabled={!canSubmit} onClick={submit}>
-        <Send className="size-4" /> Submit feedback
+        <Send className="size-4" /> {relatedToOrder ? "Report the problem" : "Send to our team"}
       </Button>
       {!canSubmit ? (
-        <p className="text-center text-2xs text-muted-foreground">Add a note to submit.</p>
+        <p className="text-center text-2xs text-muted-foreground">Add a few words to submit.</p>
       ) : null}
     </div>
   );
@@ -129,10 +153,11 @@ function ThankYou({ entry, onDone }: { entry: FeedbackEntry; onDone?: () => void
         <PartyPopper className="size-7" />
       </div>
       <h1 className="mt-5 font-display text-2xl font-semibold tracking-tight text-foreground">
-        Thanks for your feedback
+        Thanks — we&apos;re on it
       </h1>
       <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-        Your note was sent to the kitchen. They read every one.
+        Your note went to our operations team. They read every one, and they&apos;ll come back to
+        you if there&apos;s anything to put right.
       </p>
 
       {/* A verified order gets a positive confirmation; unverified needs nothing. */}

@@ -1,4 +1,5 @@
 import type { Order, OrderDay, OrderItem } from "./types";
+import { me } from "./me";
 import { program } from "./program";
 import { currentRecipeVersion } from "./recipe-versions";
 import { startOfToday, fromISODate, toISODate, addDays } from "@/lib/dates";
@@ -30,7 +31,13 @@ export function orderPayment(order: Order, corporate: boolean) {
  * assigned when the order is built rather than typed out 21 times by hand.
  */
 type SeedItem = Omit<OrderItem, "lineId" | "recipeVersion">;
-type SeedOrder = Omit<Order, "days"> & {
+/**
+ * `contactEmail` is optional here and defaulted below: every demo order belongs
+ * to the one signed-in employee, so typing the same address 18 times would only
+ * create 18 chances to typo it.
+ */
+type SeedOrder = Omit<Order, "days" | "contactEmail"> & {
+  contactEmail?: string;
   days: (Omit<OrderDay, "items"> & { items: SeedItem[] })[];
 };
 
@@ -499,6 +506,7 @@ export const orders: Order[] = seedOrders.map((o) => {
   return {
     ...o,
     date,
+    contactEmail: o.contactEmail ?? me.email,
     days: o.days.map((d) => {
       const dayDate = shiftISO(d.date);
       return {
@@ -535,6 +543,44 @@ export function findOrder(input: string): Order | undefined {
   if (!digits) return undefined;
   return orders.find((o) => o.id.replace(/\D/g, "") === digits);
 }
+
+/** Why a signed-out lookup on `/rate` didn't produce a rateable order. */
+export type OrderLookupResult =
+  | { status: "ok"; order: Order }
+  | { status: "not-found" }
+  | { status: "undelivered"; order: Order }
+  | { status: "cancelled"; order: Order };
+
+/**
+ * The signed-out half of `/rate`: resolve an order from a number the customer
+ * read off a receipt plus the email it was sent to.
+ *
+ * A wrong number and a right number with the wrong email both return
+ * `not-found`, and deliberately so. Reporting them apart would make this an
+ * oracle for which order numbers exist — the numbers run in sequence, so
+ * confirming one confirms the range. The number is lenient about formatting
+ * (see {@link findOrder}); the email is compared case-insensitively but must
+ * otherwise match, because it is the half doing the actual authorising.
+ *
+ * "Delivered" is checked last and reported honestly: by that point the caller
+ * has already proved they hold both halves, so telling them lunch hasn't
+ * arrived yet leaks nothing they didn't supply.
+ */
+export function lookupOrderForRating(orderInput: string, email: string): OrderLookupResult {
+  const order = findOrder(orderInput);
+  if (!order) return { status: "not-found" };
+  if (order.contactEmail.trim().toLowerCase() !== email.trim().toLowerCase()) {
+    return { status: "not-found" };
+  }
+  if (order.status === "cancelled") return { status: "cancelled", order };
+  if (order.status !== "delivered") return { status: "undelivered", order };
+  return { status: "ok", order };
+}
+
+/** Delivered orders, newest first — what `/rate` offers a signed-in customer. */
+export const rateableOrders = orders
+  .filter((o) => o.status === "delivered")
+  .sort((a, b) => b.date.localeCompare(a.date));
 
 export const upcomingOrders = orders.filter(
   (o) => o.status === "draft" || o.status === "confirmed",

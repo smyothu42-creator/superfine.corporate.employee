@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { lock, lockedAmong } from "@/lib/rating-lock";
+import { orders } from "@/data/orders";
 
 /**
  * Item-level ratings.
@@ -71,30 +71,80 @@ function newId() {
   return `rat-${seq}-${Math.round(Math.random() * 1e6)}`;
 }
 
+/**
+ * The rating history a fresh visitor arrives with: everything already rated
+ * except the most recent couple of deliveries.
+ *
+ * That shape is the realistic one — you rate lunch when the email lands, so the
+ * backlog is always the last day or two — and it is the only one that shows
+ * both states at once. An all-unrated history hides the settled state (the
+ * green "Rated" pill, read-only stars, "you rated 1 meal from this order");
+ * an all-rated one hides the thing the page exists to do.
+ *
+ * Seeded from `orders` rather than typed out because `lineId` encodes the
+ * delivery date, and that date is re-anchored to the real calendar at load.
+ * Everything here is deterministic — no `Math.random`, no `Date.now` — because
+ * this runs at module init on both the server and the client, and a value that
+ * differed between them would be a hydration mismatch.
+ */
+const UNRATED_RECENT = 2;
+/** Rotated rather than fixed, so the demo isn't a column of identical 4s. */
+const SEED_STARS = [5, 4, 5, 3, 4];
+
+function seedRatings(): ItemRating[] {
+  const delivered = orders
+    .filter((o) => o.status === "delivered")
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  let n = 0;
+  return delivered.slice(UNRATED_RECENT).flatMap((order) =>
+    order.days.flatMap((day) =>
+      day.items.map((item) => {
+        const stars = SEED_STARS[n % SEED_STARS.length];
+        n += 1;
+        return {
+          id: `rat-seed-${item.lineId}`,
+          orderId: order.id,
+          lineId: item.lineId,
+          menuItemId: item.itemId,
+          recipeVersion: item.recipeVersion,
+          stars,
+          tags: (stars >= 4 ? ["Flavour"] : ["Temperature"]) as RatingTag[],
+          note: "",
+          source: "account" as const,
+          // Rated the evening it was delivered, which is when the email lands.
+          ratedAt: `${day.date}T19:20:00.000Z`,
+        };
+      }),
+    ),
+  );
+}
+
 export const useRatingsStore = create<RatingsState>()(
   persist(
     (set, get) => ({
-      ratings: [],
+      ratings: seedRatings(),
 
       /**
        * Per-line results, never all-or-nothing: rating three meals when one is
-       * already locked has to save the two and say so about the third. An
+       * already rated has to save the two and say so about the third. An
        * aborted batch would make someone re-enter work that was fine.
        *
-       * Two gates, cheapest first — the cookie lock (no write at all), then the
-       * store's own "this line already has a rating" check, which is what holds
-       * when the cookie has been cleared.
+       * One gate: has this line already got a rating? There used to be a second,
+       * a 24-hour cookie lock, and it was removed rather than fixed. On the same
+       * device the two agreed, so it decided nothing; where they disagreed — a
+       * surviving cookie against a store with no such rating — it told someone
+       * who had never rated a meal that they already had, showed them five empty
+       * stars they couldn't press, and offered a 24-hour wait. Turning away real
+       * feedback is a far worse failure than accepting a duplicate.
        */
       submit: ({ orderId, source, ratings }) => {
-        const locked = lockedAmong(ratings.map((r) => r.lineId));
         const already = new Set(get().ratings.map((r) => r.lineId));
         const saved: ItemRating[] = [];
 
         const results: RatingResult[] = ratings.map((r) => {
           if (r.stars < 1 || r.stars > 5) return { lineId: r.lineId, status: "invalid" };
-          if (locked.has(r.lineId) || already.has(r.lineId)) {
-            return { lineId: r.lineId, status: "locked" };
-          }
+          if (already.has(r.lineId)) return { lineId: r.lineId, status: "locked" };
           saved.push({
             id: newId(),
             orderId,
@@ -110,12 +160,7 @@ export const useRatingsStore = create<RatingsState>()(
           return { lineId: r.lineId, status: "saved" };
         });
 
-        if (saved.length) {
-          set((s) => ({ ratings: [...s.ratings, ...saved] }));
-          // Locks are set only for what actually landed — a rejected line must
-          // not be locked out of a retry it never got.
-          lock(saved.map((r) => r.lineId));
-        }
+        if (saved.length) set((s) => ({ ratings: [...s.ratings, ...saved] }));
         return results;
       },
 
@@ -124,9 +169,21 @@ export const useRatingsStore = create<RatingsState>()(
     {
       name: "sfk:ratings",
       // Same treatment as every other persisted store: read localStorage only
-      // after mount, so the server's empty list and the first client render
-      // agree. See `StoreHydrator`.
+      // after mount, so the server's list and the first client render agree.
+      // See `StoreHydrator`.
       skipHydration: true,
+      /**
+       * Bumped when the seed above changed shape.
+       *
+       * Persisted state wins over initial state, so without this a browser that
+       * had already accumulated ratings — every demo session does — would keep
+       * showing them and never see the new seed. Every order read "Rated" for
+       * exactly that reason. `migrate` throws the old list away and re-seeds
+       * rather than trying to reconcile: these are demo ratings, not something
+       * anyone needs kept.
+       */
+      version: 1,
+      migrate: () => ({ ratings: seedRatings() }),
     },
   ),
 );

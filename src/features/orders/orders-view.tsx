@@ -11,9 +11,10 @@ import {
   Pencil,
   ChevronRight,
   MapPin,
-  MessageSquare,
+  AlertTriangle,
   Repeat,
   Lock,
+  Star,
   X,
 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
@@ -25,6 +26,8 @@ import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { OrderTimeline } from "@/components/orders/order-status";
 import { FeedbackModal } from "@/components/orders/feedback-modal";
+import { RateItemModal } from "@/features/ratings/rate-item-modal";
+import { useRatingsStore } from "@/store/use-ratings-store";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
 import { orderPayment } from "@/data/orders";
@@ -385,7 +388,11 @@ function OrderCard({ order }: { order: Order }) {
           </div>
         ) : null}
 
-        {items.length > 1 ? (
+        {/* A delivered order is the one place every meal needs its own control,
+            so it gets a row per item instead of the stacked-avatar summary. */}
+        {order.status === "delivered" ? (
+          <RateableItemList order={order} />
+        ) : items.length > 1 ? (
           <div className="flex items-center gap-3">
             <div className="flex shrink-0 -space-x-3">
               {items.slice(0, 3).map((it, i) => (
@@ -467,7 +474,10 @@ function OrderCard({ order }: { order: Order }) {
                 setFeedbackOpen(true);
               }}
             >
-              <MessageSquare className="size-3.5" /> Leave feedback
+              {/* Not "Leave feedback": that label collected delivery
+                  complaints as one-star meals. This button is the logistics
+                  door; the stars on each meal above are the food door. */}
+              <AlertTriangle className="size-3.5" /> Problem with your order?
             </Button>
           </div>
         ) : null}
@@ -486,6 +496,101 @@ function OrderCard({ order }: { order: Order }) {
     {feedbackOpen ? (
       <FeedbackModal orderId={order.id} onClose={() => setFeedbackOpen(false)} />
     ) : null}
+    </>
+  );
+}
+
+/**
+ * The meals in a delivered order, each with its own rating control.
+ *
+ * Per item rather than per order because that is the grain of the opinion: the
+ * Bibimbap was excellent and the salad arrived warm, and one number across both
+ * says neither. A rated line shows its score back instead of the button — the
+ * row is the record as well as the entry point.
+ */
+function RateableItemList({ order }: { order: Order }) {
+  const ratings = useRatingsStore((s) => s.ratings);
+  const [rating, setRating] = React.useState<{ lineId: string; name: string } | null>(null);
+
+  const byLine = React.useMemo(() => new Map(ratings.map((r) => [r.lineId, r])), [ratings]);
+
+  return (
+    <>
+      <ul className="space-y-1.5">
+        {order.days.map((d) =>
+          d.items.map((it) => {
+            const rated = byLine.get(it.lineId);
+            return (
+              <li key={it.lineId} className="flex items-center justify-between gap-3 text-[13px]">
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <FoodPhoto
+                    src={getItem(it.itemId)?.image}
+                    alt=""
+                    className="size-10 shrink-0 rounded-full"
+                    iconClassName="size-4"
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">
+                      {it.name} ×{it.qty}
+                    </span>
+                    {it.addOns.length ? (
+                      <span className="block truncate text-2xs text-muted-foreground">
+                        {it.addOns.join(" · ")}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+
+                {rated ? (
+                  <span className="flex shrink-0 items-center">
+                    <span aria-hidden className="flex items-center">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <Star
+                          key={n}
+                          className={cn(
+                            "size-3",
+                            n <= rated.stars
+                              ? "fill-yellow text-yellow"
+                              : "fill-transparent text-muted-foreground/40",
+                          )}
+                        />
+                      ))}
+                    </span>
+                    <span className="sr-only">
+                      You rated {it.name} {rated.stars} out of 5 stars
+                    </span>
+                  </span>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Rate ${it.name}`}
+                    onClick={(e) => {
+                      // The card itself navigates; this must not follow it.
+                      // (Called inline rather than via OrderCard's `stop`, which
+                      // is scoped to that component — the bare name resolves to
+                      // `window.stop` out here, which silently does nothing.)
+                      e.stopPropagation();
+                      setRating({ lineId: it.lineId, name: it.name });
+                    }}
+                  >
+                    <Star className="size-3.5" aria-hidden /> Rate
+                  </Button>
+                )}
+              </li>
+            );
+          }),
+        )}
+      </ul>
+
+      {rating ? (
+        <RateItemModal
+          order={order}
+          lineId={rating.lineId}
+          itemName={rating.name}
+          onClose={() => setRating(null)}
+        />
+      ) : null}
     </>
   );
 }

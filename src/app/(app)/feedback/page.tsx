@@ -1,16 +1,20 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { MessageSquareHeart } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { FeedbackForm } from "@/features/feedback/feedback-form";
 
 /**
- * In-app feedback screen. It renders inside the app shell (sidebar + topbar) and
- * is still reachable directly — notably via the `/feedback?order=ORD-2891` deep
- * link that the "Leave feedback" action on a past order uses to arrive here with
- * the order pre-filled. The everyday entry point is the floating action button
- * (the rail's "Share your feedback" link), which opens the same form as a modal.
+ * In-app order-problem screen — the logistics half of the split. Star ratings
+ * live on `/rate` and cover the food only; everything else (late, missing,
+ * wrong, mischarged) arrives here, on the same {@link FeedbackForm} the public
+ * `/rate` note view uses, so the two read identically.
+ *
+ * It renders inside the app shell (sidebar + topbar) and is reachable directly
+ * via the `/feedback?order=ORD-2891` deep link, which arrives with the order
+ * pre-filled.
  *
  * The content borrows the sign-in screen's two-column shape: a branded
  * illustration + copy on the left, the form on the right, collapsing to just the
@@ -59,14 +63,23 @@ function FeedbackHero() {
       <div className="max-w-md">
         {/* White-wash icon chip — the same treatment the Auto-Order header uses. */}
         <span className="flex size-16 items-center justify-center rounded-full bg-white/40 text-teal-deep">
-          <MessageSquareHeart className="size-8" />
+          <AlertTriangle className="size-8" />
         </span>
         <h1 className="mt-5 font-display text-4xl font-semibold leading-[1.1] tracking-tight text-teal-deep">
-          Got something<br />to tell us?
+          Problem with<br />your order?
         </h1>
         <p className="mt-4 text-base leading-relaxed text-teal-deep/80">
-          A few words is all it takes. Whether it&apos;s about an order or anything else, your
-          feedback lands straight with our team, and we read every note.
+          Late, missing, wrong item, or anything else about delivery or billing — this goes
+          straight to our operations team, and we read every note.
+        </p>
+        {/* The split, said once and said plainly. Someone who came to complain
+            about the food should leave with stars, not a logistics ticket. */}
+        <p className="mt-4 text-base leading-relaxed text-teal-deep/80">
+          Telling us how the food itself was?{" "}
+          <Link href="/rate" className="font-semibold underline underline-offset-2">
+            Rate the meals
+          </Link>{" "}
+          instead — those stars go to the kitchen.
         </p>
       </div>
       {/* Pinned to the bottom of the panel, as before. */}

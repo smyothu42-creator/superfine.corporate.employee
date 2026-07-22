@@ -27,7 +27,6 @@ function Sidebar({ onNavigate }: SidebarProps) {
 
   const account = useSessionStore((s) => s.account);
   const openSignInPrompt = useUiStore((s) => s.openSignInPrompt);
-  const openFeedback = useUiStore((s) => s.openFeedbackModal);
   const unread = useNotificationsStore((s) => s.items.filter((n) => !n.read).length);
 
   const handleLogout = useSignOut(onNavigate);
@@ -104,21 +103,12 @@ function Sidebar({ onNavigate }: SidebarProps) {
         >
           <Apple className="size-3.5 shrink-0" /> Check the nutrition information
         </Link>
-        {/* Signed in only: feedback is tied to an account and the orders behind
-            it, and a guest has neither. */}
-        {account ? (
-          <button
-            type="button"
-            onClick={() => {
-              openFeedback();
-              // Closes the mobile drawer, or the sheet opens behind it.
-              onNavigate?.();
-            }}
-            className={cn(SECONDARY_LINK, "w-full text-left")}
-          >
-            <MessageSquareHeart className="size-3.5 shrink-0" /> Share your feedback
-          </button>
-        ) : null}
+        {/* Open to guests now: `/rate` proves who you are with an order number
+            and an email when there's no session to do it, so feedback is no
+            longer gated on having an account. */}
+        <Link href="/rate" onClick={onNavigate} className={SECONDARY_LINK}>
+          <MessageSquareHeart className="size-3.5 shrink-0" /> Rate a meal or report a problem
+        </Link>
       </div>
 
       {/* Profile — moved down from the topbar into the rail */}

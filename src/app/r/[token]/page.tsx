@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Clock, LinkIcon, PackageX, MessageSquare } from "lucide-react";
+import { Clock, LinkIcon, PackageX, AlertTriangle } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { FoodDoodles } from "@/components/brand/food-doodles";
 import { Card, CardBody } from "@/components/ui/card";
@@ -139,7 +139,8 @@ function Body({ token }: { token: string }) {
           How was {formatDay(fromISODate(order.date))}?
         </h1>
         <p className="text-[13px] text-muted-foreground">
-          Rate what you&apos;d like — one meal, a few, or all of them. No account needed.
+          Stars are for the food only — rate what you&apos;d like, one meal, a few, or all of them.
+          No account needed.
         </p>
       </div>
 
@@ -151,13 +152,15 @@ function Body({ token }: { token: string }) {
 
       {/* The one bridge to the other flow, kept quiet and kept separate: a
           service failure is not a rating, and the two must not arrive in the
-          same inbox. */}
+          same inbox. Points at `/rate`, not the in-app `/feedback` route —
+          whoever followed this link has no session, and the same wording and
+          form as the signed-in flow are already there. */}
       <p className="text-center">
         <Link
-          href={`/feedback?order=${order.id}`}
+          href={`/rate?view=note&order=${order.id}`}
           className="inline-flex items-center gap-1.5 text-2xs font-semibold text-muted-foreground hover:text-foreground hover:underline"
         >
-          <MessageSquare className="size-3.5" /> Something was wrong with this order?
+          <AlertTriangle className="size-3.5" /> Problem with your order? Late, missing or wrong
         </Link>
       </p>
     </div>
