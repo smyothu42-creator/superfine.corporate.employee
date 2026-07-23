@@ -55,19 +55,24 @@ export default function RatePage() {
  * The email-link contract. `?order=` + `?email=` is the pair the confirmation
  * mail already holds, so a link carrying both lands straight on that order's
  * meals; `?order=` alone pre-fills the lookup (and is enough on its own when
- * there's a session); `?view=note` opens the general note form.
+ * there's a session); `?view=note` opens the general note form, and
+ * `?view=lookup` opens the order lookup — the in-app problem form's "Your order
+ * isn't on the list?" link, which lives outside this page and so can only ask
+ * through the URL.
  *
  *   /rate?order=ORD-2855&email=maya.chen@neptunecorp.com
  *   /rate?order=ORD-2855
  *   /rate?view=note&order=ORD-2855
+ *   /rate?view=lookup
  */
 function DeepLinkedEntry() {
   const params = useSearchParams();
+  const view = params.get("view");
   return (
     <RateEntry
       initialOrder={params.get("order") ?? ""}
       initialEmail={params.get("email") ?? ""}
-      initialView={params.get("view") === "note" ? "note" : undefined}
+      initialView={view === "note" || view === "lookup" ? view : undefined}
     />
   );
 }

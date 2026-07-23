@@ -65,9 +65,19 @@ import type { Order } from "@/data/types";
 type View =
   | { name: "pick" }
   | { name: "rate"; order: Order; source: "account" | "public_link" }
-  | { name: "note"; orderId: string }
-  /** The order-number lookup, for an order the signed-in list doesn't hold. */
-  | { name: "lookup" };
+  /** `found` marks an order the customer just proved is theirs on the lookup:
+   *  the note form then offers that one order and nothing else. */
+  | { name: "note"; orderId: string; found?: boolean }
+  /**
+   * The order-number lookup, for an order the signed-in list doesn't hold.
+   *
+   * `fromNote` is set when the problem form sent them here, and carries the
+   * order it was holding. It is both the way back and the reason the found
+   * order returns to the form rather than opening the stars: someone who came
+   * from "Problem with your order?" is still reporting a problem, and the
+   * lookup is a detour on that errand, not a new one.
+   */
+  | { name: "lookup"; fromNote?: { orderId: string } };
 
 export function RateEntry({
   initialOrder = "",
@@ -76,8 +86,12 @@ export function RateEntry({
 }: {
   initialOrder?: string;
   initialEmail?: string;
-  /** `?view=note` — the "tell us something else" link in an email. */
-  initialView?: "note";
+  /**
+   * `?view=note` — the "tell us something else" link in an email.
+   * `?view=lookup` — "Your order isn't on the list?", from the in-app problem
+   * form, which has no way to reach a view of this page except through the URL.
+   */
+  initialView?: "note" | "lookup";
 }) {
   const account = useSessionStore((s) => s.account);
   /**
@@ -88,9 +102,11 @@ export function RateEntry({
   const orders = useOrdersStore((s) => s.orders);
   const ratings = useRatingsStore((s) => s.ratings);
 
-  const [view, setView] = React.useState<View>(
-    initialView === "note" ? { name: "note", orderId: initialOrder } : { name: "pick" },
-  );
+  const [view, setView] = React.useState<View>(() => {
+    if (initialView === "note") return { name: "note", orderId: initialOrder };
+    if (initialView === "lookup") return { name: "lookup" };
+    return { name: "pick" };
+  });
 
   /** Delivered orders, newest first, each with how much is left to rate. */
   const rateable = React.useMemo(() => {
@@ -125,10 +141,14 @@ export function RateEntry({
    * is the entire point of putting them in the URL. Runs once: re-resolving on
    * every render would yank the user back to `rate` the moment they navigated
    * away from it.
+   *
+   * An explicit `?view=` always wins. A link that names the view it wants is
+   * asking for that view, and an `?order=` alongside it is there to fill a
+   * field, not to redirect the page.
    */
   const resolved = React.useRef(false);
   React.useEffect(() => {
-    if (resolved.current || initialView === "note" || !initialOrder) return;
+    if (resolved.current || initialView || !initialOrder) return;
 
     if (initialEmail) {
       const result = lookupOrderForRating(initialOrder, initialEmail);
@@ -197,8 +217,16 @@ export function RateEntry({
         {/* Order-level problems. Kept a separate destination from the stars: a
             1-star Bibimbap and a missing delivery need different people to read
             them, and someone whose lunch never arrived will happily give the
-            recipe one star to say so unless there's somewhere better to go. */}
-        <Card>
+            recipe one star to say so unless there's somewhere better to go.
+
+            Stuck to the foot of the viewport, so it is on screen from the first
+            meal rather than under five of them. That is the whole point of it:
+            someone whose lunch never turned up should not have to scroll past
+            the stars for their own meals to find the door marked "this wasn't
+            about the food". `sticky` rather than `fixed` — it rides inside the
+            column, so it can't overhang the yellow hero on desktop, and it
+            settles into place at the end of the list instead of covering it. */}
+        <Card className="sticky bottom-4 z-10 shadow-raised">
           <CardBody className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[13px] text-muted-foreground">
               Late, missing, wrong item or a delivery issue?
@@ -227,9 +255,16 @@ export function RateEntry({
    * one back link — so the page only ever asks one question at a time.
    */
   if (view.name === "lookup") {
+    const fromNote = view.fromNote;
     return (
       <div className="space-y-4">
-        <BackLink onClick={() => setView({ name: "pick" })}>Back</BackLink>
+        <BackLink
+          onClick={() =>
+            setView(fromNote ? { name: "note", orderId: fromNote.orderId } : { name: "pick" })
+          }
+        >
+          Back
+        </BackLink>
         <div className="space-y-1">
           <h2 ref={heading} tabIndex={-1} className={HEADING}>
             Find your order
@@ -244,7 +279,16 @@ export function RateEntry({
             <OrderLookup
               initialOrder={initialOrder}
               initialEmail={initialEmail}
-              onFound={(order) => setView({ name: "rate", order, source: "public_link" })}
+              /* Back where they came from, holding what they came for: to the
+                 problem form with the order found, or — arriving from the
+                 picker — straight onto its stars. */
+              onFound={(order) =>
+                setView(
+                  fromNote
+                    ? { name: "note", orderId: order.id, found: true }
+                    : { name: "rate", order, source: "public_link" },
+                )
+              }
             />
           </CardBody>
         </Card>
@@ -267,7 +311,15 @@ export function RateEntry({
         </div>
         <Card>
           <CardBody>
-            <FeedbackForm initialOrder={view.orderId} />
+            {/* The escape sits under the order list, where the question it
+                answers gets asked. The lookup is a view of this same page, so
+                it is a state change rather than a navigation, and the order it
+                finds comes back to this form. */}
+            <FeedbackForm
+              initialOrder={view.orderId}
+              orderSource={view.found ? "lookup" : "link"}
+              onFindOrder={() => setView({ name: "lookup", fromNote: { orderId: view.orderId } })}
+            />
           </CardBody>
         </Card>
       </div>

@@ -86,13 +86,15 @@ const GENERAL_TOPICS: Topic[] = [
   { id: "Something else", label: "Something else", icon: MessageSquare },
 ];
 
-/** How many recent orders the picker offers before "another order number". */
+/** How many recent orders the picker offers before the lookup takes over. */
 const RECENT_ORDERS = 3;
 
 export function FeedbackForm({
   initialOrder = "",
   intro,
   onDone,
+  onFindOrder,
+  orderSource = "link",
 }: {
   initialOrder?: string;
   /** Heading to sit above the fields — and to step aside for the confirmation,
@@ -101,6 +103,27 @@ export function FeedbackForm({
    *  "Thanks — we're on it" that has already replaced everything below. */
   intro?: React.ReactNode;
   onDone?: () => void;
+  /**
+   * Take the customer to the order lookup, for an order the picker can't offer.
+   *
+   * Passed in when this form is already on `/rate`, where the lookup is a view
+   * of the same page and hands the order it finds straight back here. Left out
+   * elsewhere, and the link goes to `/rate?view=lookup`.
+   */
+  onFindOrder?: () => void;
+  /**
+   * Where `initialOrder` came from, when it isn't one of the recent three.
+   *
+   * `"link"` — a deep link or the FAB. It joins the recent orders as one more
+   * already-selected option, because the customer never chose it here and may
+   * well have meant a different one.
+   *
+   * `"lookup"` — they just proved on "Find your order" that this order is
+   * theirs, and came back to finish the report. It is then the *only* order
+   * offered: they went and fetched one specific order, and re-listing the three
+   * that didn't have it is the picker arguing with the answer.
+   */
+  orderSource?: "link" | "lookup";
 }) {
   const submitFeedback = useFeedbackStore((s) => s.submit);
   const orders = useOrdersStore((s) => s.orders);
@@ -113,20 +136,26 @@ export function FeedbackForm({
   const [message, setMessage] = React.useState("");
   const [submitted, setSubmitted] = React.useState<FeedbackEntry | null>(null);
 
+  const picked = orderNumber.trim();
+  /**
+   * An order fetched from the lookup stands alone — until it is cleared, at
+   * which point the recent list comes back and the picker is itself again.
+   */
+  const soleOrder = orderSource === "lookup" && picked.length > 0;
+
   // Deliveries that have happened, newest first. An order still in the future
   // can't have gone wrong yet, and offering next Monday's lunch as the thing to
   // complain about is the picker answering a question nobody asked.
   const recent = React.useMemo(() => {
-    if (!signedIn) return [];
+    if (!signedIn || soleOrder) return [];
     const today = toISODate(startOfToday());
     return orders
       .filter((o) => o.date <= today)
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, RECENT_ORDERS);
-  }, [orders, signedIn]);
+  }, [orders, signedIn, soleOrder]);
   // A deep-linked order that isn't in the recent list still has to be visible —
   // otherwise the form says "which order?" while silently holding one.
-  const picked = orderNumber.trim();
   const pickedIsListed = recent.some((o) => o.id === picked);
   const relatedToOrder = picked.length > 0;
   const topics = relatedToOrder ? ORDER_TOPICS : GENERAL_TOPICS;
@@ -175,7 +204,7 @@ export function FeedbackForm({
             {picked && !pickedIsListed ? (
               <OrderOption
                 id={picked}
-                sub="From your link"
+                sub={soleOrder ? "The order you found" : "From your link"}
                 selected
                 onClick={() => setOrderNumber("")}
               />
@@ -195,11 +224,11 @@ export function FeedbackForm({
         ) : null}
 
         {/* The typed number, shown only when there is no list to pick from —
-            signed out, or signed in with no deliveries yet. Someone with a list
-            in front of them picks from it; the "Another order number" escape
-            that used to sit under the list is gone, because an order old enough
-            to have fallen off it is rare enough not to be worth a permanent
-            control under the common case. */}
+            signed out, or signed in with no deliveries yet. Where there *is* a
+            list, the way out is the lookup rather than a second field: the
+            number alone was never enough to find an order, and a bare box that
+            silently accepts anything is worse than a door to the screen that
+            asks for both halves. */}
         {!recent.length && !picked ? (
           <Input
             id="fb-order"
@@ -209,7 +238,9 @@ export function FeedbackForm({
             aria-label="Order number"
             autoComplete="off"
           />
-        ) : null}
+        ) : (
+          <FindOrderLink onClick={onFindOrder} />
+        )}
       </section>
 
       {/* 2 — what happened. One tap is a whole report. */}
@@ -303,6 +334,29 @@ export function FeedbackForm({
 function mealCount(days: { items: unknown[] }[]) {
   const n = days.reduce((sum, d) => sum + d.items.length, 0);
   return `${n} meal${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The way out of the picker, for an order it doesn't hold — older than the
+ * three it offers, or placed under another address.
+ *
+ * A button when the lookup is a view of the page we're already on, a link when
+ * it isn't. Same words either way: whichever it is, it goes to the same screen.
+ */
+function FindOrderLink({ onClick }: { onClick?: () => void }) {
+  const className =
+    "inline-flex min-h-[24px] items-center text-2xs font-semibold text-primary underline underline-offset-2";
+  const label = "Your order isn't on the list?";
+
+  return onClick ? (
+    <button type="button" onClick={onClick} className={className}>
+      {label}
+    </button>
+  ) : (
+    <Link href="/rate?view=lookup" className={className}>
+      {label}
+    </Link>
+  );
 }
 
 /** One selectable order in the picker: the number, and when it came. One line,
