@@ -14,9 +14,10 @@ import * as React from "react";
  *     const dialog = useDialog({ open, onClose: close });
  *     <div role="dialog" aria-modal="true" {...dialog.props}>…</div>
  *
- * Pass `onClose: undefined` for a deliberately undismissable dialog — the
- * location gate is one — and Escape stands down while the trap stays on. A
- * layer you can't leave and can't tab out of is a trap in the bad sense.
+ * `onClose` may be omitted, which stands Escape down. Do so only for a dialog
+ * that has some *other* way out — a layer you can't leave, can't Escape and
+ * can't tab out of is a trap in the bad sense, and no screen in this app is
+ * allowed to be one.
  */
 export function useDialog({
   open,
@@ -68,17 +69,81 @@ export function useDialog({
     };
   }, [open]);
 
+  /**
+   * Hide the rest of the page from assistive tech while the dialog is up.
+   *
+   * The Tab trap below stops a *keyboard* user leaving, but a screen-reader user
+   * reading in browse mode doesn't Tab — they move by line, heading or landmark,
+   * and that walks straight out of the dialog and on through the page behind it,
+   * with nothing to say the layer was ever entered or left. `inert` on every
+   * sibling of the dialog's own top-level box removes that whole page from the
+   * reading order and the tab order at once, which is what "modal" is supposed
+   * to mean.
+   *
+   * Marked with a data attribute rather than blindly stripped on cleanup, so two
+   * stacked dialogs can't have the inner one un-hide the page on the outer one's
+   * behalf.
+   */
+  React.useEffect(() => {
+    if (!open) return;
+    const panel = ref.current;
+    if (!panel) return;
+
+    // Walk up from the panel to <body>, hiding every sibling at each level.
+    // Marking only <body>'s own children would miss any dialog that renders
+    // where it sits in the page rather than being portalled out — and most of
+    // them do. Climbing means the page is hidden either way.
+    const hidden: Element[] = [];
+    for (let node: Element | null = panel; node && node !== document.body; node = node.parentElement) {
+      const parent: Element | null = node.parentElement;
+      if (!parent) break;
+      for (const sib of Array.from(parent.children) as Element[]) {
+        if (sib === node || sib.hasAttribute("data-dialog-inert")) continue;
+        sib.setAttribute("inert", "");
+        sib.setAttribute("data-dialog-inert", "");
+        hidden.push(sib);
+      }
+    }
+    return () => {
+      hidden.forEach((el) => {
+        el.removeAttribute("inert");
+        el.removeAttribute("data-dialog-inert");
+      });
+    };
+  }, [open]);
+
   // Escape to close, Tab to cycle within.
   React.useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         if (!onClose) return;
+        /**
+         * A dropdown open inside the dialog gets the press first.
+         *
+         * This listener is in the *capture* phase (see below) so that a nested
+         * dialog cannot swallow Escape before an outer one sees it. The side
+         * effect was that it beat everything else too: with a sort dropdown or a
+         * filter list open inside a modal, Escape closed the whole modal and
+         * threw away the user's place, when all they meant was "never mind, shut
+         * the list". Anything transient that handles its own Escape marks itself
+         * `data-escape-layer` while it is open; the dialog then stands down for
+         * that one press and lets the event through to it.
+         */
+        if (document.querySelector("[data-escape-layer]")) return;
         e.stopPropagation();
         onClose();
         return;
       }
       if (e.key !== "Tab") return;
+      // Same standing-down rule for Tab, but only when focus is genuinely
+      // *inside* the transient layer: those lists are portalled to the end of
+      // the document, so the trap below would see focus "outside the panel" and
+      // yank it back to the top of the dialog mid-selection. Each list closes
+      // itself on Tab and hands focus back to its trigger, which is inside the
+      // dialog, so the trap is not being given up — only deferred.
+      const layer = document.querySelector("[data-escape-layer]");
+      if (layer && layer.contains(document.activeElement)) return;
       const panel = ref.current;
       if (!panel) return;
       const stops = focusable(panel);

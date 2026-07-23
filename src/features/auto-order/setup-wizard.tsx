@@ -29,6 +29,7 @@ import {
 import { program } from "@/data/program";
 import { me } from "@/data/me";
 import { useDialog } from "@/lib/use-dialog";
+import { useRoving } from "@/lib/roving";
 import { cn } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
 import type { CartAddOn } from "@/store/use-cart-store";
@@ -182,6 +183,9 @@ export function SetupWizard({
   // No minimum count — but you need at least one meal to rotate through.
   const canContinue = favorites.length >= 1;
 
+  // Same row of tags as the Menu page, so the same one-stop-and-arrows.
+  const categoryRoving = useRoving({ orientation: "horizontal" });
+
   // Guided walkthrough: "Pick one for me" — adds the first visible meal. No-op
   // once anything is selected. Re-subscribed every render so closures stay fresh.
   React.useEffect(() => {
@@ -228,7 +232,12 @@ export function SetupWizard({
               can't shrink, so they'd squeeze the search box to nothing. */}
           <div
             data-tour="wizard-filters"
-            className="mt-4 flex flex-col gap-2 rounded-3xl border border-border bg-card p-1.5 shadow-sm sm:flex-row sm:items-center sm:gap-1 sm:rounded-full"
+            // `border-border-strong` to match the Menu's identical bar. Operable
+            // chrome would normally take `border-control`, but this edge is a
+            // long unbroken pill rather than a button outline and reads heavy at
+            // that strength — the same deliberate exception, made in the same
+            // place, written up in ACCESSIBILITY-AUDIT.md #11.
+            className="mt-4 flex flex-col gap-2 rounded-3xl border border-border-strong bg-card p-1.5 shadow-sm sm:flex-row sm:items-center sm:gap-1 sm:rounded-full"
           >
             <div className="relative flex min-w-0 flex-1 items-center">
               <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
@@ -237,7 +246,7 @@ export function SetupWizard({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search meals…"
                 aria-label="Search meals"
-                className="h-10 w-full rounded-full bg-transparent pl-9 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground/70 sm:h-9 sm:text-sm"
+                className="h-10 w-full rounded-full bg-transparent pl-9 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground sm:h-9 sm:text-sm"
               />
             </div>
             <div className="flex items-center gap-1 overflow-x-auto sm:contents">
@@ -272,7 +281,12 @@ export function SetupWizard({
 
         {/* Category tags — outside the box, same as the Menu page. */}
         {availableCategories.length ? (
-          <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            role="toolbar"
+            aria-label="Menu categories"
+            className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            {...categoryRoving.props}
+          >
             <FilterPill active={!category} onClick={() => setCategory("")}>
               All
             </FilterPill>
@@ -433,7 +447,7 @@ function RulesModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+              className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
             >
               <X className="size-4" />
             </button>
@@ -503,11 +517,14 @@ function FilterPill({
     <button
       type="button"
       onClick={onClick}
+      // The fill was the only thing saying which tag is applied — inaudible,
+      // and it left the roving Tab stop with no chosen pill to land on.
+      aria-pressed={active}
       className={cn(
         "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
         active
           ? "border-primary bg-primary text-primary-foreground shadow-card"
-          : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-muted",
+          : "border-control bg-card text-muted-foreground hover:border-primary hover:bg-muted",
       )}
     >
       {Icon ? (
@@ -537,13 +554,13 @@ function RadioCard({
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-colors",
-        active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted",
+        active ? "border-primary bg-teal-wash" : "border-control bg-card hover:bg-muted",
       )}
     >
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-full border-2",
-          active ? "border-primary bg-primary text-primary-foreground" : "border-border",
+          active ? "border-primary bg-primary text-primary-foreground" : "border-control",
         )}
       >
         {active ? <Check className="size-3" /> : null}

@@ -147,7 +147,7 @@ export function OrdersView() {
                 aria-label={range ? `Date range: ${rangeLabel}` : "Filter by date"}
                 className={cn(
                   "flex h-10 items-center gap-1.5 rounded-full border bg-card px-3 text-[13px] font-semibold text-teal-deep shadow-sm outline-none transition-colors hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30 sm:px-3.5",
-                  range ? "border-primary" : "border-border hover:border-primary/40",
+                  range ? "border-primary" : "border-control hover:border-primary",
                 )}
               >
                 <CalendarRange className="size-4 shrink-0 text-primary" />
@@ -158,7 +158,7 @@ export function OrdersView() {
                   type="button"
                   onClick={() => setRange(null)}
                   aria-label="Clear date range"
-                  className="touch-target ml-1 rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="touch-target ml-1 rounded-full border border-control bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <X className="size-3.5" />
                 </button>
@@ -396,10 +396,12 @@ function OrderCard({ order }: { order: Order }) {
           <div className="flex items-center gap-3">
             <div className="flex shrink-0 -space-x-3">
               {items.slice(0, 3).map((it, i) => (
+                // Decorative — the summary line under the stack lists every
+                // meal by name, so naming each thumbnail says it all twice.
                 <FoodPhoto
                   key={i}
                   src={getItem(it.itemId)?.image}
-                  alt={it.name}
+                  alt=""
                   className="size-10 rounded-full ring-2 ring-card"
                   iconClassName="size-4"
                 />
@@ -418,9 +420,10 @@ function OrderCard({ order }: { order: Order }) {
               d.items.map((it, idx) => (
                 <li key={`${d.date}-${idx}`} className="flex items-start justify-between gap-3 text-[13px]">
                   <span className="flex items-start gap-2.5">
+                    {/* Decorative — the name is the text beside it. */}
                     <FoodPhoto
                       src={getItem(it.itemId)?.image}
-                      alt={it.name}
+                      alt=""
                       className="size-10 shrink-0 rounded-full"
                       iconClassName="size-4"
                     />
@@ -550,8 +553,13 @@ function RateableItemList({ order }: { order: Order }) {
                           className={cn(
                             "size-3",
                             n <= rated.stars
+                              // The empty stars are what say "out of five" to
+                              // anyone reading this by eye — the sr-only
+                              // sentence below covers everyone else. Faded to
+                              // 40% they were all but invisible, leaving a
+                              // three-star rating looking like the whole scale.
                               ? "fill-yellow text-yellow"
-                              : "fill-transparent text-muted-foreground/40",
+                              : "fill-transparent text-muted-foreground",
                           )}
                         />
                       ))}
@@ -649,7 +657,7 @@ function ReOrderModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -659,9 +667,10 @@ function ReOrderModal({
           <ul className="space-y-3">
             {items.map((it, idx) => (
               <li key={`${it.itemId}-${idx}`} className="flex items-start gap-3">
+                {/* Decorative — the name is the text beside it. */}
                 <FoodPhoto
                   src={getItem(it.itemId)?.image}
-                  alt={it.name}
+                  alt=""
                   className="size-11 shrink-0 rounded-full"
                   iconClassName="size-4"
                 />

@@ -26,6 +26,7 @@ import {
   ArrowLeft,
   Phone,
   Mail,
+  CreditCard,
   type LucideIcon,
   LogOut,
 } from "lucide-react";
@@ -52,12 +53,16 @@ import {
   type AddressInput,
 } from "@/store/use-addresses-store";
 import { useDefaultAddressStore } from "@/store/use-default-address-store";
+import { useCardsStore, type SavedCard } from "@/store/use-cards-store";
+import { CardFormDialog, SavedCardRow, SecurityNote } from "@/components/payment/card-fields";
+import { brandLabel } from "@/lib/card";
 import { dietaryPreferences, allergenOptions } from "@/data/menu";
 import { program, addresses } from "@/data/program";
 import { me } from "@/data/me";
 import { toast } from "@/store/use-toast-store";
 import { useOOOStore } from "@/store/use-ooo-store";
 import { useDialog } from "@/lib/use-dialog";
+import { useRoving } from "@/lib/roving";
 import { formatCurrency, cn } from "@/lib/utils";
 
 const dietaryIcons: Record<string, LucideIcon> = {
@@ -74,12 +79,17 @@ type SectionId =
   | "program"
   | "permissions"
   | "addresses"
+  | "payment"
   | "password"
   | "notifications"
   | "delete";
 
-/** Group order for the phone list; sections render under these in this order. */
-const sectionGroups = ["Preferences", "Company", "Delivery", "Security"] as const;
+/** Group order for the phone list; sections render under these in this order.
+ *  "Personal" rather than "Delivery": the group holds the two things that are
+ *  the person's own rather than the contract's — where their food goes and what
+ *  pays for it — and a heading naming only one of them leaves the wallet filed
+ *  under a label it has nothing to do with. */
+const sectionGroups = ["Preferences", "Company", "Personal", "Security"] as const;
 
 export function AccountView() {
   // Shared with the menu, which seeds its filters from these — so a preference
@@ -105,21 +115,29 @@ export function AccountView() {
   const email = account?.email ?? me.email;
   const phone = account?.phone ?? me.phone;
 
-  // Inline name editing — available to any signed-in account (individual or
-  // corporate). Guests have no account to rename, so the pencil is hidden.
-  const [editingName, setEditingName] = React.useState(false);
+  /**
+   * One edit mode for the whole identity card, opened by the Edit button in its
+   * corner. Name and phone were two separately-pencilled fields, which put two
+   * near-invisible icons on one card and made changing both a two-step ritual —
+   * open one, save it, find the other. Now they open together and save together.
+   * Guests have no account to edit, so the button is hidden for them.
+   */
+  const [editingProfile, setEditingProfile] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState("");
+  const [phoneDraft, setPhoneDraft] = React.useState("");
 
-  function startEditName() {
+  function startEditProfile() {
     setNameDraft(name);
-    setEditingName(true);
+    setPhoneDraft(phone);
+    setEditingProfile(true);
   }
-  function saveName() {
-    const v = nameDraft.trim();
-    if (!v) return;
-    setAccountName(v);
-    setEditingName(false);
-    toast.success("Name updated", "Your name has been saved.");
+  function saveProfile() {
+    const nextName = nameDraft.trim();
+    if (!nextName) return;
+    setAccountName(nextName);
+    setAccountPhone(phoneDraft.trim());
+    setEditingProfile(false);
+    toast.success("Profile updated", "Your details have been saved.");
   }
 
   function toggleDiet(d: string) {
@@ -149,11 +167,25 @@ export function AccountView() {
           { id: "permissions", group: "Company", label: "Permissions", icon: ShieldCheck },
         ] as const)
       : []),
-    { id: "addresses", group: "Delivery", label: "Delivery addresses", icon: MapPin },
+    { id: "addresses", group: "Personal", label: "Delivery addresses", icon: MapPin },
+    { id: "payment", group: "Personal", label: "Payment method", icon: CreditCard },
     { id: "password", group: "Security", label: "Change password", icon: KeyRound },
     { id: "delete", group: "Security", label: "Delete account", icon: Trash2 },
   ];
   const openRow = rows.find((r) => r.id === openSection);
+
+  /**
+   * Arrow keys down the settings rails and across the dietary chips.
+   *
+   * The two rails keep every one of their own Tab stops (`rove: false`). They
+   * are marked up as navigation, and a keyboard user who has learned to Tab to
+   * "Payment method" should not find that press has been taken away from them
+   * — the arrows are an addition here, not a replacement. The chips are the
+   * other case: one question, one answer, so one stop.
+   */
+  const desktopRailRoving = useRoving({ orientation: "vertical", rove: false });
+  const phoneRailRoving = useRoving({ orientation: "vertical", rove: false });
+  const dietRoving = useRoving();
   // Desktop always has a section on show — there's no list screen to fall back
   // to — so an unset selection resolves to the first one. The phone keeps `null`
   // meaning "the settings list".
@@ -184,66 +216,87 @@ export function AccountView() {
         <CardBody className="space-y-4">
           <div className="flex flex-wrap items-center gap-4">
             <Avatar name={name} className="size-14 shrink-0 bg-yellow text-lg text-teal-deep" />
-            {/* basis-52 keeps the name column readable: without a floor, flex-1
-                lets the out-of-office button squeeze it to one word per line on
-                phones — the button wraps to its own row instead. */}
-            <div className="min-w-0 flex-1 basis-52">
-              {editingName ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    value={nameDraft}
-                    onChange={(e) => setNameDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveName();
-                      if (e.key === "Escape") setEditingName(false);
-                    }}
-                    aria-label="Your name"
-                    autoFocus
-                    className="h-9 max-w-[16rem]"
-                  />
-                  <Button size="sm" onClick={saveName} disabled={!nameDraft.trim()}>
-                    Save
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingName(false)}>
-                    Cancel
-                  </Button>
-                </div>
+            {/* A floor under the name column so it never squeezes to one word
+                per line — but a smaller one on phones, where a 13rem basis
+                pushed the Edit button onto its own row under the avatar
+                instead of leaving it in the corner where it belongs. */}
+            <div className="min-w-0 flex-1 basis-32 sm:basis-52">
+              {editingProfile ? (
+                <Input
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveProfile();
+                    if (e.key === "Escape") setEditingProfile(false);
+                  }}
+                  aria-label="Your name"
+                  // The one identity field in the app that never told the
+                  // browser what it holds, so it alone couldn't be autofilled.
+                  autoComplete="name"
+                  autoFocus
+                  className="h-9 max-w-[16rem]"
+                />
               ) : (
-                <div className="flex items-center gap-1.5">
-                  <h2 className="font-display text-xl font-semibold tracking-tight">{name}</h2>
-                  {account ? (
-                    <button
-                      type="button"
-                      onClick={startEditName}
-                      aria-label="Edit name"
-                      className="touch-target rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <Pencil className="size-4" />
-                    </button>
-                  ) : null}
-                </div>
+                <h2 className="font-display text-xl font-semibold tracking-tight">{name}</h2>
               )}
-              <p className="text-[13px] text-muted-foreground">
+              <p className="mt-0.5 text-[13px] text-muted-foreground">
                 {corporate ? account?.company ?? me.company : "Individual account"}
               </p>
             </div>
-            {/* Out-of-office pauses company auto-orders — a corporate-only concept. */}
-            {corporate ? <OOOHeaderButton /> : null}
+            {/* The card's corner: out-of-office (corporate only — it pauses
+                company auto-orders) and the one Edit button that opens both
+                editable fields at once. */}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {corporate ? <OOOHeaderButton /> : null}
+              {account ? (
+                editingProfile ? (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingProfile(false)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={saveProfile} disabled={!nameDraft.trim()}>
+                      Save
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={startEditProfile}>
+                    <Pencil className="size-4" /> Edit
+                  </Button>
+                )
+              ) : null}
+            </div>
           </div>
 
-          {/* Contact details */}
-          <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+          {/* Contact details, side by side rather than stacked: two short facts
+              that belong to the same person read as a pair, and stacking them
+              spent a full row each on a card that is mostly whitespace. They
+              fall back to stacked on phones, where two columns would break the
+              email across three lines. */}
+          <div className="grid divide-y divide-border overflow-hidden rounded-xl border border-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
             <ContactRow icon={Mail} label="Email" hint="Used to sign in">
               <span className="break-all">{email}</span>
             </ContactRow>
-            <PhoneRow
-              phone={phone}
-              canEdit={Boolean(account)}
-              onSave={(v) => {
-                setAccountPhone(v);
-                toast.success("Phone updated", "Your phone number has been saved.");
-              }}
-            />
+            <ContactRow icon={Phone} label="Phone">
+              {editingProfile ? (
+                <Input
+                  value={phoneDraft}
+                  onChange={(e) => setPhoneDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveProfile();
+                    if (e.key === "Escape") setEditingProfile(false);
+                  }}
+                  aria-label="Phone number"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  className="h-9 max-w-[14rem]"
+                />
+              ) : phone ? (
+                phone
+              ) : (
+                <span className="text-muted-foreground">Not set</span>
+              )}
+            </ContactRow>
           </div>
         </CardBody>
       </Card>
@@ -303,6 +356,7 @@ export function AccountView() {
       <nav
         aria-label="Account sections"
         className="hidden px-3 pb-3 pt-5 lg:block lg:border-r lg:border-border"
+        {...desktopRailRoving.props}
       >
         {sectionGroups.map((group, i) => {
           const inGroup = rows.filter((r) => r.group === group);
@@ -317,7 +371,6 @@ export function AccountView() {
                   onClick={() => setOpenSection(r.id)}
                   icon={r.icon}
                   label={r.label}
-                  danger={r.id === "delete"}
                 />
               ))}
             </div>
@@ -334,7 +387,7 @@ export function AccountView() {
       <div className="min-w-0 space-y-5">
       {/* The phone's counterpart to the rail. */}
       {openSection ? null : (
-        <nav aria-label="Account settings" className="space-y-5 lg:hidden">
+        <nav aria-label="Account settings" className="space-y-5 lg:hidden" {...phoneRailRoving.props}>
           {sectionGroups.map((group) => {
             const inGroup = rows.filter((r) => r.group === group);
             if (!inGroup.length) return null;
@@ -350,20 +403,8 @@ export function AccountView() {
                         onClick={() => setOpenSection(r.id)}
                         className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted active:bg-muted"
                       >
-                        <r.icon
-                          className={cn(
-                            "size-4 shrink-0",
-                            r.id === "delete" ? "text-danger" : "text-primary",
-                          )}
-                        />
-                        <span
-                          className={cn(
-                            "min-w-0 flex-1 text-[13px] font-semibold",
-                            r.id === "delete" ? "text-danger" : null,
-                          )}
-                        >
-                          {r.label}
-                        </span>
+                        <r.icon className="size-4 shrink-0 text-primary" />
+                        <span className="min-w-0 flex-1 text-[13px] font-semibold">{r.label}</span>
                         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                       </button>
                     ))}
@@ -418,7 +459,12 @@ export function AccountView() {
                 {dietary.length ? `${dietary.length} selected` : "None selected"}
               </span>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div
+              className="flex flex-wrap gap-2"
+              role="toolbar"
+              aria-label="Dietary tags"
+              {...dietRoving.props}
+            >
               {dietaryPreferences.map((d) => {
                 const on = dietary.includes(d);
                 const Icon = dietaryIcons[d] ?? Leaf;
@@ -432,7 +478,7 @@ export function AccountView() {
                       "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold transition-colors",
                       on
                         ? "border-primary bg-teal-wash text-teal-deep"
-                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                        : "border-control bg-card text-muted-foreground hover:border-primary hover:text-foreground",
                     )}
                   >
                     <Icon className={cn("size-3.5 shrink-0", on ? "text-primary" : "text-muted-foreground")} />
@@ -567,6 +613,13 @@ export function AccountView() {
       )}
       </SectionPanel>
 
+      {/* Payment method — the same card checkout charges, kept here so it can be
+          replaced or dropped between orders rather than only while one is being
+          placed. */}
+      <SectionPanel open={openSection === "payment"} desktopOpen={desktopSection === "payment"}>
+        <PaymentMethodsCard corporate={corporate} />
+      </SectionPanel>
+
       {/* Password — change the sign-in password (both account types). */}
       <SectionPanel open={openSection === "password"} desktopOpen={desktopSection === "password"}>
         <ChangePasswordCard onDone={() => setOpenSection(null)} />
@@ -661,13 +714,11 @@ function RailItem({
   onClick,
   icon: Icon,
   label,
-  danger,
 }: {
   active: boolean;
   onClick: () => void;
   icon: LucideIcon;
   label: string;
-  danger?: boolean;
 }) {
   return (
     <button
@@ -676,22 +727,13 @@ function RailItem({
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition-colors",
-        // Destructive keeps its tint when selected — a teal highlight would
-        // quietly strip the one row that needs to look different.
-        danger
-          ? active
-            ? "bg-danger-bg text-danger"
-            : "text-danger hover:bg-danger-bg/60"
-          : active
-            ? "bg-teal-wash text-teal-deep"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        active
+          ? "bg-teal-wash text-teal-deep"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
     >
       <Icon
-        className={cn(
-          "size-4 shrink-0",
-          danger ? "text-danger" : active ? "text-primary" : "text-muted-foreground",
-        )}
+        className={cn("size-4 shrink-0", active ? "text-primary" : "text-muted-foreground")}
       />
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
@@ -797,7 +839,7 @@ function IndividualAddressBook({ seed }: { seed: DeliveryDetails }) {
       <CardBody className="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
         {list.length === 0 ? (
           <div className="py-6 text-center">
-            <MapPin className="mx-auto size-6 text-muted-foreground/50" />
+            <MapPin className="mx-auto size-6 text-muted-foreground" />
             <p className="mt-2 text-[13px] text-muted-foreground">No saved addresses yet.</p>
             <Button variant="outline" size="sm" className="mt-3" onClick={() => setEditing("new")}>
               <Plus className="size-4" /> Add your first address
@@ -939,7 +981,7 @@ function AddressFormModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -1043,6 +1085,82 @@ function AddressFormModal({
   );
 }
 
+/**
+ * The card on file — one card, the one every order is charged to, plus the form
+ * that sets it and the control that forgets it. Backed by {@link useCardsStore},
+ * so the card set here is the card checkout charges, and vice versa.
+ *
+ * One card, not a list. Every order is charged the same way at the same cutoff,
+ * so a list only ever asked which of these is the real one. Adding a card when
+ * there's already one *replaces* it, which is the same outcome as picking it
+ * from a list, minus the list — and it's stated on the button, so nobody
+ * discovers it by losing a card they meant to keep.
+ *
+ * The form is a dialog, the same one checkout raises — never a panel that
+ * unfolds under the card row. A form growing beneath the card you're replacing
+ * puts the old card and the half-typed new one on screen together, at exactly
+ * the moment it matters which is which, and it pushes the rest of the page down
+ * to do it.
+ */
+function PaymentMethodsCard({ corporate }: { corporate: boolean }) {
+  const card = useCardsStore((s) => s.card);
+  const removeCard = useCardsStore((s) => s.remove);
+
+  const [formOpen, setFormOpen] = React.useState(false);
+
+  async function handleRemove(saved: SavedCard) {
+    const ok = await confirm({
+      title: `Remove this ${brandLabel(saved.brand)}?`,
+      description: `The card ending ${saved.last4} will be removed, and your next order will ask for a new one. Orders already placed aren't affected.`,
+      confirmLabel: "Remove",
+      tone: "danger",
+    });
+    if (ok) {
+      removeCard();
+      toast.success("Card removed", `${brandLabel(saved.brand)} ending ${saved.last4} was removed.`);
+    }
+  }
+
+  return (
+    <Card>
+      {/* No action in the header: changing the card acts on the card, so it lives on the
+          card's own row next to Remove, where what it affects is unambiguous. */}
+      <CardHeader>
+        <CardTitle className="text-base">Payment method</CardTitle>
+      </CardHeader>
+      <CardBody className="space-y-4">
+        <p className="text-2xs text-muted-foreground">
+          {corporate
+            ? "Anything your company allowance doesn't cover is charged to this card."
+            : "The card your orders are charged to. Nothing is charged until 24 hours before delivery."}
+        </p>
+
+        {card ? (
+          <SavedCardRow
+            card={card}
+            onReplace={() => setFormOpen(true)}
+            onRemove={() => handleRemove(card)}
+          />
+        ) : (
+          <Button variant="outline" block onClick={() => setFormOpen(true)}>
+            <Plus className="size-4" /> Add a card
+          </Button>
+        )}
+
+        <SecurityNote />
+      </CardBody>
+
+      {formOpen ? (
+        <CardFormDialog
+          idPrefix="acct-card"
+          replacing={card}
+          onClose={() => setFormOpen(false)}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
 /** Long enough to matter, short enough nobody writes it on a sticky note. */
 const MIN_PASSWORD = 8;
 
@@ -1127,9 +1245,13 @@ function ChangePasswordForm({
             onChange={(e) => setNext(e.target.value)}
             placeholder={`At least ${MIN_PASSWORD} characters`}
             autoComplete="new-password"
+            /* Points the field at its own error text, so the reason is spoken
+               and not only painted red. */
+            aria-invalid={tooShort || undefined}
+            aria-describedby={tooShort ? `${idPrefix}-new-error` : undefined}
           />
           {tooShort ? (
-            <p className="mt-1.5 text-2xs font-medium text-danger">
+            <p id={`${idPrefix}-new-error`} role="alert" className="mt-1.5 text-2xs font-medium text-danger">
               At least {MIN_PASSWORD} characters.
             </p>
           ) : null}
@@ -1144,9 +1266,12 @@ function ChangePasswordForm({
             placeholder="Type it again"
             autoComplete="new-password"
             aria-invalid={mismatch || undefined}
+            aria-describedby={mismatch ? `${idPrefix}-confirm-error` : undefined}
           />
           {mismatch ? (
-            <p className="mt-1.5 text-2xs font-medium text-danger">Both passwords must match.</p>
+            <p id={`${idPrefix}-confirm-error`} role="alert" className="mt-1.5 text-2xs font-medium text-danger">
+              Both passwords must match.
+            </p>
           ) : null}
         </div>
       </div>
@@ -1181,7 +1306,12 @@ function DeleteAccountCard() {
           Permanently delete your account and all associated data — your profile, saved addresses and
           preferences. This can&apos;t be undone.
         </p>
-        <Button variant="ghost" className="text-danger hover:bg-danger-bg" onClick={() => setOpen(true)}>
+        {/* Plain, like every other button on the page. This one only opens the
+            dialog — the paragraph above already says what's at stake, and red on
+            a control that does nothing yet spends the alarm before there's
+            anything to be alarmed about. The confirm inside the dialog, which
+            does delete, keeps it. */}
+        <Button variant="ghost" onClick={() => setOpen(true)}>
           <Trash2 className="size-4" /> Delete account
         </Button>
       </CardBody>
@@ -1230,7 +1360,7 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+              className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted"
             >
               <X className="size-4" />
             </button>
@@ -1272,19 +1402,16 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** A labelled contact line (Email / Phone) in the identity card. `action` is an
- *  optional trailing control, e.g. the phone's Edit pencil. */
+/** A labelled contact line (Email / Phone) in the identity card. */
 function ContactRow({
   icon: Icon,
   label,
   hint,
-  action,
   children,
 }: {
   icon: LucideIcon;
   label: string;
   hint?: string;
-  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -1293,92 +1420,11 @@ function ContactRow({
       <div className="min-w-0 flex-1">
         <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
           {label}
-          {hint ? <span className="ml-1.5 normal-case tracking-normal opacity-70">· {hint}</span> : null}
+          {hint ? <span className="ml-1.5 normal-case tracking-normal">· {hint}</span> : null}
         </p>
         <div className="mt-0.5 text-[13px] font-medium text-foreground">{children}</div>
       </div>
-      {action}
     </div>
-  );
-}
-
-/** Phone contact line with inline editing. Read-only until the pencil is tapped
- *  (only shown for a signed-in account), then an input + Save/Cancel in place. */
-function PhoneRow({
-  phone,
-  canEdit,
-  onSave,
-}: {
-  phone: string;
-  canEdit: boolean;
-  onSave: (phone: string) => void;
-}) {
-  const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState("");
-
-  function start() {
-    setDraft(phone);
-    setEditing(true);
-  }
-  function save() {
-    const v = draft.trim();
-    if (!v) return;
-    onSave(v);
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <div className="flex items-start gap-3 px-4 py-3">
-        <Phone className="mt-2 size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <Label htmlFor="account-phone">Phone</Label>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <Input
-              id="account-phone"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") save();
-                if (e.key === "Escape") setEditing(false);
-              }}
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              autoFocus
-              className="h-9 max-w-[16rem]"
-            />
-            <Button size="sm" onClick={save} disabled={!draft.trim()}>
-              Save
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <ContactRow
-      icon={Phone}
-      label="Phone"
-      action={
-        canEdit ? (
-          <button
-            type="button"
-            onClick={start}
-            aria-label="Edit phone number"
-            className="touch-target rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Pencil className="size-4" />
-          </button>
-        ) : null
-      }
-    >
-      {phone ? phone : <span className="text-muted-foreground">Not set</span>}
-    </ContactRow>
   );
 }
 

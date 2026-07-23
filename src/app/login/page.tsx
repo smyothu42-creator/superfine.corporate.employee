@@ -88,7 +88,7 @@ function LoginCard() {
       <div className="mt-4 text-center">
         <Link
           href="/set-password"
-          className="inline-flex items-center gap-1 text-2xs text-muted-foreground/70 underline underline-offset-2 hover:text-muted-foreground"
+          className="inline-flex items-center gap-1 text-2xs text-muted-foreground underline underline-offset-2 hover:text-muted-foreground"
         >
           <KeyRound className="size-3" /> Admin created a corp employee account? Open the email link
           to set the password (demo)

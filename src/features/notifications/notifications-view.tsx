@@ -128,13 +128,34 @@ function RowMenu({
 }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+  const trigger = React.useRef<HTMLButtonElement>(null);
+  const menu = React.useRef<HTMLDivElement>(null);
+
+  /**
+   * Opening a menu has to put the user *in* it.
+   *
+   * The list was reachable by mouse and by Escape, but not by keyboard in the
+   * one direction that matters: pressing Enter on "More options" left focus on
+   * the trigger with a menu hanging open behind it, and the only way in was to
+   * Tab — which walked into the next notification's controls instead, because
+   * the menu is positioned, not ordered. Land on the first item, the way every
+   * other layer in this app already does.
+   */
+  React.useEffect(() => {
+    if (!open) return;
+    menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [open]);
 
   // Escape closes, and so does a press anywhere else — a menu that can only be
   // dismissed by choosing something from it is a trap.
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      // Hand focus back to what opened it. Without this the menu unmounts under
+      // the user's focus and drops them on <body> — back at the top of the page,
+      // having lost the row they were working on.
+      close();
     };
     const onDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
@@ -147,9 +168,58 @@ function RowMenu({
     };
   }, [open]);
 
+  /**
+   * Shut the menu and put focus back where it came from.
+   *
+   * Guarded on the trigger still being in the document, because "Remove" takes
+   * the whole row — and its trigger — away with it. Focusing a detached node is
+   * a silent no-op that leaves the user on <body>, so in that case we let the
+   * list's own live region do the talking rather than pretend.
+   */
+  function close() {
+    setOpen(false);
+    const el = trigger.current;
+    if (el && el.isConnected) el.focus();
+  }
+
+  /** Up/Down between the items, Home/End to the ends — what `role="menu"` promises. */
+  function onMenuKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    if (!items.length) return;
+
+    // Tab out of an open menu closes it rather than leaving it hanging over the
+    // list while focus moves on somewhere else.
+    if (e.key === "Tab") {
+      setOpen(false);
+      return;
+    }
+
+    const from = items.indexOf(document.activeElement as HTMLElement);
+    let to: number;
+    switch (e.key) {
+      case "ArrowDown":
+        to = (from + 1) % items.length;
+        break;
+      case "ArrowUp":
+        to = (from - 1 + items.length) % items.length;
+        break;
+      case "Home":
+        to = 0;
+        break;
+      case "End":
+        to = items.length - 1;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    items[to]?.focus();
+  }
+
   return (
     <div ref={ref} className="relative shrink-0">
       <button
+        ref={trigger}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -167,7 +237,10 @@ function RowMenu({
 
       {open ? (
         <div
+          ref={menu}
           role="menu"
+          aria-label={`Actions for "${title}"`}
+          onKeyDown={onMenuKeyDown}
           className="absolute right-0 top-full z-40 mt-1 w-44 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg"
         >
           <MenuItem
@@ -175,7 +248,7 @@ function RowMenu({
             label={read ? "Mark as unread" : "Mark as read"}
             onClick={() => {
               onToggleRead();
-              setOpen(false);
+              close();
             }}
           />
           <MenuItem
@@ -184,7 +257,7 @@ function RowMenu({
             tone="danger"
             onClick={() => {
               onRemove();
-              setOpen(false);
+              close();
             }}
           />
         </div>
@@ -208,6 +281,10 @@ function MenuItem({
     <button
       type="button"
       role="menuitem"
+      // The menu owns focus while it is open — arrows move between items, and
+      // Tab is a way *out* rather than a way through. Without this, Tab walked
+      // the two items one at a time before escaping.
+      tabIndex={-1}
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium transition-colors hover:bg-muted",

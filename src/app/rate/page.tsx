@@ -86,12 +86,14 @@ function RateHero() {
         <span className="flex size-16 items-center justify-center rounded-full bg-white/40 text-teal-deep">
           <Star className="size-8" aria-hidden />
         </span>
-        <h1 className="mt-5 font-display text-5xl font-semibold leading-[1.05] tracking-tight text-teal-deep">
-          How was lunch?
+        {/* One line: "How was your lunch?" breaks after "your" at this size,
+            and a two-line question reads as two thoughts. */}
+        <h1 className="mt-5 whitespace-nowrap font-display text-5xl font-semibold leading-[1.05] tracking-tight text-teal-deep">
+          How was your lunch?
         </h1>
         <p className="mt-4 text-base leading-relaxed text-teal-deep/80">
-          Rate the meals themselves — a tap each is plenty. It&apos;s how the kitchen decides what
-          stays on the menu, and what comes back.
+          Rate the meals themselves. A tap each is plenty, and it&apos;s how the kitchen decides
+          what stays on the menu and what comes back.
         </p>
       </div>
 
@@ -110,11 +112,11 @@ function RateHeroBanner() {
       <FoodDoodles patternId="food-doodles-rate-banner" className="text-[#8f7c00] opacity-20" />
       <div className="relative flex flex-col items-center text-center">
         <Logo variant="dark" size="xl" />
-        <h1 className="mt-4 font-display text-2xl font-semibold tracking-tight text-teal-deep">
-          How was lunch?
+        <h1 className="mt-4 whitespace-nowrap font-display text-2xl font-semibold tracking-tight text-teal-deep">
+          How was your lunch?
         </h1>
         <p className="mt-1 text-[13px] leading-relaxed text-teal-deep/80">
-          Rate the meals — it&apos;s how the kitchen decides what stays on the menu.
+          Rate the meals. It&apos;s how the kitchen decides what stays on the menu.
         </p>
       </div>
     </div>

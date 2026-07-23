@@ -86,10 +86,17 @@ function SetPasswordCard() {
                 placeholder={`At least ${MIN_PASSWORD} characters`}
                 className="pl-10"
                 autoComplete="new-password"
+                /* The message below was on screen and nowhere else: a screen
+                   reader had no way to know the field was rejected, let alone
+                   why, because nothing tied the red text to the box it was
+                   about. `aria-invalid` says something is wrong;
+                   `aria-describedby` says what. */
+                aria-invalid={tooShort || undefined}
+                aria-describedby={tooShort ? "new-password-error" : undefined}
               />
             </div>
             {tooShort ? (
-              <p className="mt-1.5 text-2xs font-medium text-danger">
+              <p id="new-password-error" role="alert" className="mt-1.5 text-2xs font-medium text-danger">
                 At least {MIN_PASSWORD} characters.
               </p>
             ) : null}
@@ -109,10 +116,13 @@ function SetPasswordCard() {
                 className="pl-10"
                 autoComplete="new-password"
                 aria-invalid={mismatch || undefined}
+                aria-describedby={mismatch ? "confirm-password-error" : undefined}
               />
             </div>
             {mismatch ? (
-              <p className="mt-1.5 text-2xs font-medium text-danger">Both passwords must match.</p>
+              <p id="confirm-password-error" role="alert" className="mt-1.5 text-2xs font-medium text-danger">
+                Both passwords must match.
+              </p>
             ) : null}
           </Field>
 

@@ -397,7 +397,7 @@ export function AddOnModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -480,7 +480,7 @@ function AddAnotherSection({
         type="button"
         onClick={onOpenChooser}
         className={cn(
-          "flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card text-[13px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          "flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-control bg-card text-[13px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
           className,
         )}
       >
@@ -507,7 +507,7 @@ function AddAnotherSection({
           type="button"
           onClick={onRepeat}
           disabled={!canRepeat}
-          className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary hover:bg-teal-wash/50 disabled:pointer-events-none disabled:opacity-50"
+          className="flex w-full items-center gap-3 rounded-xl border border-control bg-card p-3 text-left transition-colors hover:border-primary hover:bg-teal-wash/50 disabled:pointer-events-none disabled:opacity-50"
         >
           <Copy className="size-4 shrink-0 text-primary" />
           <span className="min-w-0">
@@ -522,7 +522,7 @@ function AddAnotherSection({
         <button
           type="button"
           onClick={onCustomizeNew}
-          className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary hover:bg-teal-wash/50"
+          className="flex w-full items-center gap-3 rounded-xl border border-control bg-card p-3 text-left transition-colors hover:border-primary hover:bg-teal-wash/50"
         >
           <SlidersHorizontal className="size-4 shrink-0 text-primary" />
           <span className="min-w-0">

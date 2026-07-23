@@ -121,7 +121,7 @@ export function ActiveDashboard({
             </div>
             <Link
               href="/orders"
-              className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors hover:bg-muted"
+              className="flex shrink-0 items-center gap-1 rounded-full border border-control bg-card px-3 py-1.5 text-[13px] font-semibold text-teal-deep transition-colors hover:bg-muted"
             >
               Review <ChevronRight className="size-4 text-muted-foreground" />
             </Link>
@@ -163,7 +163,8 @@ export function ActiveDashboard({
                   key={id}
                   className="flex items-center gap-3 rounded-2xl border border-border bg-card p-2.5"
                 >
-                  <FoodPhoto src={item.image} alt={item.name} className="size-11 rounded-xl" iconClassName="size-4" />
+                  {/* Decorative — the name is the line of text beside it. */}
+                  <FoodPhoto src={item.image} alt="" className="size-11 rounded-xl" iconClassName="size-4" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-semibold">{item.name}</p>
                     <p className="truncate text-2xs text-muted-foreground">

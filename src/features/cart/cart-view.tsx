@@ -19,6 +19,7 @@ import { useOrderEdit } from "@/features/orders/use-order-edit";
 import { program } from "@/data/program";
 import { fromISODate, formatDay } from "@/lib/dates";
 import { cutoffInfo } from "@/lib/cutoff-messaging";
+import { useDialog } from "@/lib/use-dialog";
 import { subsidyLabel } from "@/lib/subsidy";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import type { OrderType } from "@/data/types";
@@ -269,7 +270,7 @@ export function CartDayList() {
                         onClick={() => cart.setQty(line.uid, line.qty - 1)}
                         className="flex size-11 items-center justify-center sm:size-8"
                       >
-                        <span className="flex size-9 items-center justify-center rounded-full border border-border bg-card hover:bg-muted sm:size-8">
+                        <span className="flex size-9 items-center justify-center rounded-full border border-control bg-card hover:bg-muted sm:size-8">
                           <Minus className="size-3.5" />
                         </span>
                       </button>
@@ -290,7 +291,7 @@ export function CartDayList() {
                         onClick={() => cart.remove(line.uid)}
                         className="flex size-11 items-center justify-center sm:size-8"
                       >
-                        <span className="flex size-9 items-center justify-center rounded-full border border-border bg-card text-danger hover:bg-danger-bg sm:size-8">
+                        <span className="flex size-9 items-center justify-center rounded-full border border-control bg-card text-danger hover:bg-danger-bg sm:size-8">
                           <Trash2 className="size-3.5" />
                         </span>
                       </button>
@@ -554,13 +555,17 @@ function MissingMealsModal({
 }) {
   const dayWord = emptyCount === 1 ? "day" : "days";
 
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  /**
+   * This was the one layer still doing its own thing.
+   *
+   * It handled Escape by hand and stopped there — it said `aria-modal="true"`
+   * while leaving focus behind it on the Checkout button, so Tab walked straight
+   * back out into the cart the dialog was blocking, and a screen reader reading
+   * by line never entered it at all. `useDialog` is what every other dialog in
+   * the app uses: focus moves in and returns to the opener, Tab stays inside,
+   * the page behind goes inert, and the body stops scrolling.
+   */
+  const dialog = useDialog({ open: true, onClose });
 
   if (typeof document === "undefined") return null;
 
@@ -573,6 +578,7 @@ function MissingMealsModal({
         aria-labelledby="missing-meals-title"
         aria-describedby="missing-meals-desc"
         className="relative w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-raised animate-fade-in"
+        {...dialog.props}
       >
         <div className="flex items-start gap-3.5">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-warning-bg text-warning">

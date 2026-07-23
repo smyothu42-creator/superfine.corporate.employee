@@ -58,12 +58,19 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
       <AuthHero />
       <div className="flex flex-col bg-background lg:justify-center">
         <AuthHeroBanner />
-        <div className="flex flex-1 flex-col items-center justify-center px-5 py-10 lg:py-0">
+        {/* A real `main`. The sign-in, password and landing screens were pure
+            unlabelled boxes — no landmark of any kind — so a screen-reader user
+            arriving here had no "jump to the main content" to jump to, and every
+            control on the page was reported as sitting outside any region. */}
+        <main
+          id="main-content"
+          className="flex flex-1 flex-col items-center justify-center px-5 py-10 lg:py-0"
+        >
           {children}
           <p className="mt-6 text-center text-2xs text-muted-foreground">
             © 2026 Superfine Kitchen
           </p>
-        </div>
+        </main>
       </div>
     </div>
   );

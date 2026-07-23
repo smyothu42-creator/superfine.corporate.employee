@@ -99,7 +99,7 @@ export function RateItemModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="touch-target flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:bg-muted"
+            className="touch-target flex size-8 shrink-0 items-center justify-center rounded-full border border-control bg-card text-muted-foreground transition-colors hover:bg-muted"
           >
             <X className="size-4" aria-hidden />
           </button>

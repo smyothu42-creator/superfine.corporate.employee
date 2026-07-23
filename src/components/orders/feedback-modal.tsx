@@ -82,7 +82,7 @@ export function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: 
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>

@@ -106,7 +106,7 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -132,7 +132,7 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
                       onClick={() => toggle(g.id, o.id, g.select, g.max)}
                       className={cn(
                         "flex w-full items-center justify-between gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-colors",
-                        isOn ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted",
+                        isOn ? "border-primary bg-teal-wash" : "border-control bg-card hover:bg-muted",
                       )}
                     >
                       <span className="flex items-center gap-3">
@@ -140,7 +140,7 @@ export function AddOnSheet({ item, remaining, onClose, onAdd }: AddOnSheetProps)
                           className={cn(
                             "flex size-5 shrink-0 items-center justify-center border-2 transition-colors",
                             g.select === "single" ? "rounded-full" : "rounded-md",
-                            isOn ? "border-primary bg-primary text-primary-foreground" : "border-border",
+                            isOn ? "border-primary bg-primary text-primary-foreground" : "border-control",
                           )}
                         >
                           {isOn ? <Check className="size-3" /> : null}

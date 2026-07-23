@@ -105,7 +105,7 @@ function ModelCard({
     <div
       className={cn(
         "rounded-2xl border p-4",
-        active ? "border-primary bg-teal-wash" : "border-border bg-muted/40",
+        active ? "border-primary bg-teal-wash" : "border-control bg-muted/40",
       )}
     >
       <div className="flex items-center justify-between gap-2">

@@ -20,6 +20,13 @@
 
   html {
     -webkit-text-size-adjust: 100%;
+    /* Keep whatever the keyboard just moved to clear of the furniture that
+       floats over the page. Without these, tabbing to a control below the fold
+       scrolls it flush to the very top of the window — which is *behind* the
+       sticky topbar — or flush to the bottom, behind the docked action bars. In
+       both cases the thing you just focused is the one thing you cannot see. */
+    scroll-padding-top: calc(var(--topbar-h) + 1rem);
+    scroll-padding-bottom: 7rem;
   }
 
   body {
@@ -65,12 +72,36 @@
     font-family: var(--font-sans), system-ui, sans-serif;
   }
 
-  /* Visible keyboard focus on links and any element without its own ring */
+  /* Visible keyboard focus on anything that hasn't drawn its own.
+     This used to match only `a` and `[tabindex]`, so a plain `<button>` or
+     `<input>` whose class list turned its outline off had *no* focus indicator
+     at all — a keyboard user's cursor simply vanished. Every interactive element
+     is covered now; components with their own ring still override it.
+
+     Deliberately no `border-radius` here. Setting one used to force *every*
+     focused control to a 4px radius — which is not a property of the outline,
+     it is the element's own shape — so a pill button squared off and a
+     `rounded-xl` field flattened into a rectangle the moment the keyboard
+     reached it. The outline already follows whatever radius the element has
+     (CSS UI 4, everywhere we support), so the honest answer is to say nothing
+     and let each control keep its shape. The colour is untouched. */
   a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
   [tabindex]:not([tabindex="-1"]):focus-visible {
     outline: 2px solid #007078;
     outline-offset: 2px;
-    border-radius: 4px;
+  }
+
+  /* On the dark navigation rail the teal ring is nearly the rail's own colour
+     (under 2:1). Yellow reads at 8.8:1 there. */
+  [data-dark-surface] a:focus-visible,
+  [data-dark-surface] button:focus-visible,
+  [data-dark-surface] [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline-color: #f5e516;
   }
 
   /* Respect users who prefer reduced motion */
@@ -169,11 +200,16 @@
     width: 44px;
     transform: translate(-50%, -50%);
   }
-  /* A mouse can hit a 28px target precisely. Only fingers need the padding, and
-     an invisible 44px box on desktop would eat clicks aimed at its neighbours. */
+  /* On a precise pointer the box shrinks — it does not disappear.
+     The full 44px was dropped entirely on desktop, on the reasoning that a mouse
+     aims well. Plenty of mouse users don't: tremor, limited dexterity, a
+     trackpad on a train. The minimum target applies to every input device, not
+     just touch, so 24px stays — enough to be hittable, small enough that
+     neighbouring controls don't steal each other's clicks. */
   @media (pointer: fine) {
     .touch-target::after {
-      display: none;
+      height: 24px;
+      width: 24px;
     }
   }
 

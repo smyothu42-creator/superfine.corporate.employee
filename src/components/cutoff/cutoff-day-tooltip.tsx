@@ -27,21 +27,29 @@ export function CutoffDayTooltip({
   reason,
   cutoff,
   open,
+  id,
 }: {
   reason: string;
   /** True only for order-cutoff closures (red) — those get the contact links. */
   cutoff: boolean;
-  /** Tap-pinned open (touch). Hover still reveals it via `group-hover`. */
+  /** Tap-pinned open (touch). Hover and keyboard focus also reveal it. */
   open: boolean;
+  /** Ties the bubble to its day cell, so the reason is read out with the day. */
+  id?: string;
 }) {
   return (
     <span
       role="tooltip"
+      id={id}
       className={cn(
         // `pb-1.5` is a transparent, hoverable bridge to the cell below — using a
         // margin here would leave a dead gap that drops the hover before the
         // pointer reaches the bubble.
-        "pointer-events-auto absolute bottom-full left-1/2 z-30 w-44 -translate-x-1/2 pb-1.5 group-hover:block",
+        // `group-focus-within` is the keyboard's half of `group-hover`: without
+        // it the bubble appeared only under a pointer, so a keyboard user could
+        // never find out why a day was closed, and the "Call the kitchen" and
+        // "Contact page" links inside were unreachable by any means.
+        "pointer-events-auto absolute bottom-full left-1/2 z-30 w-44 -translate-x-1/2 pb-1.5 group-hover:block group-focus-within:block",
         open ? "block" : "hidden",
       )}
     >

@@ -80,6 +80,22 @@ export function ThemeSelect({
   const [placement, setPlacement] = React.useState<Placement | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
+  // Namespaces the list and its rows, so two of these on one page can't point
+  // `aria-controls` / `aria-activedescendant` at each other's options.
+  const listId = React.useId();
+  /**
+   * Which row the keyboard is on. The open list is portalled to `<body>`, which
+   * puts it at the very end of the document — so when its options were ordinary
+   * tab stops, opening the sort dropdown and pressing Tab threw the user past
+   * every remaining control on the page to reach them, and Shift+Tab back again
+   * to leave. Keyboard users could not realistically choose an option at all.
+   *
+   * The fix is the same one `allergen-combobox.tsx` already uses: the options
+   * leave the tab order, focus moves into the list itself, and the arrow keys
+   * move a highlight that `aria-activedescendant` reads out. Focus goes back to
+   * the trigger on close, so the page's tab order is never left behind.
+   */
+  const [activeIndex, setActiveIndex] = React.useState(0);
 
   const measure = React.useCallback(() => {
     const trigger = triggerRef.current;
@@ -127,7 +143,7 @@ export function ThemeSelect({
       setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") close();
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -135,9 +151,76 @@ export function ThemeSelect({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const current = options.find((o) => o.value === value) ?? options[0];
+
+  /** Open on the row that is currently chosen, so arrows start from the truth. */
+  function openList() {
+    setActiveIndex(Math.max(0, options.findIndex((o) => o.value === value)));
+    setOpen(true);
+  }
+
+  /** Shut the list and put focus back where it came from. */
+  function close() {
+    setOpen(false);
+    triggerRef.current?.focus();
+  }
+
+  function commit(i: number) {
+    const picked = options[i];
+    if (picked) onValueChange(picked.value);
+    close();
+  }
+
+  // Focus the list as it opens: the arrow keys have to be answered by something,
+  // and it must not be an element the page has already tabbed past.
+  React.useEffect(() => {
+    if (open && placement) listRef.current?.focus({ preventScroll: true });
+  }, [open, placement]);
+
+  // Keep the highlighted row in view — the list scrolls once it passes MAX_H,
+  // and a highlight you have to guess the position of is no highlight.
+  React.useEffect(() => {
+    if (!open) return;
+    const row = listRef.current?.children[activeIndex] as HTMLElement | undefined;
+    row?.scrollIntoView({ block: "nearest" });
+  }, [open, activeIndex]);
+
+  function onListKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const last = options.length - 1;
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActiveIndex((i) => (i >= last ? 0 : i + 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActiveIndex((i) => (i <= 0 ? last : i - 1));
+        break;
+      case "Home":
+        e.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setActiveIndex(last);
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        commit(activeIndex);
+        break;
+      case "Tab":
+        // Tab out means "leave this alone" — shut the list first so focus lands
+        // on the control after the trigger rather than at the end of the page.
+        close();
+        break;
+      default:
+        break;
+    }
+  }
 
   return (
     <div
@@ -149,12 +232,20 @@ export function ThemeSelect({
         aria-label={props["aria-label"]}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        aria-controls={open ? listId : undefined}
+        onClick={() => (open ? setOpen(false) : openList())}
+        onKeyDown={(e) => {
+          // Down-arrow opens a closed dropdown, the way a native <select> does.
+          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            openList();
+          }
+        }}
         className={cn(
           "flex items-center justify-between gap-1.5 font-semibold text-teal-deep outline-none transition-colors",
           variant === "box"
             ? cn(
-                "w-full rounded-full border border-border bg-card shadow-sm hover:border-primary/40 hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30",
+                "w-full rounded-full border border-control bg-card shadow-sm hover:border-primary hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30",
                 size === "sm" ? "h-8 pl-3.5 pr-2.5 text-[13px]" : "h-11 pl-4 pr-3 text-sm",
               )
             : "h-8 max-w-[9rem] rounded-full bg-transparent pl-2.5 pr-2 text-xs hover:bg-teal-wash focus-visible:bg-teal-wash sm:h-9 sm:pl-3 sm:text-[13px]",
@@ -174,7 +265,17 @@ export function ThemeSelect({
         ? createPortal(
             <div
               ref={listRef}
+              id={listId}
+              // Tells an enclosing dialog to leave Escape (and Tab, while focus
+              // is in here) alone — see `use-dialog.ts`. Without it, Escape with
+              // this list open inside a modal closed the modal.
+              data-escape-layer
               role="listbox"
+              aria-label={props["aria-label"]}
+              // A focus destination, never a tab stop of its own.
+              tabIndex={-1}
+              aria-activedescendant={`${listId}-opt-${activeIndex}`}
+              onKeyDown={onListKeyDown}
               style={{
                 position: "fixed",
                 top: placement.top,
@@ -189,23 +290,30 @@ export function ThemeSelect({
                 variant === "pill" && "w-44",
               )}
             >
-              {options.map((o) => {
+              {options.map((o, i) => {
                 const active = o.value === value;
+                const highlighted = i === activeIndex;
                 return (
                   <button
                     key={o.value}
                     type="button"
+                    id={`${listId}-opt-${i}`}
                     role="option"
                     aria-selected={active}
-                    onClick={() => {
-                      onValueChange(o.value);
-                      setOpen(false);
-                    }}
+                    // Out of the tab order — see `activeIndex` above.
+                    tabIndex={-1}
+                    // Keeps the click from pulling focus out of the list before
+                    // the selection is handled.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => commit(i)}
+                    onMouseMove={() => setActiveIndex(i)}
                     className={cn(
                       "flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors",
                       active
                         ? "bg-teal-wash font-semibold text-teal-deep"
-                        : "font-medium text-foreground hover:bg-muted",
+                        : highlighted
+                          ? "bg-muted font-medium text-foreground"
+                          : "font-medium text-foreground hover:bg-muted",
                     )}
                   >
                     <span className="truncate">{o.label}</span>

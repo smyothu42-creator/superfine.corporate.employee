@@ -300,7 +300,7 @@ function ReviewStep({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+          className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted"
         >
           <ChevronRight className="size-4 rotate-180" />
         </button>
@@ -486,7 +486,7 @@ function CheckoutStep({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+          className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted"
         >
           <ChevronRight className="size-4 rotate-180" />
         </button>
@@ -659,7 +659,7 @@ function ConfirmationStep({
         onClick={() => setRecurring(!recurring)}
         className={cn(
           "flex w-full items-center justify-between gap-3 rounded-2xl border-2 p-3 text-left transition-colors",
-          recurring ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted",
+          recurring ? "border-primary bg-teal-wash" : "border-control bg-card hover:bg-muted",
         )}
       >
         <span className="flex items-center gap-3">

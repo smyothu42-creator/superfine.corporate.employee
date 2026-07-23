@@ -174,7 +174,11 @@ export function MenuItemCard({
   // collides with the "+" / select control in the bottom-right corner.
   const photoInner = (
     <>
-      <FoodPhoto src={item.image} alt={item.name} className="size-full rounded-xl" iconClassName="size-8" />
+      {/* Decorative. Both branches below already carry the name in text: the
+          link branch hides this photo from assistive tech outright, and the
+          selectable branch builds the card's label from the <h3> in `primary`.
+          Naming the photo too would say the meal twice on every card. */}
+      <FoodPhoto src={item.image} alt="" className="size-full rounded-xl" iconClassName="size-8" />
       {inCart > 0 ? (
         <span className="absolute left-1.5 top-1.5 flex min-w-[20px] items-center justify-center rounded-full bg-coral px-1.5 text-2xs font-bold text-white shadow ring-2 ring-card">
           {inCart}
@@ -200,7 +204,7 @@ export function MenuItemCard({
         }}
         className={cn(
           "group flex cursor-pointer gap-4 rounded-2xl border bg-card p-4 text-left shadow-card outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring hover:shadow-raised",
-          selected ? "border-primary ring-2 ring-primary" : "border-border",
+          selected ? "border-primary ring-2 ring-primary" : "border-control",
           className,
         )}
       >
@@ -241,7 +245,13 @@ export function MenuItemCard({
       </div>
 
       <div className="relative size-24 shrink-0 self-center sm:size-28">
-        <Link href={`/menu/${item.id}`} className="block h-full">
+        {/* The same destination as the name above it, so this is a second copy
+            of a link the page already has. A mouse wants it — the photo is the
+            obvious thing to click — but hearing "Chicken Bowl, link" twice in a
+            row, and tabbing through both, is pure noise. Hidden from the
+            reading order and out of the tab order; the named link above is the
+            one everybody else uses. */}
+        <Link href={`/menu/${item.id}`} aria-hidden tabIndex={-1} className="block h-full">
           {photoInner}
         </Link>
 

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { FeedbackForm } from "@/features/feedback/feedback-form";
@@ -48,7 +47,23 @@ export default function FeedbackPage() {
 /** Reads the optional `?order=` deep link and hands it to the shared form. */
 function DeepLinkedForm() {
   const params = useSearchParams();
-  return <FeedbackForm initialOrder={params.get("order") ?? ""} />;
+  return <FeedbackForm initialOrder={params.get("order") ?? ""} intro={<PhoneHeading />} />;
+}
+
+/** The hero carries the headline on desktop and is hidden on phones, where the
+ *  form was landing with no title above it at all. It goes *through* the form
+ *  rather than above it so the confirmation screen replaces it too. */
+function PhoneHeading() {
+  return (
+    <div className="lg:hidden">
+      <h2 className="font-display text-2xl font-semibold tracking-tight">
+        Problem with your order?
+      </h2>
+      <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+        Late, missing, wrong item or a billing issue — this goes straight to our operations team.
+      </p>
+    </div>
+  );
 }
 
 /**
@@ -65,21 +80,16 @@ function FeedbackHero() {
         <span className="flex size-16 items-center justify-center rounded-full bg-white/40 text-teal-deep">
           <AlertTriangle className="size-8" />
         </span>
-        <h1 className="mt-5 font-display text-4xl font-semibold leading-[1.1] tracking-tight text-teal-deep">
+        <h2 className="mt-5 font-display text-4xl font-semibold leading-[1.1] tracking-tight text-teal-deep">
           Problem with<br />your order?
-        </h1>
+        </h2>
+        {/* One paragraph, not two. The split — food goes to `/rate`, logistics
+            comes here — is said at the foot of the form itself, where the
+            mistake actually gets made; saying it twice on one screen made the
+            hero read as a page of instructions to get through. */}
         <p className="mt-4 text-base leading-relaxed text-teal-deep/80">
           Late, missing, wrong item, or anything else about delivery or billing — this goes
           straight to our operations team, and we read every note.
-        </p>
-        {/* The split, said once and said plainly. Someone who came to complain
-            about the food should leave with stars, not a logistics ticket. */}
-        <p className="mt-4 text-base leading-relaxed text-teal-deep/80">
-          Telling us how the food itself was?{" "}
-          <Link href="/rate" className="font-semibold underline underline-offset-2">
-            Rate the meals
-          </Link>{" "}
-          instead — those stars go to the kitchen.
         </p>
       </div>
       {/* Pinned to the bottom of the panel, as before. */}

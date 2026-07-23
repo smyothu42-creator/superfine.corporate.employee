@@ -101,9 +101,9 @@ export function CutoffIndicator({
       <Icon className={cn("mt-0.5 size-4 shrink-0", TONE_ICON[info.tone])} />
       <div className="min-w-0 text-[13px] leading-snug">
         <div className="font-semibold">{info.headline}</div>
-        <p className="mt-0.5 opacity-80">{info.helper}</p>
+        <p className="mt-0.5">{info.helper}</p>
         {showDelivery && !info.locked ? (
-          <p className="mt-1 text-2xs font-medium opacity-80">
+          <p className="mt-1 text-2xs font-medium">
             {info.deliveryLine} · not same-day
           </p>
         ) : null}

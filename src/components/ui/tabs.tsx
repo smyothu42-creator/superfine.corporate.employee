@@ -12,16 +12,57 @@ interface TabsProps {
 
 /** Pill tab bar (employee detail). */
 function Tabs({ tabs, value, onValueChange, className }: TabsProps) {
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  /**
+   * Left/Right (and Home/End) move between tabs; Tab moves past the whole strip.
+   *
+   * This is not a nicety — a tab strip is one control, not one control per tab.
+   * Announcing "tab, 1 of 3" and then not answering the arrow keys leaves a
+   * screen-reader user pressing the keys the announcement just promised and
+   * getting nothing. It also meant the three Orders filters cost three Tab
+   * presses to walk past on the way to the list they filter.
+   */
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const delta = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    const jump = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
+    if (!delta && jump === null) return;
+    e.preventDefault();
+    const from = tabs.findIndex((t) => t.id === value);
+    const next = jump ?? (from + delta + tabs.length) % tabs.length;
+    const target = tabs[next];
+    if (!target) return;
+    onValueChange(target.id);
+    // Follow the selection with focus, so the next arrow press continues from
+    // where the user actually is.
+    ref.current?.querySelector<HTMLElement>(`[data-tab-id="${target.id}"]`)?.focus();
+  }
+
   return (
-    <div className={cn("inline-flex gap-1 rounded-full border border-border bg-card p-1", className)} role="tablist">
-      {tabs.map((tab) => {
+    <div
+      ref={ref}
+      onKeyDown={onKeyDown}
+      className={cn("inline-flex gap-1 rounded-full border border-border bg-card p-1", className)}
+      role="tablist"
+    >
+      {tabs.map((tab, i) => {
         const active = tab.id === value;
+        // The roving stop has to land *somewhere*. If `value` ever fails to
+        // match a tab — a stale filter, a route that renamed one — every tab
+        // would be `tabIndex={-1}` and the strip would drop out of the tab order
+        // altogether, which is a worse failure than showing the wrong tab as
+        // current. The first tab holds the stop in that case.
+        const stop = active || (i === 0 && !tabs.some((t) => t.id === value));
         return (
           <button
             key={tab.id}
             type="button"
             role="tab"
+            data-tab-id={tab.id}
             aria-selected={active}
+            // Roving tab stop: the strip takes one Tab press, and it lands on
+            // the tab that is currently showing.
+            tabIndex={stop ? 0 : -1}
             onClick={() => onValueChange(tab.id)}
             className={cn(
               // Taller on phones than the label strictly needs: with the

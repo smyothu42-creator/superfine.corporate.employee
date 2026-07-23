@@ -152,7 +152,7 @@ function TourModal({ onExit }: { onExit: () => void }) {
           type="button"
           onClick={onExit}
           aria-label="Close"
-          className="absolute right-4 top-4 z-10 rounded-full border border-border bg-card/80 touch-target p-1.5 text-muted-foreground backdrop-blur hover:bg-muted"
+          className="absolute right-4 top-4 z-10 rounded-full border border-control bg-card/80 touch-target p-1.5 text-muted-foreground backdrop-blur hover:bg-muted"
         >
           <X className="size-4" />
         </button>
@@ -226,7 +226,7 @@ function MiniMealCard({ selected }: { selected?: boolean }) {
     <div
       className={cn(
         "relative rounded-xl border p-1.5",
-        selected ? "border-primary ring-2 ring-primary/25" : "border-border",
+        selected ? "border-primary ring-2 ring-primary/25" : "border-control",
       )}
     >
       <div className="mb-1 h-8 rounded-lg bg-muted" />
@@ -245,7 +245,7 @@ function MiniOption({ icon: Icon, title, selected }: { icon: LucideIcon; title: 
     <div
       className={cn(
         "flex items-center gap-2 rounded-xl border px-2.5 py-2",
-        selected ? "border-primary bg-teal-wash" : "border-border",
+        selected ? "border-primary bg-teal-wash" : "border-control",
       )}
     >
       <span

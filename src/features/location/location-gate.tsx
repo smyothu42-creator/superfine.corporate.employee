@@ -107,6 +107,9 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
         locating={locating}
         onAllow={() => void allow()}
         onServiceable={() => setPhase(null)}
+        // Dismissing answers the gate the only other way it can be answered:
+        // "not now". Without this the dialog had no exit at all.
+        onClose={() => setPhase(null)}
       />
     </>
   );

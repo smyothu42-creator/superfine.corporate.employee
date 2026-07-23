@@ -25,7 +25,7 @@ function Breadcrumb({ items }: { items: Crumb[] }) {
                   {item.label}
                 </span>
               )}
-              {!last ? <ChevronRight className="size-3.5 text-muted-foreground/60" /> : null}
+              {!last ? <ChevronRight className="size-3.5 text-muted-foreground" /> : null}
             </li>
           );
         })}

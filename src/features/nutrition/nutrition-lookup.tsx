@@ -88,6 +88,9 @@ function MealCombobox({
   const [activeIndex, setActiveIndex] = React.useState(0);
   const ref = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  // Namespaces the list and its rows so `aria-activedescendant` has something
+  // real to point at — see the search box below.
+  const listId = React.useId();
 
   const selected = value ? items.find((i) => i.id === value) : undefined;
 
@@ -138,7 +141,7 @@ function MealCombobox({
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "flex h-11 w-full items-center justify-between gap-2 rounded-xl border bg-card pl-3.5 pr-3 text-base text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:text-sm",
-          open ? "border-primary ring-2 ring-ring/30" : "border-input hover:border-primary/40",
+          open ? "border-primary ring-2 ring-ring/30" : "border-input hover:border-primary",
         )}
       >
         <span className={cn("truncate", !selected && "text-muted-foreground")}>
@@ -150,15 +153,30 @@ function MealCombobox({
       </button>
 
       {open ? (
-        <div className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-raised">
+        <div
+          // See `use-dialog.ts`: an enclosing dialog leaves Escape alone while
+          // this panel is up, so the press shuts the panel, not the dialog.
+          data-escape-layer
+          className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-raised"
+        >
           {/* Search box inside the panel. */}
           <div className="flex items-center gap-2 border-b border-border px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" />
+            {/* `role="combobox"` + `aria-activedescendant` is what makes the
+                arrow keys audible: they already moved a highlight down the list,
+                but a screen reader was never told which meal the highlight had
+                landed on, so pressing Enter was a guess. */}
             <input
               ref={inputRef}
               type="text"
               value={query}
               aria-label="Search meals"
+              role="combobox"
+              aria-haspopup="listbox"
+              aria-expanded
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={filtered.length ? `${listId}-opt-${activeIndex}` : undefined}
               placeholder="Search meals…"
               onChange={(e) => {
                 setQuery(e.target.value);
@@ -177,11 +195,17 @@ function MealCombobox({
                   if (pick) choose(pick.id);
                 }
               }}
-              className="h-11 min-w-0 flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground/70 outline-none sm:text-sm"
+              // `rounded-xl` draws nothing here — the field is transparent and
+              // borderless — but the focus outline follows an element's own
+              // radius, and without one this row was the last field in the app
+              // still ringed by a hard-cornered rectangle. Nothing to light up
+              // around it (the row is a divider inside an already-open panel),
+              // so the outline stays; it just takes the shape of everything else.
+              className="h-11 min-w-0 flex-1 rounded-xl bg-transparent text-base text-foreground placeholder:text-muted-foreground outline-none sm:text-sm"
             />
           </div>
 
-          <div role="listbox" className="max-h-64 overflow-auto p-1.5">
+          <div id={listId} role="listbox" aria-label="Meals" className="max-h-64 overflow-auto p-1.5">
             {filtered.map((i, idx) => {
               const active = i.id === value;
               const highlighted = idx === activeIndex;
@@ -189,8 +213,14 @@ function MealCombobox({
                 <button
                   key={i.id}
                   type="button"
+                  id={`${listId}-opt-${idx}`}
                   role="option"
                   aria-selected={active}
+                  // Driven by the arrow keys from the search box, so these are
+                  // not separate tab stops — tabbing off the field should leave
+                  // the picker, not walk a hundred meals one at a time.
+                  tabIndex={-1}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => choose(i.id)}
                   onMouseMove={() => setActiveIndex(idx)}
                   className={cn(
@@ -219,6 +249,16 @@ function MealCombobox({
               <p className="px-3 py-2 text-[13px] text-muted-foreground">No meals found.</p>
             ) : null}
           </div>
+
+          {/* How many meals the typing left, said out loud. The list rewrites
+              itself silently otherwise, and "No meals found." is only ever read
+              by someone who goes looking for it — which is exactly what a person
+              who cannot see the list has no reason to do. */}
+          <p aria-live="polite" aria-atomic="true" className="sr-only">
+            {filtered.length === 0
+              ? "No meals found."
+              : `${filtered.length} ${filtered.length === 1 ? "meal" : "meals"} available.`}
+          </p>
         </div>
       ) : null}
     </div>
@@ -390,7 +430,7 @@ function OptionsModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>

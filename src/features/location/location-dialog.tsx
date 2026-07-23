@@ -70,11 +70,21 @@ export function LocationDialog({
     }
   }, [open, phase, detectedZip]);
 
-  // Withholding `onClose` is how the blocking variant stays undismissable: the
-  // hook then leaves Escape alone. The focus trap still applies, which is the
-  // point — a gate you can't answer and can't tab past is worse than one you
-  // can't answer. Called before the early return below; it no-ops on `!open`.
-  const dialog = useDialog({ open, onClose: blocking ? undefined : onClose });
+  /**
+   * Always dismissable — Escape included, blocking or not.
+   *
+   * The blocking variant used to withhold `onClose`, which switched Escape off
+   * while the focus trap stayed on. That is a trap with no exit: someone outside
+   * the delivery zone reached a screen whose only button looped back to the ZIP
+   * field, with no way out by keyboard, by Escape, or by clicking away. Nobody
+   * could leave the page's own content, and screen-reader and keyboard users had
+   * no route back at all.
+   *
+   * A gate is allowed to insist; it is not allowed to imprison. Closing it
+   * without a serviceable ZIP just leaves the app in its "no location yet"
+   * state, which every screen already handles.
+   */
+  const dialog = useDialog({ open, onClose });
 
   if (!open || typeof document === "undefined") return null;
 
@@ -90,9 +100,11 @@ export function LocationDialog({
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      {/* The scrim closes it too. A blocking gate keeps the *insistence* — it
+          still opens itself and still asks — but never the dead end. */}
       <div
         className="absolute inset-0 bg-teal-deep/50 animate-fade-in"
-        onClick={blocking ? undefined : onClose}
+        onClick={onClose}
         aria-hidden
       />
       <div
@@ -102,16 +114,17 @@ export function LocationDialog({
         {...dialog.props}
         className="relative w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-raised animate-fade-in"
       >
-        {blocking ? null : (
-          <button
-            type="button"
-            onClick={() => onClose?.()}
-            aria-label="Close"
-            className="absolute right-4 top-4 rounded-full border border-border touch-target p-1.5 text-muted-foreground hover:bg-muted"
-          >
-            <X className="size-4" />
-          </button>
-        )}
+        {/* Always rendered. On the blocking gate the label says what closing
+            means, so dismissing it is a choice rather than an escape hatch
+            someone has to guess at. */}
+        <button
+          type="button"
+          onClick={() => onClose?.()}
+          aria-label={blocking ? "Close and browse without setting a delivery location" : "Close"}
+          className="absolute right-4 top-4 rounded-full border border-control touch-target p-1.5 text-muted-foreground hover:bg-muted"
+        >
+          <X className="size-4" aria-hidden />
+        </button>
 
         {state === "permission" ? (
           <div className="space-y-5">

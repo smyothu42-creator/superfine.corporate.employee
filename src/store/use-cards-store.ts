@@ -5,13 +5,18 @@ import { persist } from "zustand/middleware";
 import type { CardBrand } from "@/lib/card";
 
 /**
- * An individual's saved cards — the wallet a returning customer picks from
- * instead of retyping sixteen digits every order.
+ * The saved card — one per person, the card a returning customer's orders are
+ * charged to instead of retyping sixteen digits every order.
  *
- * What's kept is what a receipt shows: brand, last four, expiry, and the name
- * on the card. The full number and the security code are never put in here, and
- * so never reach localStorage — a real integration exchanges them for a token
- * at the processor the moment the form is submitted, and this store holds the
+ * One, not a wallet. Every order on this product is charged the same way at the
+ * same cutoff, so a list of cards only ever asked a question with one answer:
+ * which of these is the real one. Saving a second card now *replaces* the first,
+ * which is the same outcome as picking it from a list, minus the list.
+ *
+ * What's kept is what a receipt shows: brand, last four, expiry, and the name on
+ * the card. The full number and the security code are never put in here, and so
+ * never reach localStorage — a real integration exchanges them for a token at
+ * the processor the moment the form is submitted, and this store holds the
  * display half of that. Corporate employees on a company invoice never touch it.
  */
 export interface SavedCard {
@@ -24,23 +29,18 @@ export interface SavedCard {
   /** Four digits, e.g. 2029. */
   expYear: number;
   name: string;
-  /** Billing ZIP, kept for the address check on the next charge. */
-  zip: string;
 }
 
 /** What the form collects; the id is the store's business. */
 export type SavedCardInput = Omit<SavedCard, "id">;
 
 interface CardsState {
-  cards: SavedCard[];
   /** The card the next order is charged to, or null before one is added. */
-  selectedId: string | null;
-  /** Save a card and make it the one being charged. */
-  add: (input: SavedCardInput) => void;
-  /** Charge a different saved card. */
-  select: (id: string) => void;
-  /** Forget a card; if it was selected, the first remaining takes over. */
-  remove: (id: string) => void;
+  card: SavedCard | null;
+  /** Save a card, replacing whatever was there. */
+  save: (input: SavedCardInput) => void;
+  /** Forget the card; the next order has to capture one again. */
+  remove: () => void;
 }
 
 let seq = 0;
@@ -52,23 +52,9 @@ function newId() {
 export const useCardsStore = create<CardsState>()(
   persist(
     (set) => ({
-      cards: [],
-      selectedId: null,
-      // Just-added is just-selected: nobody fills in a card form to then go
-      // hunting for the row it created.
-      add: (input) =>
-        set((s) => {
-          const card: SavedCard = { ...input, id: newId() };
-          return { cards: [...s.cards, card], selectedId: card.id };
-        }),
-      select: (id) => set({ selectedId: id }),
-      remove: (id) =>
-        set((s) => {
-          const cards = s.cards.filter((c) => c.id !== id);
-          const selectedId =
-            s.selectedId === id ? (cards[0]?.id ?? null) : s.selectedId;
-          return { cards, selectedId };
-        }),
+      card: null,
+      save: (input) => set({ card: { ...input, id: newId() } }),
+      remove: () => set({ card: null }),
     }),
     {
       name: "sfk:cards",
@@ -76,6 +62,19 @@ export const useCardsStore = create<CardsState>()(
       // after mount (via StoreHydrator), so the server's empty wallet and the
       // client's first render agree.
       skipHydration: true,
+      version: 2,
+      /**
+       * v1 kept `{ cards: [], selectedId }`. Anyone carrying that in
+       * localStorage keeps the card they had selected — dropping it would log
+       * them out of their own payment method for a change they never made.
+       */
+      migrate: (state, version) => {
+        if (version >= 2) return state as CardsState;
+        const old = state as { cards?: SavedCard[]; selectedId?: string | null };
+        const cards = old?.cards ?? [];
+        const kept = cards.find((c) => c.id === old?.selectedId) ?? cards[0] ?? null;
+        return { card: kept } as CardsState;
+      },
     },
   ),
 );

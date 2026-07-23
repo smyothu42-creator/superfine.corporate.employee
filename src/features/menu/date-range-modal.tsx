@@ -7,6 +7,7 @@ import { CutoffDayTooltip } from "@/components/cutoff/cutoff-day-tooltip";
 import { cn } from "@/lib/utils";
 import { useDialog } from "@/lib/use-dialog";
 import { addDays, fromISODate, toISODate, sameDay, startOfToday, isServiceDay, formatDay, weekdayOffset } from "@/lib/dates";
+import { useRovingCalendar } from "@/lib/calendar-keys";
 
 const COLS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -83,6 +84,15 @@ export function DateRangeModal({
     });
   }
 
+  // Arrow keys across the month; the whole grid is one tab stop. Focus starts on
+  // the range's own start day, so a keyboard user arrives on their own answer.
+  const roving = useRovingCalendar({
+    open: true,
+    selectedISO: start || undefined,
+    fallbackISO: minOrderISO,
+    onMonthChange: (d) => setCursor({ y: d.getFullYear(), m: d.getMonth() }),
+  });
+
   function pick(iso: string) {
     if (!start || (start && end)) {
       setStart(iso);
@@ -133,7 +143,7 @@ export function DateRangeModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -144,7 +154,7 @@ export function DateRangeModal({
             type="button"
             onClick={() => shiftMonth(-1)}
             aria-label="Previous month"
-            className="rounded-full border border-border bg-card touch-target p-1.5 hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 hover:bg-muted"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -153,20 +163,26 @@ export function DateRangeModal({
             type="button"
             onClick={() => shiftMonth(1)}
             aria-label="Next month"
-            className="rounded-full border border-border bg-card touch-target p-1.5 hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 hover:bg-muted"
           >
             <ChevronRight className="size-4" />
           </button>
         </div>
 
+        {/* Weekends are de-emphasised by weight, not by fading the ink — these
+            labels are the only thing naming the columns. */}
         <div className="mt-4 grid grid-cols-7 text-center text-2xs font-semibold text-muted-foreground">
           {COLS.map((d, i) => (
-            <div key={d} className={cn("pb-1.5", i >= 5 && "text-muted-foreground/40")}>
+            <div key={d} className={cn("pb-1.5", i >= 5 && "font-normal")}>
               {d}
             </div>
           ))}
         </div>
         <div
+          ref={roving.gridRef}
+          onKeyDown={roving.onKeyDown}
+          role="group"
+          aria-label={`${monthLabel} — use the arrow keys to choose a day`}
           className="grid grid-cols-7"
           onMouseLeave={() => setHovered("")}
         >
@@ -199,7 +215,12 @@ export function DateRangeModal({
                 )}
               >
                 {disabled && info?.reason ? (
-                  <CutoffDayTooltip reason={info.reason} cutoff={cutoffClosed} open={revealed === iso} />
+                  <CutoffDayTooltip
+                    id={`why-m-${iso}`}
+                    reason={info.reason}
+                    cutoff={cutoffClosed}
+                    open={revealed === iso}
+                  />
                 ) : null}
                 {/* Continuous range band — never drawn on weekends, so a range
                     that spans Sat/Sun visibly skips them. */}
@@ -211,17 +232,37 @@ export function DateRangeModal({
 
                 <button
                   type="button"
-                  disabled={disabled}
-                  onClick={() => pick(iso)}
+                  /* `aria-disabled` keeps the day focusable so its reason — and
+                     the contact links inside the bubble — can be reached by
+                     keyboard. A real `disabled` made them unreachable entirely. */
+                  aria-disabled={disabled || undefined}
+                  aria-describedby={disabled && info?.reason ? `why-m-${iso}` : undefined}
+                  {...roving.dayProps(iso)}
+                  onFocus={() => {
+                    if (disabled && info?.reason) setRevealed(iso);
+                    // Keyboard half of the range preview — see the same pairing
+                    // on the menu's picker. Without it the tentative shading
+                    // between start and cursor was a pointer-only affordance.
+                    if (!disabled && start && !end) setHovered(iso);
+                  }}
+                  onBlur={() => {
+                    setRevealed((r) => (r === iso ? "" : r));
+                    setHovered((h) => (h === iso ? "" : h));
+                  }}
+                  onClick={() => {
+                    if (disabled) {
+                      if (info?.reason) setRevealed((r) => (r === iso ? "" : iso));
+                      return;
+                    }
+                    pick(iso);
+                  }}
                   onMouseEnter={() => !disabled && start && !end && setHovered(iso)}
                   aria-label={
                     disabled && info?.reason ? `${date.toDateString()}, ${info.reason}` : date.toDateString()
                   }
                   className={cn(
                     "relative z-10 flex size-11 items-center justify-center rounded-full text-sm transition-colors sm:size-9",
-                    // A disabled button swallows the tap and fires no event, so
-                    // let it through to the wrapper that shows the reason.
-                    disabled && "pointer-events-none",
+                    disabled && "cursor-not-allowed",
                     isEndpoint
                       ? "bg-primary font-semibold text-primary-foreground"
                       : cutoffClosed

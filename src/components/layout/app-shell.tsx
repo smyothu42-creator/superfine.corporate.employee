@@ -32,8 +32,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
 
-      {/* Desktop rail */}
-      <aside aria-label="Primary" className="sticky top-0 hidden h-dvh shrink-0 lg:block">
+      {/* Desktop rail. No label on the `aside` — an `aside` is a *complementary*
+          region, so "Primary" was naming the wrong thing; the `nav` inside it
+          carries the name now. */}
+      <aside className="sticky top-0 hidden h-dvh shrink-0 lg:block">
         <Sidebar />
       </aside>
 

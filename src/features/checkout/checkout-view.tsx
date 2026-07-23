@@ -25,12 +25,13 @@ import {
   MessageSquare,
   Building2,
   Plus,
-  Trash2,
+  Check,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Label, Field } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { RadioGroup } from "@/components/ui/radio-group";
 import { ThemeSelect } from "@/components/ui/theme-select";
 import { DateField, TimeField } from "@/components/ui/datetime-fields";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,21 +50,11 @@ import {
   type Account,
 } from "@/store/use-session-store";
 import { useCartStore, type PackagingChoice } from "@/store/use-cart-store";
-import { useCardsStore, type SavedCard } from "@/store/use-cards-store";
-import {
-  STRICT_CARD_VALIDATION,
-  brandLabel,
-  cardDigits,
-  cardNumberValid,
-  cvcLength,
-  cvcValid,
-  detectBrand,
-  expiryValid,
-  formatCardNumber,
-  formatExpiry,
-  type CardBrand,
-} from "@/lib/card";
+import { useCardsStore } from "@/store/use-cards-store";
+import { brandLabel } from "@/lib/card";
+import { CardForm, SavedCardRow, SecurityNote } from "@/components/payment/card-fields";
 import { toast } from "@/store/use-toast-store";
+import { confirm } from "@/store/use-confirm-store";
 import { program, addresses, getAddress, reusablePackagingFee } from "@/data/program";
 import { checkZip, deliveryFeeForZip } from "@/data/service-areas";
 import { me } from "@/data/me";
@@ -197,19 +188,29 @@ export function CheckoutView() {
    */
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   /**
-   * The card the order would be charged to — the wallet's selection, restored
-   * from the last order, so a returning customer arrives with payment already
-   * answered instead of retyping sixteen digits.
+   * The card the order would be charged to — the one on file, restored from the
+   * last order, so a returning customer arrives with payment already answered
+   * instead of retyping sixteen digits.
    */
-  const savedCards = useCardsStore((s) => s.cards);
-  const selectedCardId = useCardsStore((s) => s.selectedId);
-  const selectedCard = savedCards.find((c) => c.id === selectedCardId) ?? null;
+  const selectedCard = useCardsStore((s) => s.card);
   /**
    * Deferring to a company invoice has no card to point at, so it needs its own
    * record of having been chosen — the pay-later default is what this page
    * *assumed*, and assuming is not consenting.
    */
   const [invoiceConfirmed, setInvoiceConfirmed] = React.useState(false);
+  /**
+   * Whether the payment dialog has been opened and closed on this order.
+   *
+   * A card restored from the last order was *restored*, not chosen — the same
+   * reason `invoiceConfirmed` exists. So the CTA asks to check payment before it
+   * offers to place the order, even when a card is already on file: the step
+   * between the address and the commit is "look at what's about to be charged",
+   * and it takes one tap to satisfy. Opening the dialog is that look, so simply
+   * closing it counts — the button says check, not choose, and a button that
+   * kept asking after you'd looked would be a loop.
+   */
+  const [paymentChecked, setPaymentChecked] = React.useState(false);
   const [openRow, setOpenRow] = React.useState<RowName | null>(null);
   const toggleRow = React.useCallback(
     (r: RowName) => setOpenRow((cur) => (cur === r ? null : r)),
@@ -317,14 +318,14 @@ export function CheckoutView() {
         : "Disposable · nothing to return";
 
   /**
-   * The last gate, after the session checklist: a balance to settle and nothing
-   * to settle it with — no card in the wallet, or an invoice nobody has opted
-   * into. Nothing owed means nothing to choose, so a fully covered order never
-   * waits on this.
+   * The last gate, after the session checklist: a balance to settle, and either
+   * nothing to settle it with — no card saved, or an invoice nobody has opted
+   * into — or a method that hasn't been looked at yet on this order. Nothing
+   * owed means nothing to check, so a fully covered order never waits on this.
    */
   const paymentPending =
     finalOwed > 0 &&
-    (effectivePayment === "pay_later" ? !invoiceConfirmed : !selectedCard);
+    ((effectivePayment === "pay_later" ? !invoiceConfirmed : !selectedCard) || !paymentChecked);
 
   const paymentValue =
     corporate && owed === 0
@@ -341,7 +342,7 @@ export function CheckoutView() {
   const ctaLabel = firstIncomplete
     ? firstIncomplete.label
     : paymentPending
-      ? "Enter payment"
+      ? "Check payment"
       : editActive
         ? "Save changes"
         : "Place order";
@@ -361,9 +362,9 @@ export function CheckoutView() {
       return;
     }
     // Straight to the dialog. Scrolling to the Payment card first put a second
-    // tap between "Enter payment" and entering payment — the button names the
-    // thing it should just open, and the card it was scrolling to says nothing
-    // the dialog doesn't say better.
+    // tap between "Check payment" and the payment — the button names the thing
+    // it should just open, and the card it was scrolling to says nothing the
+    // dialog doesn't say better.
     if (paymentPending) {
       setPaymentOpen(true);
       return;
@@ -753,7 +754,13 @@ export function CheckoutView() {
           }}
           payLaterAvailable={payLaterAvailable}
           covered={corporate && owed === 0}
-          onClose={() => setPaymentOpen(false)}
+          onClose={() => {
+            setPaymentOpen(false);
+            // Closing it means it's been seen, whichever way it was closed —
+            // that's what "Check payment" asked for. A missing card still holds
+            // the CTA back on its own.
+            setPaymentChecked(true);
+          }}
         />
       ) : null}
 
@@ -1068,13 +1075,13 @@ function InstructionsPanel({ onRemoved }: { onRemoved: () => void }) {
 }
 
 /**
- * How you're paying: the wallet, and the form that adds to it.
+ * How you're paying: the card on file, and the form that sets it.
  *
  * A dialog, not a panel. A card form is a hosted, focus-trapping surface in any
  * real integration, and it can't live in a row that folds shut under it while
- * it's collecting a number. Same reason it opens even when there's only one
- * saved card: this is where someone checks *which card is about to be charged*,
- * and a row that refuses to open doesn't answer that.
+ * it's collecting a number. Same reason it opens even when the card is already
+ * saved: this is where someone checks *what is about to be charged*, and a row
+ * that refuses to open doesn't answer that.
  *
  * Nothing here is charged. The card is captured now and charged 24 hours before
  * delivery, which is what the note under the title promises.
@@ -1092,18 +1099,25 @@ function PaymentModal({
   covered: boolean;
   onClose: () => void;
 }) {
-  const cards = useCardsStore((s) => s.cards);
-  const selectedId = useCardsStore((s) => s.selectedId);
-  const selectCard = useCardsStore((s) => s.select);
+  const card = useCardsStore((s) => s.card);
   const removeCard = useCardsStore((s) => s.remove);
 
   /**
-   * An empty wallet opens straight into the form: a list holding one "Add a
-   * card" button is a menu whose only item is "open the thing you actually
-   * wanted". Unless there's an invoice to defer to — then there *is* a choice,
-   * and opening on the form would hide the option that needs no card at all.
+   * No card opens straight into the form: a panel holding one "Add a card"
+   * button is a menu whose only item is "open the thing you actually wanted".
+   * Unless there's an invoice to defer to — then there *is* a choice, and
+   * opening on the form would hide the option that needs no card at all.
    */
-  const [adding, setAdding] = React.useState(cards.length === 0 && !payLaterAvailable);
+  const [adding, setAdding] = React.useState(!card && !payLaterAvailable);
+
+  /**
+   * The method picked *inside* the dialog, applied on Confirm rather than on the
+   * tap that picks it. Tapping a row and having the dialog vanish underneath you
+   * is a decision taken on your behalf the instant you touched it — with no
+   * chance to look at the other option, or to change your mind before it counts.
+   * The radios choose; Confirm commits.
+   */
+  const [choice, setChoice] = React.useState<PaymentChoice>(value);
 
   const [shown, setShown] = React.useState(false);
 
@@ -1114,9 +1128,12 @@ function PaymentModal({
   // Mounted only while it's up, so it's open for its whole life.
   const dialog = useDialog({ open: true, onClose });
 
-  function useCard(id: string) {
-    selectCard(id);
-    onChange("pay_now");
+  /** Nothing to confirm without something to confirm it against. */
+  const canConfirm = choice === "pay_later" ? payLaterAvailable : Boolean(card);
+
+  function applyChoice() {
+    if (!canConfirm) return;
+    onChange(choice);
     onClose();
   }
 
@@ -1149,7 +1166,7 @@ function PaymentModal({
           <div className="min-w-0">
             <h3 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
               <CreditCard className="size-4 shrink-0 text-primary" />
-              {adding && !covered ? "Add a card" : "Payment method"}
+              {adding && !covered ? (card ? "Change your card" : "Add a card") : "Payment method"}
             </h3>
             <p className="text-[13px] text-muted-foreground">
               {covered
@@ -1161,7 +1178,7 @@ function PaymentModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="shrink-0 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="shrink-0 rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -1175,45 +1192,88 @@ function PaymentModal({
               choose.
             </Notice>
           ) : adding ? (
-            <CardForm
-              onSaved={onClose}
-              /* No way back out of the form when the wallet is empty — "Cancel"
-                 would land on an empty list with nothing to do but re-open it. */
-              onCancel={cards.length ? () => setAdding(false) : undefined}
-            />
+            <>
+              {/* Saving replaces, so it says so before the number goes in — not
+                  in a toast after the old card is already gone. */}
+              {card ? (
+                <p className="mb-3 text-2xs text-muted-foreground">
+                  This replaces your saved card ending {card.last4}.
+                </p>
+              ) : null}
+              <CardForm
+                onSaved={() => {
+                  // A card just typed is a card just chosen — no second
+                  // confirmation of the thing that was the confirmation.
+                  onChange("pay_now");
+                  onClose();
+                }}
+                saveLabel={card ? "Change card" : "Save card"}
+                /* No way back out of the form when there's no card — "Cancel"
+                   would land on an empty panel with nothing to do but re-open it. */
+                onCancel={card ? () => setAdding(false) : undefined}
+              />
+            </>
           ) : (
             <div className="space-y-4">
-              <div className="space-y-2" role="radiogroup" aria-label="Payment method">
-                {cards.map((card) => (
+              <RadioGroup className="space-y-2" aria-label="Payment method">
+                {card ? (
                   <SavedCardRow
-                    key={card.id}
                     card={card}
-                    active={value === "pay_now" && card.id === selectedId}
-                    onSelect={() => useCard(card.id)}
-                    onRemove={() => removeCard(card.id)}
+                    active={choice === "pay_now"}
+                    // A radio only where there's something to choose between.
+                    // Without an invoice to defer to the card is the only
+                    // method, and a radio group of one is a control that asks a
+                    // question with a single answer — while eating the width
+                    // that keeps this row on two lines.
+                    onSelect={payLaterAvailable ? () => setChoice("pay_now") : undefined}
+                    // Changing the card is something you do *to this card*, so
+                    // it rides on the row beside Remove rather than sitting
+                    // under the list as an option in its own right.
+                    onReplace={() => setAdding(true)}
+                    // Asked first. A saved payment method destroyed by one tap
+                    // of a small icon, sitting right beside the control that
+                    // selects it, is a mis-tap you cannot undo — and every other
+                    // destructive action in the app already confirms.
+                    onRemove={async () => {
+                      const ok = await confirm({
+                        title: `Remove this ${brandLabel(card.brand)}?`,
+                        description: `The card ending ${card.last4} will be removed, and this order will need a new one. Orders already placed aren't affected.`,
+                        confirmLabel: "Remove",
+                        tone: "danger",
+                      });
+                      if (ok) removeCard();
+                    }}
                   />
-                ))}
+                ) : null}
 
                 {/* Deferring to an invoice needs a company to send it to. */}
                 {payLaterAvailable ? (
                   <PayOption
-                    active={value === "pay_later"}
-                    onClick={() => {
-                      onChange("pay_later");
-                      onClose();
-                    }}
+                    active={choice === "pay_later"}
+                    onClick={() => setChoice("pay_later")}
                     icon={Building2}
                     title="Company invoice"
                     subtitle="On your company's monthly invoice. Nothing to pay now"
                   />
                 ) : null}
-              </div>
+              </RadioGroup>
 
-              <Button variant="outline" className="w-full" onClick={() => setAdding(true)}>
-                <Plus className="size-4" /> Add a card
-              </Button>
+              {/* Only when there's nothing to change. With a card saved, the
+                  row's own Change card does this job. */}
+              {!card ? (
+                <Button variant="outline" className="w-full" onClick={() => setAdding(true)}>
+                  <Plus className="size-4" /> Add a card
+                </Button>
+              ) : null}
 
               <SecurityNote />
+
+              {/* The commit. Disabled only when there is genuinely nothing to
+                  confirm — no card and no invoice — in which case the button
+                  above is the one thing to do. */}
+              <Button block onClick={applyChoice} disabled={!canConfirm}>
+                <Check className="size-4" /> Confirm
+              </Button>
             </div>
           )}
         </div>
@@ -1222,310 +1282,6 @@ function PaymentModal({
   );
 }
 
-/**
- * One saved card: the radio that charges it, and a separate control that forgets
- * it. Two buttons side by side rather than one inside the other — a button
- * nested in a button is invalid, and the inner one swallows the tap that was
- * meant for the row.
- */
-function SavedCardRow({
-  card,
-  active,
-  onSelect,
-  onRemove,
-}: {
-  card: SavedCard;
-  active: boolean;
-  onSelect: () => void;
-  onRemove: () => void;
-}) {
-  const expired = isExpired(card);
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-1 rounded-xl border pr-1.5 transition-colors",
-        active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
-      )}
-    >
-      <button
-        type="button"
-        role="radio"
-        aria-checked={active}
-        onClick={onSelect}
-        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left text-[13px]"
-      >
-        <span
-          className={cn(
-            "flex size-5 shrink-0 items-center justify-center rounded-full border",
-            active ? "border-primary" : "border-border",
-          )}
-        >
-          {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
-        </span>
-        <BrandMark brand={card.brand} />
-        <span className="min-w-0 flex-1">
-          <strong className="nums">•••• {card.last4}</strong>
-          <span className={cn("block text-2xs", expired ? "text-danger" : "text-muted-foreground")}>
-            {expired ? "Expired" : "Expires"} {expiryLabel(card)} · {card.name}
-          </span>
-        </span>
-      </button>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Remove card ending ${card.last4}`}
-        className="shrink-0 rounded-full touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-danger"
-      >
-        <Trash2 className="size-4" />
-      </button>
-    </div>
-  );
-}
-
-/** `08/2029` → `08/29`, the way it's printed on the card. */
-function expiryLabel(card: SavedCard) {
-  return `${String(card.expMonth).padStart(2, "0")}/${String(card.expYear).slice(-2)}`;
-}
-
-/** A card is good through the last day of its printed month. */
-function isExpired(card: SavedCard) {
-  return new Date(card.expYear, card.expMonth, 1) <= new Date();
-}
-
-/**
- * The brand, as a wordmark rather than a logo. Real marks are trademarked
- * artwork we don't have licence to ship, and a generic card glyph on every row
- * makes four saved cards look identical at a glance — the name is what tells
- * them apart.
- */
-function BrandMark({ brand }: { brand: CardBrand }) {
-  return (
-    <span className="flex h-7 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
-      {brandLabel(brand)}
-    </span>
-  );
-}
-
-/** What happens to the number after Save. Said once, where it's being typed. */
-function SecurityNote() {
-  return (
-    <p className="flex items-start gap-1.5 text-2xs text-muted-foreground">
-      <Lock className="mt-px size-3 shrink-0 text-success" />
-      Encrypted in transit. We keep only the brand, the last four digits and the expiry — never
-      the full number or the security code.
-    </p>
-  );
-}
-
-/**
- * The card form.
- *
- * The checks it *can* apply are real ones — brand from the leading digits, the
- * number's own Luhn checksum, an expiry that hasn't happened — and a typo caught
- * under the field beats a decline several seconds later with no explanation.
- * They're switched off here: {@link STRICT_CARD_VALIDATION} is false while this
- * is a demo, so any number, expiry and code are accepted and the only thing
- * asked for is *some* number to take a last-four from. Flipping that one
- * constant restores every rule below.
- *
- * Formatting and the brand chip stay on regardless — they help someone type a
- * number rather than refuse the one they typed.
- *
- * Errors, when enforced, appear on blur rather than on every keystroke: a
- * half-typed card number is invalid by definition, and saying so mid-type is
- * nagging.
- */
-function CardForm({ onSaved, onCancel }: { onSaved: () => void; onCancel?: () => void }) {
-  const addCard = useCardsStore((s) => s.add);
-
-  const [number, setNumber] = React.useState("");
-  const [expiry, setExpiry] = React.useState("");
-  const [cvc, setCvc] = React.useState("");
-  const [name, setName] = React.useState("");
-  const [zip, setZip] = React.useState("");
-  const [touched, setTouched] = React.useState<Record<string, boolean>>({});
-
-  const brand = detectBrand(number);
-  const errors = STRICT_CARD_VALIDATION
-    ? {
-        number: cardNumberValid(number) ? "" : "Check this card number.",
-        expiry: expiryValid(expiry) ? "" : "Use a future MM/YY.",
-        cvc: cvcValid(cvc, brand) ? "" : `${cvcLength(brand)} digits, from the back of the card.`,
-        name: name.trim() ? "" : "Add the name as printed.",
-        zip: /^\d{5}$/.test(zip) ? "" : "5-digit billing ZIP.",
-      }
-    : {
-        // Demo: the one thing still asked for is a digit to take a last-four
-        // from, because a saved card reading "•••• " is not a card.
-        number: cardDigits(number) ? "" : "Type any number to continue.",
-        expiry: "",
-        cvc: "",
-        name: "",
-        zip: "",
-      };
-  const valid = Object.values(errors).every((e) => !e);
-  const show = (field: keyof typeof errors) => (touched[field] ? errors[field] : "");
-  const blur = (field: string) => () => setTouched((t) => ({ ...t, [field]: true }));
-
-  function save() {
-    if (!valid) {
-      // Reveal every hole at once rather than one per attempt.
-      setTouched({ number: true, expiry: true, cvc: true, name: true, zip: true });
-      return;
-    }
-    const digits = cardDigits(expiry);
-    addCard({
-      brand,
-      // The only part of the number that's kept — see `use-cards-store`.
-      last4: cardDigits(number).slice(-4),
-      // Fall back rather than store `NaN` from a blank or half-typed expiry:
-      // the row renders this, and "•••• 4242 · Expires NaN/NaN" is worse than a
-      // placeholder date on a card that was never going to be charged.
-      expMonth: Number(digits.slice(0, 2)) || 12,
-      expYear: digits.length === 4 ? 2000 + Number(digits.slice(2)) : new Date().getFullYear() + 3,
-      name: name.trim() || "Demo card",
-      zip,
-    });
-    toast.success("Card saved", `${brandLabel(brand)} ending ${cardDigits(number).slice(-4)}.`);
-    onSaved();
-  }
-
-  return (
-    <div className="space-y-3">
-      <Field>
-        <Label htmlFor="c-number">Card number</Label>
-        <div className="relative">
-          <Input
-            id="c-number"
-            value={number}
-            onChange={(e) => setNumber(formatCardNumber(e.target.value))}
-            onBlur={blur("number")}
-            inputMode="numeric"
-            autoComplete="cc-number"
-            placeholder="1234 5678 9012 3456"
-            aria-invalid={Boolean(show("number"))}
-            className={cn("pr-16", show("number") && "border-danger")}
-            autoFocus
-          />
-          {/* The brand appears as soon as the leading digits say what it is —
-              the same confirmation a card reader gives you. */}
-          {brand !== "unknown" ? (
-            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
-              <BrandMark brand={brand} />
-            </span>
-          ) : null}
-        </div>
-        <FieldError message={show("number")} />
-      </Field>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field>
-          <Label htmlFor="c-expiry">Expiry</Label>
-          <Input
-            id="c-expiry"
-            value={expiry}
-            onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-            onBlur={blur("expiry")}
-            inputMode="numeric"
-            autoComplete="cc-exp"
-            placeholder="MM/YY"
-            aria-invalid={Boolean(show("expiry"))}
-            className={cn(show("expiry") && "border-danger")}
-          />
-          <FieldError message={show("expiry")} />
-        </Field>
-        <Field>
-          <Label htmlFor="c-cvc">{brand === "amex" ? "CID" : "CVC"}</Label>
-          <Input
-            id="c-cvc"
-            value={cvc}
-            onChange={(e) =>
-              setCvc(cardDigits(e.target.value).slice(0, STRICT_CARD_VALIDATION ? cvcLength(brand) : 4))
-            }
-            onBlur={blur("cvc")}
-            inputMode="numeric"
-            autoComplete="cc-csc"
-            placeholder={brand === "amex" ? "4 digits" : "3 digits"}
-            aria-invalid={Boolean(show("cvc"))}
-            className={cn(show("cvc") && "border-danger")}
-          />
-          <FieldError message={show("cvc")} />
-        </Field>
-      </div>
-
-      <Field>
-        <Label htmlFor="c-name">Name on card</Label>
-        <Input
-          id="c-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={blur("name")}
-          autoComplete="cc-name"
-          placeholder="Sam Rivera"
-          aria-invalid={Boolean(show("name"))}
-          className={cn(show("name") && "border-danger")}
-        />
-        <FieldError message={show("name")} />
-      </Field>
-
-      <Field>
-        <Label htmlFor="c-zip">Billing ZIP</Label>
-        <Input
-          id="c-zip"
-          value={zip}
-          onChange={(e) => setZip(cardDigits(e.target.value).slice(0, 5))}
-          onBlur={blur("zip")}
-          inputMode="numeric"
-          autoComplete="billing postal-code"
-          placeholder="94105"
-          aria-invalid={Boolean(show("zip"))}
-          className={cn(show("zip") && "border-danger")}
-        />
-        {/* Why we're asking, so it doesn't read as one more field for its own
-            sake: the ZIP is what the bank checks the charge against. The hint
-            steps aside for the error rather than stacking two lines under one
-            field. */}
-        {show("zip") ? (
-          <FieldError message={show("zip")} />
-        ) : (
-          <p className="mt-1 text-2xs text-muted-foreground">
-            Checked against your bank&apos;s records when the card is charged.
-          </p>
-        )}
-      </Field>
-
-      <SecurityNote />
-      {!STRICT_CARD_VALIDATION ? (
-        <Notice tone="info" className="text-2xs">
-          Demo checkout — any card details are accepted and nothing is ever charged.
-        </Notice>
-      ) : null}
-
-      <div className="flex gap-2 pt-1">
-        {onCancel ? (
-          <Button variant="outline" className="flex-1" onClick={onCancel}>
-            Cancel
-          </Button>
-        ) : null}
-        {/* Never disabled: a greyed-out Save leaves someone tapping a dead button
-            with no idea which field is wrong. It presses, and points. */}
-        <Button className="flex-1" onClick={save}>
-          <Lock className="size-4" /> Save card
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** One field's complaint, in the one place complaints appear. */
-function FieldError({ message }: { message: string }) {
-  if (!message) return null;
-  return (
-    <p role="alert" className="mt-1 text-2xs font-medium text-danger">
-      {message}
-    </p>
-  );
-}
 
 /**
  * Cutoff check — the one thing on the page that isn't a setting, so it stays a
@@ -1584,7 +1340,7 @@ function CutoffStrip({
 function AddressPanel({ onDone }: { onDone: () => void }) {
   const cart = useCartStore();
   return (
-    <div className="space-y-2" role="radiogroup" aria-label="Delivery address">
+    <RadioGroup className="space-y-2" aria-label="Delivery address">
       {addresses.map((a) => {
         const active = a.id === cart.addressId;
         return (
@@ -1600,13 +1356,13 @@ function AddressPanel({ onDone }: { onDone: () => void }) {
             }}
             className={cn(
               "flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors",
-              active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+              active ? "border-primary bg-teal-wash" : "border-control bg-card hover:bg-muted/50",
             )}
           >
             <span
               className={cn(
                 "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
-                active ? "border-primary" : "border-border",
+                active ? "border-primary" : "border-control",
               )}
             >
               {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
@@ -1621,7 +1377,7 @@ function AddressPanel({ onDone }: { onDone: () => void }) {
           </button>
         );
       })}
-    </div>
+    </RadioGroup>
   );
 }
 
@@ -1682,7 +1438,7 @@ function TimePanel({
           full-width either/or at the top of a panel, so it reads as the two
           options it is. No subtitles — the labels are already the whole idea. */}
       {multiDay ? (
-        <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Delivery time mode">
+        <RadioGroup className="grid grid-cols-2 gap-3" aria-label="Delivery time mode">
           <PackOption
             active={mode === "all"}
             onClick={() => choose("all")}
@@ -1693,7 +1449,7 @@ function TimePanel({
             onClick={() => choose("each")}
             title="Set for each day"
           />
-        </div>
+        </RadioGroup>
       ) : null}
 
       {mode === "all" || !multiDay ? (
@@ -1747,7 +1503,7 @@ function Confirmation({
   // company an individual has no relationship with is worse than saying nothing.
   const corporate = isSubsidized(account);
   const email = account?.email ?? me.email;
-  const card = useCardsStore((s) => s.cards.find((c) => c.id === s.selectedId) ?? null);
+  const card = useCardsStore((s) => s.card);
 
   return (
     <Card className="overflow-hidden">
@@ -1819,7 +1575,7 @@ function PayOption({
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
-        active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+        active ? "border-primary bg-teal-wash" : "border-control bg-card hover:bg-muted/50",
       )}
     >
       {/* Each method carries its own mark — a card and an invoice are not the
@@ -1839,7 +1595,7 @@ function PayOption({
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-full border",
-          active ? "border-primary" : "border-border",
+          active ? "border-primary" : "border-control",
         )}
       >
         {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
@@ -1919,7 +1675,7 @@ function PackagingRow({ zip, value }: { zip: string; value: string }) {
       {open ? (
         <RowPanel>
           <div className="space-y-3">
-            <div className="space-y-2" role="radiogroup" aria-label="Packaging">
+            <RadioGroup className="space-y-2" aria-label="Packaging">
               {/* Both single-trip options say what happens to the container
                   after the meal — that's the only thing separating them, and
                   "Disposable" vs "Compostable" alone leaves it to be guessed. */}
@@ -1944,7 +1700,7 @@ function PackagingRow({ zip, value }: { zip: string; value: string }) {
                 subtitle="Sturdy containers we collect at a pickup you choose."
                 trailing={qty > 0 ? formatCurrency(fee) : "Free"}
               />
-            </div>
+            </RadioGroup>
 
             {/* Only reusable has a follow-up, and it unfolds under the option
                 that caused it rather than in a sheet of its own. */}
@@ -1965,7 +1721,7 @@ function PackagingRow({ zip, value }: { zip: string; value: string }) {
                 <div className="text-overline">Pickup window</div>
                 {/* Tapping a window is the answer — it applies in place, no Save
                     to hunt for. Custom is the one row that opens something. */}
-                <div className="space-y-2" role="radiogroup" aria-label="Pickup window">
+                <RadioGroup className="space-y-2" aria-label="Pickup window">
                   {windows.map((w) => (
                     <PackOption
                       key={w}
@@ -1991,7 +1747,7 @@ function PackagingRow({ zip, value }: { zip: string; value: string }) {
                     }
                     trailing={`+${formatCurrency(specialFee)}`}
                   />
-                </div>
+                </RadioGroup>
               </div>
             ) : null}
           </div>
@@ -2095,7 +1851,7 @@ function CustomPickupModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="shrink-0 rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="shrink-0 rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -2203,13 +1959,13 @@ function PackOption({
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
-        active ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+        active ? "border-primary bg-teal-wash" : "border-control bg-card hover:bg-muted/50",
       )}
     >
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-full border",
-          active ? "border-primary" : "border-border",
+          active ? "border-primary" : "border-control",
         )}
       >
         {active ? <span className="size-2.5 rounded-full bg-primary" /> : null}
@@ -2282,8 +2038,12 @@ function PromoPanel({
     <div className="space-y-1.5">
       <div
         className={cn(
-          "flex items-center gap-1.5 rounded-xl border bg-card p-1.5 transition-colors focus-within:border-primary",
-          error ? "border-danger-border" : "border-border",
+          // The ring as well as the border, so this reads as the same kind of
+          // field as every other one. It had the colour but only half the
+          // effect, which made it look subtly less "active" than the card box
+          // directly above it when the keyboard was actually in it.
+          "flex items-center gap-1.5 rounded-xl border bg-card p-1.5 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/30",
+          error ? "border-danger-border" : "border-control",
         )}
       >
         <Tag className="ml-1.5 size-4 shrink-0 text-muted-foreground" />
@@ -2300,7 +2060,13 @@ function PromoPanel({
           aria-label="Promo code"
           spellCheck={false}
           autoFocus
-          className="h-9 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/70 sm:h-8 sm:text-[13px]"
+          // `focus-visible:outline-none`, not plain `outline-none`: the bare
+          // `outline-none` class loses on specificity to the global
+          // `input:focus-visible` rule, so this borderless field was drawing a
+          // sharp rectangular outline of its own *inside* the wrapper's rounded
+          // teal border — two indicators, one of them the wrong shape. The box
+          // around it is the field, so the box is what lights up.
+          className="h-9 min-w-0 flex-1 bg-transparent text-base text-foreground focus-visible:outline-none placeholder:text-muted-foreground sm:h-8 sm:text-[13px]"
         />
         <Button size="sm" variant="teal" onClick={onApply} disabled={!value.trim()}>
           Apply

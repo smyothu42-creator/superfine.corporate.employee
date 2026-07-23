@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useDialog } from "@/lib/use-dialog";
 import { cn } from "@/lib/utils";
 import { fromISODate, toISODate, sameDay, startOfToday, isServiceDay, formatDay, weekdayOffset } from "@/lib/dates";
+import { useRovingCalendar } from "@/lib/calendar-keys";
 
 const COLS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -78,6 +79,16 @@ export function DateMultiModal({
     setSelected((prev) => (prev.includes(iso) ? prev.filter((d) => d !== iso) : [...prev, iso].sort()));
   }
 
+  // Arrow keys across the month; the whole grid is one tab stop. Focus starts on
+  // the first day already chosen, so someone editing a set of dates arrives on
+  // their own answer rather than at the top of the month.
+  const roving = useRovingCalendar({
+    open: true,
+    selectedISO: selected[0],
+    fallbackISO: todayISO,
+    onMonthChange: (d) => setCursor({ y: d.getFullYear(), m: d.getMonth() }),
+  });
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <button
@@ -109,7 +120,7 @@ export function DateMultiModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -120,7 +131,7 @@ export function DateMultiModal({
             type="button"
             onClick={() => shiftMonth(-1)}
             aria-label="Previous month"
-            className="rounded-full border border-border bg-card touch-target p-1.5 hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 hover:bg-muted"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -129,20 +140,29 @@ export function DateMultiModal({
             type="button"
             onClick={() => shiftMonth(1)}
             aria-label="Next month"
-            className="rounded-full border border-border bg-card touch-target p-1.5 hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 hover:bg-muted"
           >
             <ChevronRight className="size-4" />
           </button>
         </div>
 
+        {/* Weekends are de-emphasised by weight, not by fading the ink. A colour
+            faded toward its background is exactly what the contrast rule
+            measures, and these labels are the only thing naming the columns. */}
         <div className="mt-4 grid grid-cols-7 text-center text-2xs font-semibold text-muted-foreground">
           {COLS.map((d, i) => (
-            <div key={d} className={cn("pb-1.5", i >= 5 && "text-muted-foreground/40")}>
+            <div key={d} className={cn("pb-1.5", i >= 5 && "font-normal")}>
               {d}
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7">
+        <div
+          ref={roving.gridRef}
+          onKeyDown={roving.onKeyDown}
+          role="group"
+          aria-label={`${monthLabel} — use the arrow keys to choose a day`}
+          className="grid grid-cols-7"
+        >
           {cells.map((date, i) => {
             if (!date) return <div key={`x${i}`} />;
             const iso = toISODate(date);
@@ -156,10 +176,20 @@ export function DateMultiModal({
               <div key={iso} className="relative flex items-center justify-center py-0.5">
                 <button
                   type="button"
-                  disabled={disabled}
-                  onClick={() => toggle(iso)}
-                  aria-pressed={isSelected}
-                  aria-label={date.toDateString()}
+                  /* `aria-disabled`, not `disabled` — the same choice the other
+                     calendars make. A truly disabled button cannot be focused,
+                     so the arrow keys would stop dead on a weekend rather than
+                     stepping over it. The press is refused below instead. */
+                  aria-disabled={disabled || undefined}
+                  onClick={() => {
+                    if (disabled) return;
+                    toggle(iso);
+                  }}
+                  aria-pressed={disabled ? undefined : isSelected}
+                  aria-label={
+                    disabled ? `${date.toDateString()}, not available` : date.toDateString()
+                  }
+                  {...roving.dayProps(iso)}
                   className={cn(
                     "relative z-10 flex size-11 items-center justify-center rounded-full text-sm sm:size-9 transition-colors",
                     isSelected

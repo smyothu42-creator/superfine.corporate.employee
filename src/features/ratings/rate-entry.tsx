@@ -306,7 +306,9 @@ function Disclosure({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        aria-controls={id}
+        // Only while the panel exists. Pointing at an id that isn't in the page
+        // is a broken reference, and some screen readers report it as one.
+        aria-controls={open ? id : undefined}
         className={QUIET_ROW}
       >
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -337,7 +339,7 @@ const FOCUS =
  * column is white — a white tile on white reads as nothing to press.
  */
 const ROW = cn(
-  "mt-2 flex w-full items-center gap-3 rounded-2xl border border-border bg-background p-3.5 text-left transition-colors hover:border-primary/40 hover:bg-teal-wash/40",
+  "mt-2 flex w-full items-center gap-3 rounded-2xl border border-control bg-background p-3.5 text-left transition-colors hover:border-primary hover:bg-teal-wash/40",
   FOCUS,
 );
 
@@ -348,7 +350,7 @@ const ROW = cn(
  * their order has to be able to see the way out.
  */
 const QUIET_ROW = cn(
-  "flex w-full items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-left text-[13px] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-muted",
+  "flex w-full items-center gap-2.5 rounded-xl border border-control bg-card px-3.5 py-3 text-left text-[13px] font-semibold text-foreground transition-colors hover:border-primary hover:bg-muted",
   FOCUS,
 );
 
@@ -573,7 +575,7 @@ function OrderLookup({
         <p className="mt-4 flex items-start gap-2 rounded-2xl bg-muted/60 p-3.5 text-2xs text-muted-foreground">
           <Mail className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <span>
-            Arrived from the &ldquo;How was lunch?&rdquo; email? That link fills both fields in for
+            Arrived from the &ldquo;How was your lunch?&rdquo; email? That link fills both fields in for
             you — nothing to type.{" "}
             <Link
               href="/orders"

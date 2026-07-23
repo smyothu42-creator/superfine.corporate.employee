@@ -108,7 +108,7 @@ export function MenuStep({
           type="button"
           onClick={onBack}
           aria-label="Back to calendar"
-          className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+          className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted"
         >
           <ChevronLeft className="size-4" />
         </button>
@@ -131,7 +131,7 @@ export function MenuStep({
                 "relative flex min-w-[60px] flex-col items-center rounded-2xl border px-3 py-2 transition-colors",
                 active
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card text-foreground hover:bg-muted",
+                  : "border-control bg-card text-foreground hover:bg-muted",
               )}
             >
               <span className="text-2xs font-semibold">{WEEKDAY_SHORT[d.getDay()]}</span>
@@ -191,12 +191,13 @@ export function MenuStep({
                   key={item.id}
                   className={cn(
                     "flex gap-3 rounded-2xl border bg-card p-2.5 shadow-card transition-colors",
-                    count > 0 ? "border-primary" : "border-border",
+                    count > 0 ? "border-primary" : "border-control",
                     disabled && "opacity-60",
                   )}
                 >
                   <div className="relative size-20 shrink-0 overflow-hidden rounded-xl">
-                    <FoodPhoto src={item.image} alt={item.name} className="size-20" iconClassName="size-6" />
+                    {/* Decorative — the name is the <h4> beside it. */}
+                    <FoodPhoto src={item.image} alt="" className="size-20" iconClassName="size-6" />
                     {soldOut ? (
                       <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-2xs font-bold text-white">
                         Sold out

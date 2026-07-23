@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Check } from "lucide-react";
+import { RadioGroup } from "@/components/ui/radio-group";
 import { formatCurrency, cn } from "@/lib/utils";
 import { summarizeAddOns, cleanOptionName } from "@/data/menu";
 import type { MenuItem, AddOnGroup } from "@/data/types";
@@ -95,21 +96,36 @@ export function OptionGroups({
     <div className={cn("space-y-5", className)}>
       {groups.map((group) => {
         const selected = picked[group.id] ?? [];
+        const single = group.select === "single";
+        // The options were already announced as radios and checkboxes, but the
+        // heading that says *what is being chosen* sat outside as loose text.
+        // "Protein" was on screen and nowhere in the accessibility tree, so the
+        // list read as five unexplained options. Naming the group attaches it.
+        const labelId = `optgroup-${group.id}`;
+        // Single-select gets the arrow keys its `radio` role promises; a
+        // checkbox list correctly stays one Tab stop per box, because each is an
+        // independent yes/no rather than one choice among several.
+        const List = single ? RadioGroup : "div";
         return (
           <section key={group.id}>
             {/* An unanswered required group is a question still open, not an
                 error — the button names it, so the header stays quiet. */}
             <div className="mb-2 flex items-center gap-2">
-              <h3 className="font-display text-sm font-semibold tracking-tight">{group.name}</h3>
+              <h3 id={labelId} className="font-display text-sm font-semibold tracking-tight">
+                {group.name}
+              </h3>
               {!group.required ? (
                 <span className="text-2xs text-muted-foreground">Optional</span>
               ) : null}
             </div>
 
-            <div className="space-y-1.5">
+            <List
+              className="space-y-1.5"
+              aria-labelledby={labelId}
+              {...(single ? {} : { role: "group" as const })}
+            >
               {group.options.map((option) => {
                 const checked = selected.includes(option.id);
-                const single = group.select === "single";
                 return (
                   <button
                     key={option.id}
@@ -119,7 +135,7 @@ export function OptionGroups({
                     onClick={() => onToggle(group, option.id)}
                     className={cn(
                       "flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left text-[13px] transition-colors",
-                      checked ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted/50",
+                      checked ? "border-primary bg-teal-wash" : "border-control bg-card hover:bg-muted/50",
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-2.5">
@@ -131,7 +147,7 @@ export function OptionGroups({
                           single ? "rounded-full" : "rounded-md",
                           checked
                             ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border",
+                            : "border-control",
                         )}
                       >
                         {checked ? <Check className="size-3.5" /> : null}
@@ -152,7 +168,7 @@ export function OptionGroups({
                   </button>
                 );
               })}
-            </div>
+            </List>
           </section>
         );
       })}

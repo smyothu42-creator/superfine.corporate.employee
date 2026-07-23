@@ -216,13 +216,13 @@ export function ComboBlock({
       <div
         className={cn(
           "flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-colors",
-          built.complete ? "border-border bg-muted/40" : "border-dashed border-border bg-card",
+          built.complete ? "border-border bg-muted/40" : "border-dashed border-control bg-card",
         )}
       >
         <span
           className={cn(
             "flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold",
-            built.complete ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground",
+            built.complete ? "bg-primary text-primary-foreground" : "border border-control text-muted-foreground",
           )}
         >
           {built.complete ? <Check className="size-3.5" /> : index + 1}
@@ -275,7 +275,7 @@ export function ComboBlock({
           <span
             className={cn(
               "flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold",
-              built.complete ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground",
+              built.complete ? "bg-primary text-primary-foreground" : "border border-control text-muted-foreground",
             )}
           >
             {built.complete ? <Check className="size-3.5" /> : index + 1}
@@ -301,7 +301,7 @@ export function ComboBlock({
             type="button"
             onClick={onDelete}
             aria-label={`Delete customization ${index + 1}`}
-            className="flex size-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded-full border border-control bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Trash2 className="size-4" />
           </button>
@@ -341,7 +341,7 @@ function QtyStepper({
         onClick={() => onChange(qty - 1)}
         className="flex size-11 items-center justify-center sm:size-7"
       >
-        <span className="flex size-7 items-center justify-center rounded-full border border-border bg-card text-foreground hover:bg-muted">
+        <span className="flex size-7 items-center justify-center rounded-full border border-control bg-card text-foreground hover:bg-muted">
           {qty > 1 ? <Minus className="size-3" /> : <Trash2 className="size-3" />}
         </span>
       </button>

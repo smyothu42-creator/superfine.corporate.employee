@@ -80,7 +80,7 @@ export function CartPanel() {
         "flex items-center justify-between border-b px-4 py-3.5",
         // Editing wears a distinct coral/warning header so it never reads as an
         // ordinary cart — you're changing a placed order, not building a new one.
-        editActive ? "border-warning-border bg-warning-bg" : "border-border",
+        editActive ? "border-warning-border bg-warning-bg" : "border-control",
       )}
     >
       {editActive ? (
@@ -104,7 +104,7 @@ export function CartPanel() {
           onClick={close}
           aria-label="Open cart as full page"
           title="View as full page"
-          className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Maximize2 className="size-4" />
         </Link>
@@ -112,7 +112,7 @@ export function CartPanel() {
           type="button"
           onClick={close}
           aria-label="Close cart"
-          className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X className="size-4" />
         </button>
@@ -120,14 +120,30 @@ export function CartPanel() {
     </div>
   );
 
+  /**
+   * What a closed panel owes the rest of the page: nothing.
+   *
+   * Both panels stay mounted so they can animate, which meant that when the cart
+   * was shut its controls were still in the tab order and still readable by a
+   * screen reader. Tab past the last control on the page and you landed inside
+   * an invisible cart — offscreen, so the view didn't follow, and focus simply
+   * appeared to disappear. `inert` takes an element out of both the tab order
+   * and the accessibility tree without touching how it looks, so the transition
+   * is unchanged.
+   *
+   * Spread rather than written inline: `inert` isn't in React 18's JSX types.
+   */
+  const closedOff = open ? {} : ({ inert: "", "aria-hidden": true } as Record<string, unknown>);
+
   return (
     <>
       {/* Desktop: push panel — collapses width so the content shrinks, no overlap */}
       <aside
         aria-label="Cart"
+        {...closedOff}
         className={cn(
           "sticky top-0 hidden h-screen shrink-0 overflow-hidden border-l bg-card transition-[width] duration-300 ease-out lg:block",
-          editActive ? "border-warning-border" : "border-border",
+          editActive ? "border-warning-border" : "border-control",
           open ? WIDTH : "w-0",
         )}
       >
@@ -159,6 +175,7 @@ export function CartPanel() {
           // the closed drawer is parked offscreen, not holding the page inert.
           role={open && overlay ? "dialog" : undefined}
           aria-modal={open && overlay ? true : undefined}
+          {...closedOff}
           {...dialog.props}
           className={cn(
             "fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-background transition-transform duration-300 ease-out",

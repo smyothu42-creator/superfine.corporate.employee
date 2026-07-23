@@ -17,7 +17,7 @@ const buttonVariants = cva(
         // Yellow highlight
         yellow: "bg-yellow text-teal-deep hover:bg-yellow-deep",
         outline: "border-2 border-primary bg-transparent text-primary hover:bg-teal-wash",
-        ghost: "border border-border bg-card text-foreground hover:bg-muted",
+        ghost: "border border-control bg-card text-foreground hover:bg-muted",
         danger: "bg-danger text-white hover:bg-danger/90",
         warning: "bg-warning text-white hover:bg-warning/90",
         success: "bg-success text-white hover:bg-success/90",

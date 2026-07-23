@@ -20,6 +20,13 @@ export interface FeedbackEntry {
   orderId: string | null;
   /** Exactly what the customer typed, kept for the admin even when unresolved. */
   orderNumberEntered: string | null;
+  /**
+   * What kind of problem it is, picked from the form's chips — "Arrived late",
+   * "Something missing", and so on. Null when they skipped straight to the
+   * note. It's the first thing ops routes on, which is why it's its own field
+   * rather than a sentence they have to read out of the message.
+   */
+  topic: string | null;
   /** The free-text feedback the customer wrote. */
   message: string;
   /** Whether the customer said this feedback is about an order. */
@@ -33,6 +40,7 @@ export interface FeedbackEntry {
 
 export interface SubmitFeedbackInput {
   orderNumber?: string | null;
+  topic?: string | null;
   message?: string;
   relatedToOrder?: boolean;
   source?: FeedbackEntry["source"];
@@ -56,6 +64,7 @@ export const useFeedbackStore = create<FeedbackState>((set) => ({
       id: `FB-${Date.now().toString(36)}-${seq++}`,
       orderId: matched?.id ?? null,
       orderNumberEntered: typed,
+      topic: input.topic?.trim() || null,
       message: input.message?.trim() ?? "",
       relatedToOrder: input.relatedToOrder ?? Boolean(typed),
       verified: Boolean(matched),

@@ -37,6 +37,9 @@ const TITLE_OVERRIDES: Record<string, string> = {
   "/auto-order": "Auto-Order",
   "/account": "Account & Profile",
   "/notifications": "Notifications",
+  // Not in the nav, so without this it fell through to the "Menu" default and
+  // the problem form sat under someone else's title.
+  "/feedback": "Report a Problem",
 };
 
 function deriveTitle(pathname: string) {
@@ -51,6 +54,7 @@ function deriveTitle(pathname: string) {
 function Topbar() {
   const pathname = usePathname();
   const toggleMobileNav = useUiStore((s) => s.toggleMobileNav);
+  const mobileNavOpen = useUiStore((s) => s.mobileNavOpen);
   // Drives the dot on the hamburger — see the button below.
   const unreadNotifications = useNotificationsStore((s) => s.items.filter((n) => !n.read).length);
   const toggleCart = useUiStore((s) => s.toggleCart);
@@ -89,8 +93,18 @@ function Topbar() {
         <button
           type="button"
           onClick={toggleMobileNav}
-          aria-label={unreadNotifications > 0 ? "Open navigation, unread notifications" : "Open navigation"}
-          className="touch-target relative -ml-1 shrink-0 rounded-full border border-border bg-card p-2 text-foreground hover:bg-muted lg:hidden"
+          /* Says which way it will go, and reports the state it's actually in.
+             It used to say "Open navigation" even while the drawer was open,
+             and never declared that it controlled anything. */
+          aria-expanded={mobileNavOpen}
+          // The drawer is unmounted while shut, so this only names a real
+          // element when there is one — a dangling reference otherwise.
+          aria-controls={mobileNavOpen ? "mobile-nav" : undefined}
+          aria-label={
+            (mobileNavOpen ? "Close navigation" : "Open navigation") +
+            (unreadNotifications > 0 ? ", unread notifications" : "")
+          }
+          className="touch-target relative -ml-1 shrink-0 rounded-full border border-control bg-card p-2 text-foreground hover:bg-muted lg:hidden"
         >
           <Menu className="size-5" />
           {unreadNotifications > 0 ? (
@@ -148,13 +162,16 @@ function Topbar() {
                 id="cart-icon"
                 type="button"
                 onClick={toggleCart}
-                aria-expanded={cartOpen}
-                aria-label={`Cart${cartCount ? `, ${cartCount} items` : ""}`}
+                /* No `aria-expanded`: this button only exists while the cart is
+                   shut, so the attribute could only ever report "false" — a
+                   value that is true by construction and therefore says nothing.
+                   The cart's own close button is the other half of the pair. */
+                aria-label={`Open cart${cartCount ? `, ${cartCount} items` : ""}`}
                 className={cn(
                   "touch-target flex items-center gap-1.5 rounded-full border text-sm font-semibold transition-colors",
                   cartOpen
                     ? "border-primary bg-teal-wash text-teal-deep"
-                    : "border-border bg-card text-foreground hover:bg-muted",
+                    : "border-control bg-card text-foreground hover:bg-muted",
                   cartCount > 0 ? "py-1.5 pl-3 pr-1.5" : "px-3 py-1.5",
                 )}
               >
@@ -257,13 +274,26 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
   // co-exist. Order matters below — the click state is applied *after* the
   // hover rules so moving the mouse away can't slam a tapped-open panel shut.
   const [budgetOpen, setBudgetOpen] = React.useState(false);
+  /**
+   * Escape hides the hover-opened breakdown too — see the panel below.
+   *
+   * Cleared when the pointer leaves the pill, so the panel is available again
+   * the next time it is reached for rather than being dismissed for good.
+   */
+  const [hoverDismissed, setHoverDismissed] = React.useState(false);
   const budgetRef = React.useRef<HTMLDivElement>(null);
   const panelId = React.useId();
 
   React.useEffect(() => {
-    if (!budgetOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setBudgetOpen(false);
+      if (e.key !== "Escape") return;
+      setBudgetOpen(false);
+      // The panel can be showing purely because the pointer is resting on the
+      // pill, with no state behind it — Escape has to be able to clear that
+      // too, or the only way to get the panel off the page is to move the
+      // mouse, which is exactly what someone using magnification cannot do
+      // while reading it.
+      if (budgetRef.current?.matches(":hover")) setHoverDismissed(true);
     };
     const onPointerDown = (e: PointerEvent) => {
       if (!budgetRef.current?.contains(e.target as Node)) setBudgetOpen(false);
@@ -274,7 +304,7 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [budgetOpen]);
+  }, []);
 
   // Guests and individual customers have no company budget. Showing them an
   // allowance — even an empty one — advertises pricing they aren't entitled to.
@@ -324,7 +354,11 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
        meals, and hiding it until it's spent made the subsidy look like a
        desktop-only feature. The short label is what buys it the room. */
     <div className="flex items-center gap-1.5">
-      <div ref={budgetRef} className="group relative">
+      <div
+        ref={budgetRef}
+        onPointerLeave={() => setHoverDismissed(false)}
+        className="group relative"
+      >
         <button
           type="button"
           aria-expanded={budgetOpen}
@@ -332,11 +366,15 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
           onClick={() => setBudgetOpen((o) => !o)}
           className={cn(
             "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold outline-none transition-colors",
+            // Solid tones, not the pale `-border` ones. Those are made for the
+            // edge of a notice card, which nobody has to aim at; this is a
+            // button, and its edge is the only thing marking where it is. The
+            // pale info tone measured 1.48:1 against the bar behind it.
             over
-              ? "border-danger-border bg-danger-bg text-danger"
+              ? "border-danger bg-danger-bg text-danger"
               : !percentMode && remaining === 0
-                ? "border-warning-border bg-warning-bg text-coral-deep"
-                : "border-info-border bg-info-bg text-info",
+                ? "border-warning bg-warning-bg text-coral-deep"
+                : "border-info bg-info-bg text-info",
           )}
         >
           {over ? (
@@ -365,10 +403,24 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
             behind it, when in fact the page stays fully live and Tab walks
             straight out. The trigger's aria-expanded/aria-controls is what
             actually describes the relationship. */}
+        {/**
+         * `pointer-events-auto` on hover, not only on tap.
+         *
+         * The panel used to stay click-through while it was hover-opened, which
+         * meant the pointer could never actually land on it: moving toward the
+         * breakdown left the pill, hover was lost, and the panel vanished
+         * mid-sentence. Anyone using screen magnification — who reads by moving
+         * the pointer across the panel — could not read it at all, and anyone
+         * slow with a mouse lost it on the way. Being able to move onto
+         * hover-revealed content, and to dismiss it without moving at all
+         * (Escape, above), is what the rule requires.
+         */}
         <div
           id={panelId}
           className={cn(
-            "pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-64 origin-top-right rounded-2xl border border-border bg-card p-4 text-foreground opacity-0 shadow-lg transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100",
+            "pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-64 origin-top-right rounded-2xl border border-border bg-card p-4 text-foreground opacity-0 shadow-lg transition-all duration-150",
+            !hoverDismissed &&
+              "group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100",
             budgetOpen && "pointer-events-auto visible opacity-100",
           )}
         >
@@ -422,7 +474,7 @@ function BudgetIndicator({ dayTotal }: { dayTotal: number }) {
            difference between a readable page title and "M." — the subsidy
            itself is what has to survive that row, not the switch between the
            two models of it. */
-        className="hidden rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:block"
+        className="hidden rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:block"
       >
         <ArrowLeftRight className="size-3.5" />
       </button>

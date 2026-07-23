@@ -42,15 +42,18 @@ function StatCard({ label, value, sub, icon, tone = "default", pop = false, clas
         <div
           className={cn(
             "text-2xs font-bold",
-            colored ? "opacity-95" : "text-muted-foreground",
+            colored ? null : "text-muted-foreground",
           )}
         >
           {label}
         </div>
       </div>
       <div className="mt-4 font-display text-3xl font-semibold leading-none tracking-tight nums">{value}</div>
+      {/* No `opacity` on text. Fading a colour toward its background is exactly
+          what the contrast rule measures, and 80% white on teal landed at
+          4.09:1 — under the bar. Full strength reads the same and passes. */}
       {sub ? (
-        <div className={cn("mt-1.5 text-xs", colored ? "opacity-80" : "text-muted-foreground")}>{sub}</div>
+        <div className={cn("mt-1.5 text-xs", colored ? null : "text-muted-foreground")}>{sub}</div>
       ) : null}
     </div>
   );

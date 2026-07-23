@@ -221,7 +221,7 @@ export function AutoOrderView() {
 function DemoContractToggle({ enabled }: { enabled: boolean }) {
   const setCompanyEnabled = useAutoOrderStore((s) => s.setCompanyEnabled);
   return (
-    <p className="px-1 text-center text-2xs text-muted-foreground/70">
+    <p className="px-1 text-center text-2xs text-muted-foreground">
       <button
         type="button"
         onClick={() => setCompanyEnabled(!enabled)}

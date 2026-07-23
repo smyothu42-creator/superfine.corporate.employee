@@ -93,7 +93,7 @@ function MenuItemCard({
                 type="button"
                 aria-label={`Decrease ${item.name}`}
                 onClick={() => onQuantityChange!(Math.max(0, (quantity ?? 0) - 1))}
-                className="flex size-8 items-center justify-center rounded-full border border-border bg-card hover:bg-muted"
+                className="flex size-8 items-center justify-center rounded-full border border-control bg-card hover:bg-muted"
               >
                 <Minus className="size-3.5" />
               </button>

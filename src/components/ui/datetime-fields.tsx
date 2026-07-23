@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Calendar, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fromISODate, toISODate, sameDay, startOfToday, weekdayOffset, formatDay } from "@/lib/dates";
+import { useRovingCalendar } from "@/lib/calendar-keys";
 
 /**
  * Brand-themed date and time fields.
@@ -67,7 +68,7 @@ function useDismiss(open: boolean, close: () => void) {
 }
 
 const TRIGGER =
-  "flex h-11 w-full items-center justify-between gap-1.5 rounded-full border border-border bg-card pl-4 pr-3 text-sm font-semibold text-teal-deep shadow-sm outline-none transition-colors hover:border-primary/40 hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30";
+  "flex h-11 w-full items-center justify-between gap-1.5 rounded-full border border-control bg-card pl-4 pr-3 text-sm font-semibold text-teal-deep shadow-sm outline-none transition-colors hover:border-primary hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30";
 
 // Both pickers below are non-modal popovers anchored to their trigger, and are
 // deliberately role-less. They used to claim role="dialog", which tells a screen
@@ -122,6 +123,14 @@ export function DateField({
     });
   }
 
+  // Arrow keys across the month; one tab stop for the whole grid.
+  const roving = useRovingCalendar({
+    open,
+    selectedISO: value || undefined,
+    fallbackISO: min && toISODate(today) < min ? min : toISODate(today),
+    onMonthChange: (d) => setCursor({ y: d.getFullYear(), m: d.getMonth() }),
+  });
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -144,7 +153,7 @@ export function DateField({
               type="button"
               onClick={() => shiftMonth(-1)}
               aria-label="Previous month"
-              className="touch-target rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="touch-target rounded-full border border-control bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -153,7 +162,7 @@ export function DateField({
               type="button"
               onClick={() => shiftMonth(1)}
               aria-label="Next month"
-              className="touch-target rounded-full border border-border bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="touch-target rounded-full border border-control bg-card p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <ChevronRight className="size-4" />
             </button>
@@ -166,7 +175,13 @@ export function DateField({
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7">
+          <div
+            ref={roving.gridRef}
+            onKeyDown={roving.onKeyDown}
+            role="group"
+            aria-label={`${monthLabel} — use the arrow keys to choose a day`}
+            className="grid grid-cols-7"
+          >
             {cells.map((date, i) => {
               if (!date) return <div key={`x${i}`} />;
               const iso = toISODate(date);
@@ -177,10 +192,21 @@ export function DateField({
                 <div key={iso} className="flex items-center justify-center py-0.5">
                   <button
                     type="button"
-                    disabled={disabled}
+                    /* `aria-disabled`, not `disabled` — the same choice the
+                       other calendars in the app already make. A truly disabled
+                       button cannot be focused, so the arrow keys would stop
+                       dead on a day that is merely too early rather than
+                       stepping over it, and a screen-reader user would never be
+                       told the day was there at all. The press is refused
+                       below instead. */
+                    aria-disabled={disabled || undefined}
                     aria-pressed={selected}
-                    aria-label={date.toDateString()}
+                    aria-label={
+                      disabled ? `${date.toDateString()}, not available` : date.toDateString()
+                    }
+                    {...roving.dayProps(iso)}
                     onClick={() => {
+                      if (disabled) return;
                       onChange(iso);
                       close();
                     }}

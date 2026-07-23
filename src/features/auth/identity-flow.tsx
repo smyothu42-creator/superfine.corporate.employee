@@ -349,7 +349,7 @@ export function IdentityFlow({
             <button
               type="button"
               onClick={() => setEmail(demoCorporateEmail)}
-              className="text-2xs text-muted-foreground/70 underline underline-offset-2 hover:text-muted-foreground"
+              className="text-2xs text-muted-foreground underline underline-offset-2 hover:text-muted-foreground"
             >
               Demo: use a corporate email
             </button>
@@ -403,10 +403,16 @@ export function IdentityFlow({
               // `new-password` is what tells a manager to offer to generate and
               // save one rather than to fill the existing one back in.
               autoComplete={signup ? "new-password" : "current-password"}
+              /* Ties the red text below to the field it is about. Without it the
+                 rejection was purely visual — a screen-reader user heard an
+                 ordinary password box and a disabled submit button, with no
+                 stated reason anywhere. */
+              aria-invalid={(signup && tooShort) || undefined}
+              aria-describedby={signup && tooShort ? "id-password-error" : undefined}
             />
           </div>
           {signup && tooShort ? (
-            <p className="mt-1.5 text-2xs font-medium text-danger">
+            <p id="id-password-error" role="alert" className="mt-1.5 text-2xs font-medium text-danger">
               At least {MIN_PASSWORD} characters.
             </p>
           ) : null}
@@ -427,10 +433,13 @@ export function IdentityFlow({
                 className="pl-10"
                 autoComplete="new-password"
                 aria-invalid={mismatch || undefined}
+                aria-describedby={mismatch ? "id-confirm-error" : undefined}
               />
             </div>
             {mismatch ? (
-              <p className="mt-1.5 text-2xs font-medium text-danger">Both passwords must match.</p>
+              <p id="id-confirm-error" role="alert" className="mt-1.5 text-2xs font-medium text-danger">
+                Both passwords must match.
+              </p>
             ) : null}
           </Field>
         ) : null}
@@ -546,7 +555,7 @@ function ProviderButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-center gap-2.5 rounded-full border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="flex w-full items-center justify-center gap-2.5 rounded-full border border-control bg-card px-5 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       {icon}
       {children}

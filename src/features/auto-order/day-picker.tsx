@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useRoving } from "@/lib/roving";
 import { selectableAutoDays, weekdayLabel } from "./shared";
 
 /**
@@ -43,8 +44,22 @@ export function AutoDayPicker({
   const sizing =
     size === "lg" ? "min-w-16 px-3 py-2.5 text-sm" : "min-w-14 px-2.5 py-2 text-[13px]";
 
+  // A week is one control, so it takes one Tab press and the arrows walk it.
+  // `readOnly` renders spans rather than buttons, so there is nothing for this
+  // to find and the summary stays out of the tab order entirely.
+  const roving = useRoving();
+
   return (
-    <div role="group" aria-label="Days to auto-order" className="flex flex-wrap gap-2">
+    <div
+      // `toolbar` rather than `group`, now that the arrow keys it implies are
+      // actually answered. A `group` promises nothing, which is why this row of
+      // seven toggles used to cost seven Tab presses on the way to the button
+      // underneath it.
+      role={readOnly ? "group" : "toolbar"}
+      aria-label="Days to auto-order"
+      className="flex flex-wrap gap-2"
+      {...roving.props}
+    >
       {selectableAutoDays.map((day) => {
         const active = days.includes(day);
 
@@ -60,7 +75,7 @@ export function AutoDayPicker({
                 sizing,
                 active
                   ? "bg-teal-wash text-teal-deep"
-                  : "text-muted-foreground/50",
+                  : "text-muted-foreground",
               )}
             >
               {weekdayLabel(day)}
@@ -82,7 +97,7 @@ export function AutoDayPicker({
               sizing,
               active
                 ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card text-muted-foreground hover:bg-muted",
+                : "border-control bg-card text-muted-foreground hover:bg-muted",
             )}
           >
             {weekdayLabel(day)}

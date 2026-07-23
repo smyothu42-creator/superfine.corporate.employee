@@ -193,7 +193,7 @@ export function FamilyStyleModal({
                 aria-label="Decrease quantity"
                 disabled={guests <= minGuests}
                 onClick={() => changeGuests(guests - 1)}
-                className="flex size-11 items-center justify-center rounded-full sm:size-9 border border-border bg-card hover:bg-muted disabled:opacity-30"
+                className="flex size-11 items-center justify-center rounded-full sm:size-9 border border-control bg-card hover:bg-muted disabled:opacity-30"
               >
                 <Minus className="size-4" />
               </button>
@@ -388,7 +388,7 @@ export function FamilyStyleModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted"
           >
             <X className="size-4" />
           </button>
@@ -475,7 +475,7 @@ function ServingGroupPicker({
                 "rounded-xl border p-3 transition-colors",
                 qty > 0
                   ? "border-primary bg-teal-wash"
-                  : "border-border bg-card hover:bg-muted/50",
+                  : "border-control bg-card hover:bg-muted/50",
               )}
             >
               <div className="flex items-center justify-between gap-3">
@@ -496,7 +496,7 @@ function ServingGroupPicker({
                     aria-label={`Fewer ${option.name}`}
                     disabled={qty === 0}
                     onClick={() => onSetQty(option.id, qty - 1)}
-                    className="flex size-11 items-center justify-center rounded-full sm:size-8 border border-border bg-card hover:bg-muted disabled:opacity-30"
+                    className="flex size-11 items-center justify-center rounded-full sm:size-8 border border-control bg-card hover:bg-muted disabled:opacity-30"
                   >
                     <Minus className="size-3.5" />
                   </button>
@@ -510,7 +510,11 @@ function ServingGroupPicker({
                     onChange={(e) =>
                       onSetQty(option.id, Number(e.target.value) || 0)
                     }
-                    className="w-12 rounded-lg border border-border bg-card py-1 text-center text-sm font-semibold nums outline-none focus:border-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    // Same edge and same focus effect as every other field:
+                    // `focus:` fired on a mouse click too, and the border moved
+                    // without the ring, so this one box announced focus more
+                    // quietly than the rest of the form around it.
+                    className="w-12 rounded-lg border border-control bg-card py-1 text-center text-sm font-semibold nums transition-colors focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   />
                   <button
                     type="button"

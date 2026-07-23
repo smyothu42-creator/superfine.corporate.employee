@@ -215,9 +215,10 @@ export function OrderDetailView({ order: initialOrder }: { order: Order }) {
                 {d.items.map((it, idx) => (
                   <div key={idx} className="flex items-start justify-between gap-3 text-[13px]">
                     <div className="flex items-start gap-2.5">
+                      {/* Decorative — the name is the text beside it. */}
                       <FoodPhoto
                         src={getItem(it.itemId)?.image}
-                        alt={it.name}
+                        alt=""
                         className="size-10 shrink-0 rounded-full"
                         iconClassName="size-4"
                       />

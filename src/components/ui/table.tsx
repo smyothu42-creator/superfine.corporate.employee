@@ -36,9 +36,15 @@ function TR({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) 
   );
 }
 
-function TH({ className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
+function TH({ className, scope = "col", ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
+      // `scope` is what ties a header to the cells it heads. Without it a screen
+      // reader reads a table cell by cell with no idea which column it is in —
+      // "$12.40" instead of "You pay: $12.40". Defaulted rather than required,
+      // because every header in this app so far is a column header; a row header
+      // just passes `scope="row"`.
+      scope={scope}
       className={cn(
         "whitespace-nowrap px-4 py-3 text-left text-2xs font-bold text-teal-deep",
         className,

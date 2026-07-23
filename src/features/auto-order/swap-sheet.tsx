@@ -7,6 +7,7 @@ import { getItem } from "@/data/menu";
 import { program } from "@/data/program";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useDialog } from "@/lib/use-dialog";
+import { useRoving } from "@/lib/roving";
 import { mealPool, hasAllergen, shortDate } from "./shared";
 
 interface SwapSheetProps {
@@ -47,6 +48,17 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
   // Items with the employee's saved allergens are never shown (not greyed).
   const list = (activeTab === "favorites" ? favItems : mealPool).filter((item) => item && !hasAllergen(item));
 
+  // Favorites / Full menu is one control, so Left and Right cross it. Selection
+  // follows focus: both lists are already computed above, so there is nothing
+  // to be saved by making the user press Enter as well.
+  const tabRoving = useRoving({
+    orientation: "horizontal",
+    onMove: (el) => {
+      const id = el.getAttribute("data-tab-id");
+      if (id) setTab(id as "favorites" | "menu");
+    },
+  });
+
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
       <button
@@ -81,7 +93,7 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-full border border-border bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
+              className="rounded-full border border-control bg-card touch-target p-1.5 text-muted-foreground hover:bg-muted"
             >
               <X className="size-4" />
             </button>
@@ -106,11 +118,19 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
               </p>
             </div>
           ) : (
-            <div className="mt-3 inline-flex gap-1 rounded-full border border-border bg-card p-1">
+            <div
+              className="mt-3 inline-flex gap-1 rounded-full border border-border bg-card p-1"
+              role="toolbar"
+              aria-label="Which meals to show"
+              {...tabRoving.props}
+            >
               {(["favorites", "menu"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
+                  data-tab-id={t}
+                  // The fill was carrying which list is showing, and nothing else.
+                  aria-pressed={tab === t}
                   onClick={() => setTab(t)}
                   className={cn(
                     "rounded-full px-4 py-1.5 text-[13px] font-semibold capitalize transition-colors",
@@ -135,10 +155,12 @@ export function SwapSheet({ dateISO, weekday, currentItemId, favorites, title, s
                 onClick={() => onPick(item.id)}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-2xl border p-2.5 text-left transition-colors",
-                  current ? "border-primary bg-teal-wash" : "border-border bg-card hover:bg-muted",
+                  current ? "border-primary bg-teal-wash" : "border-control bg-card hover:bg-muted",
                 )}
               >
-                <FoodPhoto src={item.image} alt={item.name} className="size-14 rounded-xl" iconClassName="size-5" />
+                {/* Decorative — the button's own text already names the meal,
+                    and a named photo would double it up in the button's label. */}
+                <FoodPhoto src={item.image} alt="" className="size-14 rounded-xl" iconClassName="size-5" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-semibold">{item.name}</span>

@@ -11,6 +11,7 @@ import { useNotificationsStore } from "@/store/use-notifications-store";
 import { Logo } from "@/components/brand/logo";
 import { Avatar } from "@/components/ui/avatar";
 import { useSignOut } from "@/features/auth/use-sign-out";
+import { useRoving } from "@/lib/roving";
 import { cn } from "@/lib/utils";
 
 /** The rail's quiet foot-of-the-list links — not nav, and not styled like it. */
@@ -31,15 +32,39 @@ function Sidebar({ onNavigate }: SidebarProps) {
 
   const handleLogout = useSignOut(onNavigate);
 
+  /**
+   * Up and Down walk the rail; Home and End jump to its ends.
+   *
+   * Purely additive (`rove: false`) — every link keeps the Tab stop it already
+   * had. These are five destinations, not one control with five settings, and
+   * a rail that answered the arrows by *removing* four Tab presses would be
+   * taking something away from the keyboard user it is meant to help. The
+   * chip rows elsewhere collapse to one stop because a chip row genuinely is
+   * one question; a nav is not.
+   */
+  const navRoving = useRoving({ orientation: "vertical", rove: false });
+
   return (
     // Width comes from `--sidebar-w` so a fixed element that has to start where
     // the content starts (checkout's docked CTA) can read the same number.
-    <div className="flex h-full w-[var(--sidebar-w)] flex-col bg-sidebar text-sidebar-foreground">
+    // `data-dark-surface` switches the global focus outline to yellow in here —
+    // the teal ring is all but invisible against this rail.
+    <div
+      data-dark-surface
+      className="flex h-full w-[var(--sidebar-w)] flex-col bg-sidebar text-sidebar-foreground"
+    >
       <div className="flex items-center px-4 py-6">
         <Logo variant="light" size="xl" className="flex-1 items-center" />
       </div>
 
-      <nav className="flex-1 space-y-2.5 overflow-y-auto px-3 py-1">
+      {/* Named. Two navigation regions used to sit on every page — this one is
+          rendered by both the desktop rail and the mobile drawer — with no way
+          for a screen reader to tell them apart when listing landmarks. */}
+      <nav
+        aria-label="Main"
+        className="flex-1 space-y-2.5 overflow-y-auto px-3 py-1"
+        {...navRoving.props}
+      >
         {visibleNav(NAV_ITEMS, account).map((item) => {
           const active = isActive(pathname, item);
           const Icon = item.icon;
@@ -77,7 +102,9 @@ function Sidebar({ onNavigate }: SidebarProps) {
                     active ? "bg-teal-deep text-white" : "bg-coral text-white",
                   )}
                 >
+                  {/* "Notifications 3" left the 3 unexplained. */}
                   {unread}
+                  <span className="sr-only"> unread</span>
                 </span>
               ) : null}
             </Link>

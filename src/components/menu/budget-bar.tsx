@@ -28,7 +28,7 @@ export function BudgetBar({ dayTotal, compact = false, showNote = true, classNam
   return (
     <div
       className={cn(
-        compact ? "" : "rounded-2xl border border-border bg-card p-3.5 shadow-card",
+        compact ? "" : "rounded-2xl border border-control bg-card p-3.5 shadow-card",
         className,
       )}
     >

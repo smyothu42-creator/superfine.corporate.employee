@@ -30,6 +30,8 @@ import { AddOnModal } from "@/components/menu/add-on-modal";
 import { FamilyStyleModal } from "@/components/menu/family-style-modal";
 import { CutoffDayTooltip } from "@/components/cutoff/cutoff-day-tooltip";
 import { DateRangeModal } from "@/features/menu/date-range-modal";
+import { useRovingCalendar } from "@/lib/calendar-keys";
+import { useRoving } from "@/lib/roving";
 import {
   menuFor,
   isItemAvailableOn,
@@ -165,6 +167,12 @@ export function MenuView() {
   // card until the meal names clip ("Marg Flatb"). Keep one full-width column
   // whenever the cart is open; two columns only when it's closed.
   const gridCols = cn("grid grid-cols-1 gap-4", cartOpen ? "" : "lg:grid-cols-2");
+
+  // The category tags: ten chips that used to be ten Tab presses between the
+  // filters and the grid they filter. One stop now, arrows across — and the
+  // hook scrolls the focused chip into view, which this row needs more than
+  // most because it scrolls sideways and hides its scrollbar.
+  const categoryRoving = useRoving({ orientation: "horizontal" });
 
   React.useEffect(() => {
     const today = startOfToday();
@@ -376,6 +384,19 @@ export function MenuView() {
     });
     return items;
   }, [day, menuType, category, availableCategories, query, priceMax, allergens, diets]);
+
+  /**
+   * The result count as it is announced — the grid's, a beat behind.
+   *
+   * Seeded with the count at mount so the region's first content is also its
+   * initial content: a live region that changes on arrival announces the page to
+   * someone who has only just landed on it.
+   */
+  const [settledCount, setSettledCount] = React.useState(dayMenu.length);
+  React.useEffect(() => {
+    const t = setTimeout(() => setSettledCount(dayMenu.length), 350);
+    return () => clearTimeout(t);
+  }, [dayMenu.length]);
 
   function inCartFor(itemId: string) {
     return cart
@@ -590,7 +611,26 @@ export function MenuView() {
             to a sliver. Search takes its own row and the pills scroll under it.
             From `sm` up, `sm:contents` dissolves the wrapper and it's the
             one-line bar with dividers the design intends. */}
-        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-border bg-card p-1.5 shadow-sm sm:flex-row sm:items-center sm:gap-1 sm:rounded-full">
+        {/* `border-border-strong` (#D9D1B7, 1.53:1) is a deliberate exception,
+            chosen on looks. This wrapper is a full-width pill, so its edge is a
+            long unbroken line rather than a small button outline, and at control
+            strength (3.65:1) it read heavier than anything near it — while the
+            plain decorative tint vanished over that much length. This is the
+            step between them.
+
+            The cost is real and is recorded, not hidden: a control's edge owes a
+            low-vision user 3:1, and this one no longer pays it — see
+            ACCESSIBILITY-AUDIT.md #11. What carries the box instead is its own
+            white fill against the cream page, the search glyph, the placeholder,
+            and the focus ring the input keeps. If this ever needs to be put back
+            without losing the look, a stronger *inner* edge on the `input` alone
+            is the move — the shape it outlines would be smaller.
+
+            No `focus-within` here on purpose: the bar holds the filter pills as
+            well as the search box, so lighting the whole bar when a *pill* has
+            focus would put two indicators on screen and point at the wrong one.
+            The search input keeps its own ring. */}
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-border-strong bg-card p-1.5 shadow-sm sm:flex-row sm:items-center sm:gap-1 sm:rounded-full">
           <div className="relative flex min-w-0 flex-1 items-center">
             <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
             <input
@@ -599,7 +639,7 @@ export function MenuView() {
               placeholder="Search the menu…"
               aria-label="Search the menu"
               // text-base on phones: iOS zooms the page in below 16px.
-              className="h-10 w-full rounded-full bg-transparent pl-9 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground/70 sm:h-9 sm:text-sm"
+              className="h-10 w-full rounded-full bg-transparent pl-9 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground sm:h-9 sm:text-sm"
             />
           </div>
           {/* Wrapping, not `overflow-x-auto`: a scroll container clips the
@@ -696,7 +736,12 @@ export function MenuView() {
 
       {/* Category tags — branded SFK sections, horizontally scrollable. */}
       {availableCategories.length ? (
-        <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          role="toolbar"
+          aria-label="Menu categories"
+          className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          {...categoryRoving.props}
+        >
           <CategoryChip active={!category} onClick={() => setCategory("")}>
             All
           </CategoryChip>
@@ -712,6 +757,26 @@ export function MenuView() {
 
       {/* Promo push — sits under the category tags, above the grid. */}
       <PromoBanner />
+
+      {/**
+       * How many meals the filters left, said out loud.
+       *
+       * Searching or filtering rewrites the grid silently. Someone who cannot
+       * see it types "salad", hears nothing at all, and has no way to know
+       * whether the menu now holds twelve meals or none — the empty-state card
+       * below is only ever read if they happen to go looking for it. Politely
+       * announced, so it waits its turn rather than cutting across the typing.
+       *
+       * Settled, not live: the count follows the grid a beat behind, so typing
+       * "salad" announces one number rather than queueing five as each letter
+       * lands. Polite regions never interrupt, so an undebounced run doesn't
+       * garble — it just spends half a minute reading counts nobody asked for.
+       */}
+      <p aria-live="polite" aria-atomic="true" className="sr-only">
+        {settledCount === 0
+          ? "No meals match your filters for this day."
+          : `${settledCount} ${settledCount === 1 ? "meal" : "meals"} on the menu.`}
+      </p>
 
       {/* Menu grid */}
       {dayMenu.length ? (
@@ -863,6 +928,14 @@ function DayStrip({
     setCanRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
   }, []);
 
+  /** Open the day's summary card under a pill — shared by hover and by focus. */
+  function showSummary(el: HTMLElement, cell: DayCell) {
+    // Only days that have something to summarise, either way in.
+    if (!cell.has) return;
+    const r = el.getBoundingClientRect();
+    setHover({ cell, x: r.left + r.width / 2, y: r.bottom + 8 });
+  }
+
   React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -933,19 +1006,28 @@ function DayStrip({
               key={cell.iso}
               type="button"
               onClick={() => onSelect(cell.iso)}
-              onMouseEnter={(e) => {
-                if (!cell.has) return;
-                const r = e.currentTarget.getBoundingClientRect();
-                setHover({ cell, x: r.left + r.width / 2, y: r.bottom + 8 });
-              }}
+              onMouseEnter={(e) => showSummary(e.currentTarget, cell)}
               onMouseLeave={() => setHover(null)}
+              // The keyboard's half of the hover. What this day already costs
+              // was on screen for a pointer and for a finger (the pill prints
+              // the total on narrow screens) and nowhere at all for a keyboard —
+              // tabbing along the strip showed nothing. Same card, same trigger
+              // rules, opened by focus as well.
+              onFocus={(e) => showSummary(e.currentTarget, cell)}
+              onBlur={() => setHover(null)}
               className={cn(
                 "relative flex min-w-[60px] flex-col items-center rounded-xl border px-3 py-1.5 transition-colors",
                 active
                   ? "border-primary bg-primary text-primary-foreground"
                   : cell.has
-                    ? "border-success-border bg-success-bg text-foreground"
-                    : "border-border bg-card text-foreground hover:bg-muted",
+                    // `success`, not `success-border`: the tinted `-border`
+                    // tones are for the edge of a notice card, where nothing is
+                    // being aimed at. Here the edge is a *day button's* edge,
+                    // and it also carries the state "this day already has
+                    // meals" — both of which have to be visible, and 1.43:1 is
+                    // not. The solid tone reads at 4.5:1 on its own fill.
+                    ? "border-success bg-success-bg text-foreground"
+                    : "border-control bg-card text-foreground hover:bg-muted",
               )}
             >
               <span className="text-2xs font-semibold">{cell.weekday}</span>
@@ -993,7 +1075,7 @@ function DayStrip({
             aria-label="Scroll days left"
             disabled={!canLeft}
             onClick={() => scrollByStep(-1)}
-            className="touch-target absolute left-0 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
+            className="touch-target absolute left-0 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-control bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
           >
             <ChevronLeft className="size-5" />
           </button>
@@ -1002,7 +1084,7 @@ function DayStrip({
             aria-label="Scroll days right"
             disabled={!canRight}
             onClick={() => scrollByStep(1)}
-            className="touch-target absolute right-0 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
+            className="touch-target absolute right-0 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-control bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
           >
             <ChevronRight className="size-5" />
           </button>
@@ -1197,7 +1279,7 @@ function PromoBanner() {
             aria-label="Previous promotions"
             disabled={!canLeft}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
-            className="touch-target absolute -left-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
+            className="touch-target absolute -left-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-control bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
           >
             <ChevronLeft className="size-5" />
           </button>
@@ -1206,13 +1288,16 @@ function PromoBanner() {
             aria-label="Next promotions"
             disabled={!canRight}
             onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-            className="touch-target absolute -right-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
+            className="touch-target absolute -right-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-control bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
           >
             <ChevronRight className="size-5" />
           </button>
 
-          {/* Page dots. */}
-          <div className="mt-3 flex items-center justify-center gap-1.5">
+          {/* Page dots. The *dot* stays 6px because that's the design; the
+              button around it is 24px square, which is the size a finger or a
+              shaky hand actually has to hit. A 6px tap target next to another
+              6px tap target was the app's only measured target-size failure. */}
+          <div className="mt-1 flex items-center justify-center">
             {Array.from({ length: pageCount }).map((_, i) => (
               <button
                 key={i}
@@ -1220,11 +1305,16 @@ function PromoBanner() {
                 aria-label={`Go to promotions page ${i + 1}`}
                 aria-current={i === page}
                 onClick={() => setPage(i)}
-                className={cn(
-                  "h-1.5 rounded-full transition-all",
-                  i === page ? "w-4 bg-teal-deep" : "w-1.5 bg-teal-deep/30 hover:bg-teal-deep/50",
-                )}
-              />
+                className="flex size-6 items-center justify-center"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-1.5 rounded-full transition-all",
+                    i === page ? "w-4 bg-teal-deep" : "w-1.5 bg-teal-deep/30 hover:bg-teal-deep/50",
+                  )}
+                />
+              </button>
             ))}
           </div>
         </>
@@ -1247,11 +1337,16 @@ function CategoryChip({
     <button
       type="button"
       onClick={onClick}
+      // Which tag is showing was carried by the fill and nothing else, so the
+      // filter that is actually applied was invisible to a screen reader — and
+      // the roving Tab stop had no way to tell which chip to land on. Both
+      // answered by the one attribute; neither costs a pixel.
+      aria-pressed={active}
       className={cn(
         "shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
         active
           ? "border-primary bg-primary text-primary-foreground shadow-card"
-          : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-muted",
+          : "border-control bg-card text-muted-foreground hover:border-primary hover:bg-muted",
       )}
     >
       {children}
@@ -1390,6 +1485,24 @@ function UnifiedDatePicker({
   });
   const ref = React.useRef<HTMLDivElement>(null);
 
+  /**
+   * The Single day / Multi Days toggle answers the arrows it advertises.
+   *
+   * This strip is marked up as a real tab strip — `role="tablist"` around
+   * `role="tab"` — which is a promise about the arrow keys, and it was the one
+   * hand-rolled strip the tab-strip fix never reached, because it doesn't use
+   * the shared `Tabs` component. Selection follows focus, matching `Tabs`:
+   * both panels are calendars that are cheap to draw, so there is nothing to
+   * be gained by making the user press Enter as well.
+   */
+  const tabRoving = useRoving({
+    orientation: "horizontal",
+    onMove: (el) => {
+      const id = el.getAttribute("data-tab-id");
+      if (id) setTab(id as Mode);
+    },
+  });
+
   const singleByIso = React.useMemo(() => {
     const m = new Map<string, DateOption>();
     for (const d of singleDays) m.set(d.iso, d);
@@ -1468,6 +1581,17 @@ function UnifiedDatePicker({
     });
   }
 
+  // Arrow keys across the month; the whole grid is one tab stop, in both modes.
+  // This one carries the most weight of any calendar in the app: its closed days
+  // are deliberately focusable (so their reason can be read), which without a
+  // roving stop would make the *whole month* a run of tab stops.
+  const roving = useRovingCalendar({
+    open,
+    selectedISO: tab === "single" ? selectedDate : dStart || undefined,
+    fallbackISO: todayISO,
+    onMonthChange: (d) => setCursor({ y: d.getFullYear(), m: d.getMonth() }),
+  });
+
   return (
     <div ref={ref} className="relative shrink-0">
       <button
@@ -1535,7 +1659,11 @@ function UnifiedDatePicker({
           )}
         >
           {/* Single day / Date range toggle — the only mode control now. */}
-          <div className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-border bg-muted/40 p-1" role="tablist">
+          <div
+            className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-border bg-muted/40 p-1"
+            role="tablist"
+            {...tabRoving.props}
+          >
             {[
               { id: "single", label: "Single day" },
               { id: "multi", label: "Multi Days" },
@@ -1546,6 +1674,8 @@ function UnifiedDatePicker({
                   key={t.id}
                   type="button"
                   role="tab"
+                  // How the arrow keys find which mode they landed on.
+                  data-tab-id={t.id}
                   aria-selected={active}
                   onClick={() => setTab(t.id as Mode)}
                   className={cn(
@@ -1581,15 +1711,25 @@ function UnifiedDatePicker({
             </button>
           </div>
 
+          {/* Weekends are de-emphasised by weight, not by fading the ink — a
+              colour faded toward its background is what the contrast rule
+              measures, and these labels are the only thing naming the columns. */}
           <div className="grid grid-cols-7 text-center text-2xs font-semibold text-muted-foreground">
             {CAL_COLS.map((d, i) => (
-              <div key={d} className={cn("pb-1", i >= 5 && "text-muted-foreground/40")}>
+              <div key={d} className={cn("pb-1", i >= 5 && "font-normal")}>
                 {d}
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7" onMouseLeave={() => setHovered("")}>
+          <div
+            ref={roving.gridRef}
+            onKeyDown={roving.onKeyDown}
+            role="group"
+            aria-label={`${monthLabel} — use the arrow keys to choose a day`}
+            className="grid grid-cols-7"
+            onMouseLeave={() => setHovered("")}
+          >
             {cells.map((date, i) => {
               if (!date) return <div key={`x${i}`} />;
               const iso = toISODate(date);
@@ -1618,28 +1758,47 @@ function UnifiedDatePicker({
                     )}
                   >
                     {opt?.disabled && opt.reason ? (
-                      <CutoffDayTooltip reason={opt.reason} cutoff={cutoffClosed} open={revealed === iso} />
+                      <CutoffDayTooltip
+                        id={`why-${iso}`}
+                        reason={opt.reason}
+                        cutoff={cutoffClosed}
+                        open={revealed === iso}
+                      />
                     ) : null}
                     <button
                       type="button"
-                      disabled={!selectable}
-                      aria-pressed={active}
+                      /* `aria-disabled`, not `disabled`. A truly disabled button
+                         cannot be focused, so a closed day — and the explanation
+                         attached to it — was invisible to anyone navigating by
+                         keyboard. This still refuses the press (below) while
+                         staying reachable, which is what lets the reason and its
+                         "call the kitchen" links be read at all. */
+                      aria-disabled={!selectable || undefined}
+                      aria-pressed={selectable ? active : undefined}
+                      aria-describedby={opt?.disabled && opt.reason ? `why-${iso}` : undefined}
                       aria-label={
                         opt?.disabled
                           ? `${date.getDate()}, ${opt.reason}`
                           : undefined
                       }
+                      {...roving.dayProps(iso)}
+                      onFocus={() => {
+                        if (opt?.disabled && opt.reason) setRevealed(iso);
+                      }}
+                      onBlur={() => setRevealed((r) => (r === iso ? "" : r))}
                       onClick={() => {
-                        if (!selectable) return;
+                        if (!selectable) {
+                          // Closed: the press reveals why rather than doing nothing.
+                          if (opt?.reason) setRevealed((r) => (r === iso ? "" : iso));
+                          return;
+                        }
                         onSelectSingle(iso);
                         onModeChange("single");
                         setOpen(false);
                       }}
                       className={cn(
                         "flex size-9 items-center justify-center rounded-full text-sm transition-colors",
-                        // Let taps fall through to the wrapper so the reason +
-                        // contact links can pin open on touch.
-                        !selectable && "pointer-events-none",
+                        !selectable && "cursor-not-allowed",
                         active
                           ? "bg-primary font-semibold text-primary-foreground"
                           : selectable
@@ -1677,7 +1836,12 @@ function UnifiedDatePicker({
                   )}
                 >
                   {disabled && info.reason ? (
-                    <CutoffDayTooltip reason={info.reason} cutoff={cutoffClosed} open={revealed === iso} />
+                    <CutoffDayTooltip
+                      id={`why-r-${iso}`}
+                      reason={info.reason}
+                      cutoff={cutoffClosed}
+                      open={revealed === iso}
+                    />
                   ) : null}
                   {/* Continuous band — skipped on weekends so a range visibly hops them. */}
                   {inMiddle && !disabled ? <span className="absolute inset-y-0.5 inset-x-0 bg-teal-wash" /> : null}
@@ -1685,16 +1849,38 @@ function UnifiedDatePicker({
                   {isEnd ? <span className="absolute inset-y-0.5 left-0 right-1/2 bg-teal-wash" /> : null}
                   <button
                     type="button"
-                    disabled={disabled}
-                    onClick={() => pickRange(iso)}
+                    // Same reasoning as the single-day cell above: reachable so
+                    // its reason can be read, refusing so it can't be picked.
+                    aria-disabled={disabled || undefined}
+                    aria-describedby={disabled && info.reason ? `why-r-${iso}` : undefined}
+                    {...roving.dayProps(iso)}
+                    onFocus={() => {
+                      if (disabled && info.reason) setRevealed(iso);
+                      // The keyboard's half of the range preview below. With a
+                      // start picked and no end yet, the shading that shows how
+                      // far the range would reach followed the pointer only —
+                      // so arrowing across the grid picked a second date with no
+                      // sight of what was being chosen.
+                      if (!disabled && dStart && !dEnd) setHovered(iso);
+                    }}
+                    onBlur={() => {
+                      setRevealed((r) => (r === iso ? "" : r));
+                      setHovered((h) => (h === iso ? "" : h));
+                    }}
+                    onClick={() => {
+                      if (disabled) {
+                        if (info.reason) setRevealed((r) => (r === iso ? "" : iso));
+                        return;
+                      }
+                      pickRange(iso);
+                    }}
                     onMouseEnter={() => !disabled && dStart && !dEnd && setHovered(iso)}
                     aria-label={
                       disabled ? `${date.toDateString()}, ${info.reason}` : date.toDateString()
                     }
                     className={cn(
                       "relative z-10 flex size-9 items-center justify-center rounded-full text-sm transition-colors",
-                      // Taps fall through to the wrapper for the pinned bubble.
-                      disabled && "pointer-events-none",
+                      disabled && "cursor-not-allowed",
                       isEndpoint
                         ? "bg-primary font-semibold text-primary-foreground"
                         : cutoffClosed

@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, CalendarRange, Rows3, CalendarDays } from "l
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
 import { addDays, fromISODate, toISODate, sameDay, weekdayOffset, startOfWeek } from "@/lib/dates";
+import { useRovingCalendar } from "@/lib/calendar-keys";
 import { program } from "@/data/program";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import {
@@ -71,6 +72,19 @@ export function CalendarStep({
     });
   }
 
+  // Arrow keys across the grid; the whole thing is one tab stop. In week view
+  // only seven cells are on screen, so a press that would leave them lands on a
+  // day that isn't rendered — the hook holds its ground rather than dropping the
+  // grid's tab stop, and the month cursor is left alone (week view ignores it).
+  const roving = useRovingCalendar({
+    open: true,
+    selectedISO: selected[0],
+    fallbackISO: todayISO,
+    onMonthChange: (d) => {
+      if (view === "month") setCursor({ y: d.getFullYear(), m: d.getMonth() });
+    },
+  });
+
   const corporate = isSubsidized(useSessionStore((s) => s.account));
 
   function handleSelectWeek() {
@@ -100,7 +114,7 @@ export function CalendarStep({
             onClick={() => shiftMonth(-1)}
             disabled={view === "week"}
             aria-label="Previous month"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted disabled:opacity-40"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted disabled:opacity-40"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -110,7 +124,7 @@ export function CalendarStep({
             onClick={() => shiftMonth(1)}
             disabled={view === "week"}
             aria-label="Next month"
-            className="rounded-full border border-border bg-card touch-target p-1.5 text-foreground hover:bg-muted disabled:opacity-40"
+            className="rounded-full border border-control bg-card touch-target p-1.5 text-foreground hover:bg-muted disabled:opacity-40"
           >
             <ChevronRight className="size-4" />
           </button>
@@ -118,7 +132,7 @@ export function CalendarStep({
         <button
           type="button"
           onClick={() => setView((v) => (v === "month" ? "week" : "month"))}
-          className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-2xs font-semibold text-foreground hover:bg-muted"
+          className="flex items-center gap-1.5 rounded-full border border-control bg-card px-3 py-1.5 text-2xs font-semibold text-foreground hover:bg-muted"
         >
           {view === "month" ? <Rows3 className="size-3.5" /> : <CalendarDays className="size-3.5" />}
           {view === "month" ? "Week view" : "Month view"}
@@ -132,7 +146,17 @@ export function CalendarStep({
             <div key={d}>{d}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-1">
+        <div
+          ref={roving.gridRef}
+          onKeyDown={roving.onKeyDown}
+          role="group"
+          aria-label={
+            view === "month"
+              ? `${monthLabel} — use the arrow keys to choose a day`
+              : "This week — use the arrow keys to choose a day"
+          }
+          className="grid grid-cols-7 gap-1"
+        >
           {cells.map((date, i) => {
             if (!date) return <div key={`x${i}`} />;
             const iso = toISODate(date);
@@ -151,17 +175,30 @@ export function CalendarStep({
               <button
                 key={iso}
                 type="button"
-                disabled={disabled}
-                onClick={() => onToggle(iso)}
-                aria-pressed={isSel}
-                aria-label={date.toDateString()}
+                /* `aria-disabled`, not `disabled` — the same choice every other
+                   calendar here makes. A truly disabled button cannot be
+                   focused, so the arrow keys would stop dead on a weekend or a
+                   holiday instead of stepping over it. The press is refused
+                   below instead. */
+                aria-disabled={disabled || undefined}
+                onClick={() => {
+                  if (disabled) return;
+                  onToggle(iso);
+                }}
+                aria-pressed={disabled ? undefined : isSel}
+                aria-label={
+                  disabled
+                    ? `${date.toDateString()}, ${holiday ? "holiday" : isPast ? "in the past" : "not available"}`
+                    : date.toDateString()
+                }
+                {...roving.dayProps(iso)}
                 className={cn(
                   "relative flex aspect-square min-h-11 flex-col items-center justify-center rounded-xl border text-sm transition-colors",
                   isSel
                     ? "border-primary bg-primary font-bold text-primary-foreground"
                     : disabled
-                      ? "border-transparent bg-transparent text-muted-foreground/40"
-                      : "border-border bg-card text-foreground hover:bg-muted",
+                      ? "cursor-not-allowed border-transparent bg-transparent text-muted-foreground/40"
+                      : "border-control bg-card text-foreground hover:bg-muted",
                   isToday && !isSel && "ring-2 ring-primary ring-offset-1 ring-offset-card",
                 )}
               >
@@ -169,7 +206,7 @@ export function CalendarStep({
                   {date.getDate()}
                 </span>
                 {holiday ? (
-                  <span className="absolute bottom-1 text-[7px] font-semibold leading-none text-muted-foreground/70">
+                  <span className="absolute bottom-1 text-[7px] font-semibold leading-none text-muted-foreground">
                     Holiday
                   </span>
                 ) : cutoff ? (

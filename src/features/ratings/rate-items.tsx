@@ -15,6 +15,7 @@ import {
 } from "@/store/use-ratings-store";
 import { fromISODate, formatDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+import { useRoving } from "@/lib/roving";
 import type { Order, OrderItem } from "@/data/types";
 
 /** One rateable line, flattened out of the order's day → items nesting. */
@@ -199,11 +200,16 @@ function LineCard({
   const stars = rated?.stars ?? draft?.stars ?? 0;
   const open = !settled && stars > 0;
 
+  // The "what was wrong?" chips, one Tab stop per card rather than one per tag.
+  // Six meals on a page already cost six star groups; this stops each of them
+  // costing another eight presses the moment a rating opens them up.
+  const tagRoving = useRoving();
+
   return (
     <div
       className={cn(
         "rounded-2xl border p-3 transition-colors",
-        settled ? "border-border bg-muted/40" : "border-border bg-card",
+        settled ? "border-border bg-muted/40" : "border-control bg-card",
       )}
     >
       <div className="flex items-start gap-3">
@@ -239,7 +245,12 @@ function LineCard({
           not a question. */}
       {open ? (
         <div className="mt-3 space-y-2 border-t border-border pt-3">
-          <div className="flex flex-wrap gap-1.5">
+          <div
+            className="flex flex-wrap gap-1.5"
+            role="toolbar"
+            aria-label={`What stood out about ${line.name}?`}
+            {...tagRoving.props}
+          >
             {RATING_TAGS.map((tag) => {
               const on = draft?.tags.includes(tag);
               return (
@@ -252,7 +263,7 @@ function LineCard({
                     "rounded-full border px-2.5 py-1 text-2xs font-semibold transition-colors",
                     on
                       ? "border-primary bg-teal-wash text-teal-deep"
-                      : "border-border bg-card text-muted-foreground hover:bg-muted",
+                      : "border-control bg-card text-muted-foreground hover:bg-muted",
                   )}
                 >
                   {tag}
@@ -260,9 +271,14 @@ function LineCard({
               );
             })}
           </div>
+          {/* Named, not just prompted. The placeholder was the only thing
+              saying what this box was for — and a placeholder disappears the
+              moment you type in it, so anyone who tabbed here or came back to
+              re-read it had an unlabelled box. */}
           <Textarea
             value={draft?.note ?? ""}
             onChange={(e) => onNote(e.target.value)}
+            aria-label={`What else should we know about ${line.name}? (optional)`}
             placeholder="Anything else? (optional)"
             className="min-h-[60px] text-[13px]"
             maxLength={200}
@@ -285,12 +301,41 @@ function Stars({
 }) {
   const [hover, setHover] = React.useState(0);
   const shown = hover || value;
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  /**
+   * Arrow keys move the score; Tab moves past the whole control.
+   *
+   * A radio group is one control with five settings, not five controls. Calling
+   * it `radiogroup` and then leaving all five stars as separate tab stops meant
+   * a screen reader announced "radio, 1 of 5" and then ignored the arrow keys it
+   * had just told the user to press — and someone rating a six-meal order paid
+   * thirty Tab presses to get down the page.
+   */
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (readOnly) return;
+    const delta =
+      e.key === "ArrowRight" || e.key === "ArrowUp"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowDown"
+          ? -1
+          : 0;
+    const jump = e.key === "Home" ? 1 : e.key === "End" ? 5 : null;
+    if (!delta && jump === null) return;
+    e.preventDefault();
+    // From "nothing chosen", the first arrow press lands on one star.
+    const next = jump ?? Math.min(5, Math.max(1, (value || 0) + delta));
+    onChange(next);
+    ref.current?.querySelector<HTMLElement>(`[data-star="${next}"]`)?.focus();
+  }
 
   return (
     <div
+      ref={ref}
       role={readOnly ? undefined : "radiogroup"}
       aria-label={readOnly ? undefined : "Rating"}
       className="flex items-center gap-0.5"
+      onKeyDown={onKeyDown}
       onMouseLeave={() => setHover(0)}
     >
       {[1, 2, 3, 4, 5].map((n) => (
@@ -298,17 +343,22 @@ function Stars({
           key={n}
           type="button"
           role={readOnly ? undefined : "radio"}
+          data-star={n}
           aria-checked={readOnly ? undefined : value === n}
           aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          // Roving tab stop: the group costs one Tab press, landing on the score
+          // that is currently set — or on the first star when there isn't one.
+          tabIndex={readOnly ? undefined : (value || 1) === n ? 0 : -1}
           disabled={readOnly}
           onClick={() => onChange(n)}
           onMouseEnter={() => setHover(n)}
           className="touch-target -ml-0.5 rounded-full p-1 first:ml-0 disabled:cursor-default"
         >
           <Star
+            aria-hidden
             className={cn(
               "size-6 transition-colors",
-              n <= shown ? "fill-yellow text-yellow" : "fill-transparent text-muted-foreground/50",
+              n <= shown ? "fill-yellow text-yellow" : "fill-transparent text-muted-foreground",
             )}
           />
         </button>

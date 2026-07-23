@@ -12,7 +12,14 @@ import { AuthHandoff } from "@/components/brand/auth-handoff";
  */
 
 export const metadata: Metadata = {
-  title: "My Meals · Superfine Kitchen",
+  /**
+   * A template, so each route can name itself. Every page used to report the
+   * same title — "My Meals · Superfine Kitchen" — which is the first thing a
+   * screen reader says on arrival and the only thing that distinguishes one of
+   * fifteen open tabs or one back-history entry from another. Each route's own
+   * `layout.tsx` fills in the `%s`.
+   */
+  title: { default: "My Meals · Superfine Kitchen", template: "%s · Superfine Kitchen" },
   description:
     "Order your company-subsidized lunches on Superfine Kitchen: browse the menu, order for one day or the week, and track every delivery.",
 };

@@ -37,6 +37,9 @@ export function AllergenCombobox({
   ...props
 }: AllergenComboboxProps) {
   const [open, setOpen] = React.useState(false);
+  // Namespaces the listbox and its options so two comboboxes on one page can
+  // never point `aria-controls`/`aria-activedescendant` at each other's list.
+  const listId = React.useId();
   const [query, setQuery] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(0);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -170,7 +173,7 @@ export function AllergenCombobox({
         ref={triggerRef}
         className={cn(
           "flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-xl border bg-card px-3 py-1.5 text-sm transition-colors",
-          open ? "border-primary ring-2 ring-ring/30" : "border-input hover:border-primary/40",
+          open ? "border-primary ring-2 ring-ring/30" : "border-input hover:border-primary",
         )}
         onClick={() => {
           setOpen(true);
@@ -204,8 +207,23 @@ export function AllergenCombobox({
           type="text"
           value={query}
           aria-label={props["aria-label"] ?? "Search allergens"}
+          /* `aria-expanded` on a plain text field is invalid — the attribute is
+             only allowed on things that can expand, and without `role="combobox"`
+             assistive tech discards it, so the list's open/closed state was never
+             announced at all. Declaring the role makes the whole set legal, and
+             `aria-activedescendant` lets the arrow keys move a highlight the
+             screen reader can actually follow while focus stays in the field. */
+          role="combobox"
           aria-haspopup="listbox"
           aria-expanded={open}
+          // The list is only in the page while it is open.
+          aria-controls={open ? listId : undefined}
+          aria-autocomplete="list"
+          /* Gated on `rows`, not `filtered`: when the query matches nothing but a
+             custom value can still be added, that "Add …" row is the only row
+             there is — highlighting it while claiming no active descendant left
+             the move visible but unannounced. */
+          aria-activedescendant={open && rows.length ? `${listId}-opt-${activeIndex}` : undefined}
           placeholder={value.length && !separateChips ? "Add more…" : placeholder}
           onFocus={() => setOpen(true)}
           onChange={(e) => {
@@ -230,26 +248,40 @@ export function AllergenCombobox({
               toggle(value[value.length - 1]);
             }
           }}
-          className="h-7 min-w-[100px] flex-1 bg-transparent text-foreground placeholder:text-muted-foreground/70 outline-none"
+          // Plain `outline-none` loses on specificity to the global
+          // `input:focus-visible` rule, so this borderless field drew a sharp
+          // rectangle inside the wrapper's rounded ring — and `onFocus` opens
+          // the list, so both fired on the same press. The wrapper is the field.
+          className="h-7 min-w-[100px] flex-1 bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:outline-none"
         />
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 cursor-pointer text-primary transition-transform",
-            open && "rotate-180",
-          )}
+        {/* A real button. This was a click handler on a bare chevron graphic —
+            mouse-only, unreachable by keyboard, and 16px against a 24px minimum
+            target. */}
+        <button
+          type="button"
+          aria-label={open ? "Hide allergen suggestions" : "Show allergen suggestions"}
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
           onClick={(e) => {
             e.stopPropagation();
             setOpen((o) => !o);
           }}
-        />
+          className="flex size-6 shrink-0 items-center justify-center rounded-full text-primary hover:bg-muted"
+        >
+          <ChevronDown
+            aria-hidden
+            className={cn("size-4 transition-transform", open && "rotate-180")}
+          />
+        </button>
       </div>
 
       {open && placement
         ? createPortal(
         <div
           ref={listRef}
-          role="listbox"
-          aria-multiselectable
+          // See `use-dialog.ts`: an enclosing dialog leaves Escape alone while
+          // this list is up, so the press shuts the list, not the dialog.
+          data-escape-layer
           style={{
             position: "fixed",
             top: placement.top,
@@ -260,6 +292,9 @@ export function AllergenCombobox({
           }}
           className="z-50 overflow-auto rounded-2xl border border-border bg-card p-1.5 shadow-raised"
         >
+          {/* Only `option` children belong in a listbox — the "no matches" note
+              below is not one of them, so it sits outside. */}
+          <div id={listId} role="listbox" aria-label="Allergen suggestions" aria-multiselectable>
           {filtered.map((o, i) => {
             const active = value.some((v) => v.toLowerCase() === o.toLowerCase());
             const highlighted = i === activeIndex;
@@ -267,8 +302,16 @@ export function AllergenCombobox({
               <button
                 key={o}
                 type="button"
+                id={`${listId}-opt-${i}`}
                 role="option"
                 aria-selected={active}
+                /* Kept out of the tab order. The list is portalled to the end of
+                   the document, so tabbing off the field used to jump the user
+                   to the bottom of the page and back. Arrow keys drive it via
+                   `aria-activedescendant`; `onMouseDown` prevents the click from
+                   stealing focus out of the field mid-selection. */
+                tabIndex={-1}
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => toggle(o)}
                 onMouseMove={() => setActiveIndex(i)}
                 className={cn(
@@ -286,9 +329,17 @@ export function AllergenCombobox({
             );
           })}
 
+          {/* The "create" row is a real choice in the list, so it carries option
+              semantics and an id like any other — without them the highlight
+              landed on it silently and `aria-activedescendant` named nothing. */}
           {canAddCustom ? (
             <button
               type="button"
+              id={`${listId}-opt-${filtered.length}`}
+              role="option"
+              aria-selected={false}
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={addCustom}
               onMouseMove={() => setActiveIndex(filtered.length)}
               className={cn(
@@ -296,10 +347,11 @@ export function AllergenCombobox({
                 activeIndex === filtered.length && "bg-teal-wash",
               )}
             >
-              <Plus className="size-4 shrink-0 text-primary" />
+              <Plus aria-hidden className="size-4 shrink-0 text-primary" />
               Add &ldquo;{query.trim()}&rdquo;
             </button>
           ) : null}
+          </div>
 
           {filtered.length === 0 && !canAddCustom ? (
             <p className="px-3 py-2 text-[13px] text-muted-foreground">No allergens found.</p>

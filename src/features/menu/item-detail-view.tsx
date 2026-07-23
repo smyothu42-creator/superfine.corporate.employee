@@ -101,7 +101,9 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <Card className="overflow-hidden">
-          <FoodPhoto src={item.image} alt={item.name} className="h-56" iconClassName="size-16" />
+          {/* Decorative: the <h2> directly below is the meal's name. Naming the
+              photo as well makes a screen reader say it twice in a row. */}
+          <FoodPhoto src={item.image} alt="" className="h-56" iconClassName="size-16" />
           <CardBody className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
