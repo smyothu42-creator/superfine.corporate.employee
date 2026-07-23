@@ -111,7 +111,6 @@ export function FeedbackForm({
   const [orderNumber, setOrderNumber] = React.useState(initialOrder.trim());
   const [topic, setTopic] = React.useState("");
   const [message, setMessage] = React.useState("");
-  const [typingOrder, setTypingOrder] = React.useState(false);
   const [submitted, setSubmitted] = React.useState<FeedbackEntry | null>(null);
 
   // Deliveries that have happened, newest first. An order still in the future
@@ -195,9 +194,13 @@ export function FeedbackForm({
           </RadioGroup>
         ) : null}
 
-        {/* The typed number: the only route when signed out, and the fallback
-            for an order older than the list. */}
-        {typingOrder || (!recent.length && !picked) ? (
+        {/* The typed number, shown only when there is no list to pick from —
+            signed out, or signed in with no deliveries yet. Someone with a list
+            in front of them picks from it; the "Another order number" escape
+            that used to sit under the list is gone, because an order old enough
+            to have fallen off it is rare enough not to be worth a permanent
+            control under the common case. */}
+        {!recent.length && !picked ? (
           <Input
             id="fb-order"
             value={orderNumber}
@@ -206,18 +209,7 @@ export function FeedbackForm({
             aria-label="Order number"
             autoComplete="off"
           />
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setTypingOrder(true);
-              setOrderNumber("");
-            }}
-            className="text-2xs font-semibold text-primary underline underline-offset-2"
-          >
-            Another order number
-          </button>
-        )}
+        ) : null}
       </section>
 
       {/* 2 — what happened. One tap is a whole report. */}

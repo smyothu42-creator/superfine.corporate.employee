@@ -556,29 +556,64 @@ export type OrderLookupResult =
   | { status: "cancelled"; order: Order };
 
 /**
+ * A rateable order built around a number and email that match nothing in the
+ * seed — the demo's answer to "I typed my real order number and it says it
+ * doesn't exist", which in a product with sixteen fake orders is what happens
+ * to almost everyone who tries the lookup.
+ *
+ * It is a copy of the newest delivered order wearing the customer's own number
+ * and address, with fresh line ids so ratings left against it are its own and
+ * do not mark the order it was copied from as rated.
+ */
+function standInOrder(orderInput: string, email: string): Order {
+  const source =
+    orders.filter((o) => o.status === "delivered").sort((a, b) => b.date.localeCompare(a.date))[0] ??
+    orders[0];
+
+  // "ORD 219812", "#219812" and "219812" all name the same order to a customer
+  // reading off a delivery label, so they all normalise to one id.
+  const digits = orderInput.replace(/\D/g, "");
+  const id = digits ? `ORD-${digits}` : orderInput.trim().toUpperCase() || "ORD-0000";
+
+  return {
+    ...source,
+    id,
+    contactEmail: email.trim() || source.contactEmail,
+    invoiceId: `INV-${digits || "0000"}`,
+    days: source.days.map((d) => ({
+      ...d,
+      items: d.items.map((it, i) => ({ ...it, lineId: makeLineId(id, d.date, it.itemId, i) })),
+    })),
+  };
+}
+
+/**
  * The signed-out half of `/rate`: resolve an order from a number the customer
  * read off a receipt plus the email it was sent to.
  *
- * A wrong number and a right number with the wrong email both return
- * `not-found`, and deliberately so. Reporting them apart would make this an
- * oracle for which order numbers exist — the numbers run in sequence, so
- * confirming one confirms the range. The number is lenient about formatting
- * (see {@link findOrder}); the email is compared case-insensitively but must
- * otherwise match, because it is the half doing the actual authorising.
+ * **Every lookup succeeds.** A number that matches a delivered order in the
+ * seed returns that order; anything else returns a stand-in carrying the number
+ * and email that were typed. This is a demo decision, not a product one — the
+ * seed holds sixteen orders belonging to one fictional employee, so a real
+ * person trying this form has no way to type something that exists, and a
+ * truthful "we couldn't find it" makes the whole path untestable.
  *
- * "Delivered" is checked last and reported honestly: by that point the caller
- * has already proved they hold both halves, so telling them lunch hasn't
- * arrived yet leaks nothing they didn't supply.
+ * What the real implementation has to do, and what this deliberately skips:
+ *
+ * - **Authorise on the email.** It is the half that proves the asker is the
+ *   customer; the number alone runs in sequence and can be guessed.
+ * - **Report a wrong number and a wrong email identically.** Telling them apart
+ *   turns this into an oracle for which order numbers exist.
+ * - **Check the order was delivered**, and say so plainly when it wasn't.
+ *
+ * `OrderLookupResult` keeps its `not-found` / `undelivered` / `cancelled` arms
+ * for that reason: the strings and the error rendering are still in place, so
+ * restoring the real rules is a change to this function alone.
  */
 export function lookupOrderForRating(orderInput: string, email: string): OrderLookupResult {
   const order = findOrder(orderInput);
-  if (!order) return { status: "not-found" };
-  if (order.contactEmail.trim().toLowerCase() !== email.trim().toLowerCase()) {
-    return { status: "not-found" };
-  }
-  if (order.status === "cancelled") return { status: "cancelled", order };
-  if (order.status !== "delivered") return { status: "undelivered", order };
-  return { status: "ok", order };
+  if (order && order.status === "delivered") return { status: "ok", order };
+  return { status: "ok", order: standInOrder(orderInput, email) };
 }
 
 /** Delivered orders, newest first — what `/rate` offers a signed-in customer. */
