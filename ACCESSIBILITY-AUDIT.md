@@ -403,6 +403,12 @@ naming the highlighted row; option ids from `useId`; options out of the tab orde
 into the new listboxes in `theme-select.tsx`, `multi-select-filter.tsx` and
 `allergen-combobox.tsx`
 
+*Since superseded in one place:* the `/rate` page's "My order isn't listed" disclosure has
+been replaced by a plain row that navigates to its own view, so `Disclosure` no longer
+exists. There is no expandable panel left to point at, and nothing to gate — the weakest of
+the three cases, and it is now gone rather than fixed. The other two, and the listboxes,
+are unchanged.
+
 **What changed** `aria-controls` is set only while the element it names is mounted. The
 hamburger gained `aria-expanded` and a label that flips to "Close navigation". The cart
 button's `aria-expanded` was *removed*, because that button only exists while the cart is

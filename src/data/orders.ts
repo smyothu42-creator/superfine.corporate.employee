@@ -435,9 +435,11 @@ const seedOrders: SeedOrder[] = [
     source: "auto",
   },
   {
-    // Delivered — three meals on one day. The multi-meal delivered case is what
-    // item-level rating exists for: rate the one that disappointed, leave the
-    // others alone.
+    // Delivered — five meals on one day, the largest order in the seed. The
+    // multi-meal delivered case is what item-level rating exists for: rate the
+    // one that disappointed, leave the others alone. Five rather than three so
+    // the seed also exercises the overflow states — the rating list's stack of
+    // thumbnails caps at three circles and counts the rest as "+N".
     id: "ORD-2861",
     date: "2026-06-25",
     type: "individual",
@@ -449,13 +451,15 @@ const seedOrders: SeedOrder[] = [
           { itemId: "bibimbap", name: "Veggie Bibimbap", qty: 1, addOns: ["Crispy tofu"], price: 14.0 },
           { itemId: "chicken-shawarma", name: "Chicken Shawarma Plate", qty: 1, addOns: [], price: 15.5 },
           { itemId: "beef-pho", name: "Beef Pho", qty: 1, addOns: [], price: 14.5 },
+          { itemId: "teriyaki-salmon-bowl", name: "Teriyaki Salmon Bowl", qty: 1, addOns: [], price: 16.0 },
+          { itemId: "margherita-flatbread", name: "Margherita Flatbread", qty: 1, addOns: [], price: 8.5 },
         ],
       },
     ],
     address: "HQ · Floor 3 Kitchen",
-    subtotal: 44.0,
+    subtotal: 68.5,
     subsidy: 15.0,
-    employeePaid: 29.0,
+    employeePaid: 53.5,
     payment: "pay_later",
     status: "delivered",
     locked: true,

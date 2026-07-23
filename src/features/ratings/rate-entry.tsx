@@ -4,23 +4,23 @@ import * as React from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
-  ChevronDown,
   ChevronRight,
   Search,
   Mail,
   AlertTriangle,
-  Receipt,
   Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
+import { FoodPhoto } from "@/components/menu/food-photo";
 import { RateItems } from "@/features/ratings/rate-items";
 import { FeedbackForm } from "@/features/feedback/feedback-form";
 import { useSessionStore } from "@/store/use-session-store";
 import { useOrdersStore } from "@/store/use-orders-store";
 import { useRatingsStore } from "@/store/use-ratings-store";
 import { lookupOrderForRating, findOrder } from "@/data/orders";
+import { getItem } from "@/data/menu";
 import { fromISODate, formatDayLong } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { Order } from "@/data/types";
@@ -34,11 +34,16 @@ import type { Order } from "@/data/types";
  * lists every delivered order, and the choice of which to rate is the first
  * thing it asks rather than something it decides.
  *
- * Three views, one at a time, because a phone has room for one:
+ * Four views, one at a time, because a phone has room for one:
  *
- *   pick → rate   choose an order, then rate its meals
- *   pick → note   skip the orders and report a problem with the service
- *   rate → note   rate the meals, then raise a problem with that same order
+ *   pick → rate     choose an order, then rate its meals
+ *   pick → lookup   the order isn't in the list; find it by number and email
+ *   pick → note     skip the orders and report a problem with the service
+ *   rate → note     rate the meals, then raise a problem with that same order
+ *
+ * `lookup` and `note` are the two ways out of "I can't do what I came for", and
+ * they are deliberately the same shape: a quiet row at the foot of the list, a
+ * chevron, and a view of their own.
  *
  * The two are kept apart on purpose. Stars answer "how was the food", and only
  * that; a late, missing or mischarged delivery goes down the `note` door to the
@@ -60,7 +65,9 @@ import type { Order } from "@/data/types";
 type View =
   | { name: "pick" }
   | { name: "rate"; order: Order; source: "account" | "public_link" }
-  | { name: "note"; orderId: string };
+  | { name: "note"; orderId: string }
+  /** The order-number lookup, for an order the signed-in list doesn't hold. */
+  | { name: "lookup" };
 
 export function RateEntry({
   initialOrder = "",
@@ -97,6 +104,18 @@ export function RateEntry({
           order,
           meals: lines.length,
           unrated: lines.filter((l) => !rated.has(l.lineId)).length,
+          /**
+           * A photo per meal, in order, for the stack that stands for the order
+           * in the list.
+           *
+           * The date and the order number are what identify a row; the pictures
+           * are there to make one lunch recognisable from the next — "the one
+           * with the poke bowl" is how people actually remember which Tuesday
+           * they mean. An entry is `undefined` when the meal has no photo, or
+           * when its item has since left the menu; `FoodPhoto` renders its own
+           * placeholder for those rather than a broken frame.
+           */
+          photos: lines.map((l) => getItem(l.itemId)?.image),
         };
       });
   }, [orders, ratings]);
@@ -197,6 +216,42 @@ export function RateEntry({
     );
   }
 
+  /**
+   * Signed in but the order isn't in the list — placed under another address,
+   * or by a colleague on someone's behalf.
+   *
+   * This used to unfold in place under the list, which was the wrong shape for
+   * it: a form of two fields and four possible errors, opening *below* ten order
+   * rows, on a page whose entire job is choosing one thing. It now takes the
+   * same door as "Problem with your order?" — its own view, its own heading,
+   * one back link — so the page only ever asks one question at a time.
+   */
+  if (view.name === "lookup") {
+    return (
+      <div className="space-y-4">
+        <BackLink onClick={() => setView({ name: "pick" })}>Back</BackLink>
+        <div className="space-y-1">
+          <h2 ref={heading} tabIndex={-1} className={HEADING}>
+            Find your order
+          </h2>
+          <p className="text-[13px] text-muted-foreground">
+            An order placed under a different email address — or by a colleague on your behalf —
+            won&apos;t appear in your list. Look it up here instead.
+          </p>
+        </div>
+        <Card>
+          <CardBody>
+            <OrderLookup
+              initialOrder={initialOrder}
+              initialEmail={initialEmail}
+              onFound={(order) => setView({ name: "rate", order, source: "public_link" })}
+            />
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
+
   if (view.name === "note") {
     return (
       <div className="space-y-4">
@@ -221,12 +276,12 @@ export function RateEntry({
 
   /**
    * Signed in, the order list *is* the page and the lookup is an edge case, so
-   * it folds away behind "My order isn't listed". Signed out there is no list,
-   * so the lookup is the only way through and stands on its own.
+   * it sits at the foot as a row out to its own view. Signed out there is no
+   * list, so the same lookup is the only way through and stands on its own,
+   * inline, with its own heading.
    *
-   * Both were previously stacked as equal, always-open sections under `OR`
-   * rules, which made a page with one obvious action look like a page with
-   * three.
+   * Both were once stacked as equal, always-open sections under `OR` rules,
+   * which made a page with one obvious action look like a page with three.
    */
   return (
     <div className="space-y-6">
@@ -253,14 +308,16 @@ export function RateEntry({
       )}
 
       <div className="space-y-1.5 border-t border-border pt-5">
+        {/* Both feet of the page are the same shape: an icon, a sentence, and a
+            chevron that means "this opens somewhere else". They are the two ways
+            out of "I can't do what I came for", so they should not look like two
+            different kinds of control. */}
         {account ? (
-          <Disclosure id="rate-lookup-disclosure" label="My order isn't listed">
-            <OrderLookup
-              initialOrder={initialOrder}
-              initialEmail={initialEmail}
-              onFound={(order) => setView({ name: "rate", order, source: "public_link" })}
-            />
-          </Disclosure>
+          <button type="button" onClick={() => setView({ name: "lookup" })} className={QUIET_ROW}>
+            <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="flex-1">My order isn&apos;t listed</span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </button>
         ) : null}
 
         {/* The logistics path, which needs no order at all — a quiet row,
@@ -279,53 +336,6 @@ export function RateEntry({
   );
 }
 
-/**
- * A quiet row that opens its own content in place. Used for the paths that
- * matter to a few people and would otherwise cost every visitor a decision.
- */
-function Disclosure({
-  id,
-  label,
-  children,
-}: {
-  id: string;
-  label: string;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const panel = React.useRef<HTMLDivElement>(null);
-
-  /** Land the caret in the panel, not back at the top of the page. */
-  React.useEffect(() => {
-    if (open) panel.current?.querySelector("input")?.focus();
-  }, [open]);
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        // Only while the panel exists. Pointing at an id that isn't in the page
-        // is a broken reference, and some screen readers report it as one.
-        aria-controls={open ? id : undefined}
-        className={QUIET_ROW}
-      >
-        <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="flex-1">{label}</span>
-        <ChevronDown
-          className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
-          aria-hidden
-        />
-      </button>
-      {open ? (
-        <div id={id} ref={panel} className="px-3 pb-2 pt-3">
-          {children}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 /* ── Shared bits ────────────────────────────────────────────────────────── */
 
@@ -377,7 +387,7 @@ function OrderPicker({
   onPick,
 }: {
   name: string;
-  rows: { order: Order; meals: number; unrated: number }[];
+  rows: { order: Order; meals: number; unrated: number; photos: (string | undefined)[] }[];
   onPick: (order: Order) => void;
 }) {
   /**
@@ -404,12 +414,10 @@ function OrderPicker({
       {rows.length ? (
         <>
           <ul>
-            {shown.map(({ order, meals, unrated }) => (
+            {shown.map(({ order, meals, unrated, photos }) => (
               <li key={order.id}>
                 <button type="button" onClick={() => onPick(order)} className={ROW}>
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-teal-wash text-primary">
-                    <Receipt className="size-4" aria-hidden />
-                  </span>
+                  <MealStack photos={photos} />
                   <span className="min-w-0 flex-1">
                     <span className="block font-display text-[15px] font-semibold tracking-tight">
                       {formatDayLong(fromISODate(order.date))}
@@ -454,6 +462,53 @@ function OrderPicker({
   );
 }
 
+/** Circles an order row will show before the last one turns into a count. */
+const STACK_MAX = 3;
+
+/**
+ * The order's meals, as overlapping thumbnails — the same stack the Orders page
+ * uses for a multi-meal order, so one lunch is recognisable from the next
+ * without reading a single word.
+ *
+ * Up to three circles. Beyond that the third becomes `+N`, because a fourth and
+ * fifth thumbnail at this size are two more slivers of colour, not two more
+ * recognisable meals — and the row's own text already says how many there are.
+ *
+ * Decorative throughout: the row is named by its date and order number, sitting
+ * right beside this, so naming the pictures too would make a screen reader read
+ * every row twice over (ACCESSIBILITY-AUDIT.md, Appendix B ⑨). The `+N` is
+ * hidden for the same reason — "3 meals" is already in the line below.
+ */
+function MealStack({ photos }: { photos: (string | undefined)[] }) {
+  const over = photos.length > STACK_MAX;
+  const shown = photos.slice(0, over ? STACK_MAX - 1 : STACK_MAX);
+  const rest = photos.length - shown.length;
+
+  return (
+    // `-space-x-3` overlaps each circle onto the one before it, and the ring is
+    // the row's own cream so the overlap reads as a stack rather than a smudge.
+    <span className="flex shrink-0 -space-x-3">
+      {shown.map((src, i) => (
+        <FoodPhoto
+          key={i}
+          src={src}
+          alt=""
+          className="size-9 rounded-full ring-2 ring-background"
+          iconClassName="size-4"
+        />
+      ))}
+      {rest > 0 ? (
+        <span
+          aria-hidden
+          className="flex size-9 items-center justify-center rounded-full bg-teal-wash text-2xs font-bold text-teal-deep ring-2 ring-background"
+        >
+          +{rest}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 /* ── Door 2: signed out, or an order under another address ──────────────── */
 
 const LOOKUP_ERRORS: Record<string, string> = {
@@ -470,8 +525,8 @@ function OrderLookup({
   initialEmail,
   onFound,
 }: {
-  /** True when this is the page's main event (signed out), false inside the
-   *  disclosure, where the surrounding row already supplies the heading. */
+  /** True when this is the page's main event (signed out), false on the lookup
+   *  view, where the view's own heading already names it. */
   standalone?: boolean;
   initialOrder: string;
   initialEmail: string;
