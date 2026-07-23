@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Star,
   Link2,
+  Lock,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ import { CutoffIndicator } from "@/components/cutoff/cutoff-indicator";
 import { useChangeOrder } from "./use-change-order";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
-import { orderPayment } from "@/data/orders";
+import { orderPayment, canChangeOrder, changeLockReason } from "@/data/orders";
 import { program } from "@/data/program";
 import { useOrdersStore } from "@/store/use-orders-store";
 import { useRatingsStore } from "@/store/use-ratings-store";
@@ -34,7 +35,6 @@ import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
 import { fromISODate, formatDay } from "@/lib/dates";
-import { isCutoffPassed } from "@/lib/cutoff";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Order, PaymentChoice } from "@/data/types";
 
@@ -137,8 +137,8 @@ export function OrderDetailView({ order: initialOrder }: { order: Order }) {
   // the server-resolved prop before the store has the id (or on a hard load).
   const order = useOrdersStore((s) => s.orders.find((o) => o.id === initialOrder.id)) ?? initialOrder;
   const active = ["draft", "confirmed"].includes(order.status);
-  // Editable only before the change cutoff (checked live against the real clock).
-  const editable = active && !order.locked && !isCutoffPassed(order.date, order.type);
+  // Drafts before their cutoff only — a placed order is the kitchen's now.
+  const editable = canChangeOrder(order);
   // Individuals pay retail — no subsidy line, and "covered" never applies.
   const corporate = isSubsidized(useSessionStore((s) => s.account));
   // Tax on the employee-paid portion + the true total, in sync with the cart/checkout.
@@ -187,15 +187,23 @@ export function OrderDetailView({ order: initialOrder }: { order: Order }) {
           nobody can rate a lunch that hasn't arrived. */}
       {order.status === "delivered" ? <RateOrderCard order={order} /> : null}
 
-      {/* When must this be edited by — or is it locked? One prominent, type-aware banner. */}
+      {/* When must this be edited by — or is it locked, and why?
+          A draft still counts down to its cutoff, because that deadline is the
+          whole reason to look at it today. A placed order isn't waiting on a
+          clock at all, so a countdown there would be answering the wrong
+          question — it gets the locked notice instead. */}
       {active ? (
-        <CutoffIndicator
-          deliveryISO={order.date}
-          type={order.type}
-          lockedOverride={order.locked}
-          context="edit"
-          variant="notice"
-        />
+        order.status === "confirmed" ? (
+          <PlacedNotice order={order} />
+        ) : (
+          <CutoffIndicator
+            deliveryISO={order.date}
+            type={order.type}
+            lockedOverride={order.locked}
+            context="edit"
+            variant="notice"
+          />
+        )
       ) : null}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -318,6 +326,33 @@ export function OrderDetailView({ order: initialOrder }: { order: Order }) {
           </div>
 
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A placed order's locked banner — the same shape and muted "locked" tone as
+ * {@link CutoffIndicator}'s notice, so the two read as one idea, but saying the
+ * thing that's actually true here: this is settled, and the way to change it is
+ * a person, not a button.
+ *
+ * The door out is the point. Locking Edit and Cancel without naming what to do
+ * instead just moves the customer's problem off the screen.
+ */
+function PlacedNotice({ order }: { order: Order }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-border bg-muted px-3 py-2.5 text-muted-foreground">
+      <Lock className="mt-0.5 size-4 shrink-0" />
+      <div className="min-w-0 text-[13px] leading-snug">
+        <div className="font-semibold">Locked for changes</div>
+        <p className="mt-0.5">{changeLockReason(order)}</p>
+        <Link
+          href={`/feedback?order=${order.id}`}
+          className="mt-1.5 inline-flex min-h-[24px] items-center gap-1.5 text-2xs font-semibold text-primary underline underline-offset-2"
+        >
+          <AlertTriangle className="size-3.5" aria-hidden /> Problem with your order?
+        </Link>
       </div>
     </div>
   );

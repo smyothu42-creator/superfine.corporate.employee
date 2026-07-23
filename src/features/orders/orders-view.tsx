@@ -30,7 +30,7 @@ import { RateItemModal } from "@/features/ratings/rate-item-modal";
 import { useRatingsStore } from "@/store/use-ratings-store";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { getItem } from "@/data/menu";
-import { orderPayment } from "@/data/orders";
+import { orderPayment, canChangeOrder, changeLockReason } from "@/data/orders";
 import { program } from "@/data/program";
 import { useChangeOrder } from "./use-change-order";
 import { useOrdersStore } from "@/store/use-orders-store";
@@ -40,7 +40,7 @@ import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
 import { useOOOStore } from "@/store/use-ooo-store";
 import { fromISODate, formatDay, toISODate, startOfToday } from "@/lib/dates";
-import { nextOpenDays, earliestDeliveryDate, isCutoffPassed } from "@/lib/cutoff";
+import { nextOpenDays, earliestDeliveryDate } from "@/lib/cutoff";
 import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Order } from "@/data/types";
@@ -242,9 +242,8 @@ function OrderCard({ order }: { order: Order }) {
   const href = `/orders/${order.id}`;
   const items = order.days.flatMap((d) => d.items);
   const active = ["draft", "confirmed"].includes(order.status);
-  // Editable only before the change cutoff — checked against the real clock, so
-  // an order still open at page load locks the moment its cutoff passes.
-  const editable = active && !order.locked && !isCutoffPassed(order.date, order.type);
+  // Drafts before their cutoff only — a placed order is the kitchen's now.
+  const editable = canChangeOrder(order);
   // Re-order confirmation modal (past orders).
   const [reorderOpen, setReorderOpen] = React.useState(false);
   // In-platform feedback form (delivered orders).
@@ -369,12 +368,17 @@ function OrderCard({ order }: { order: Order }) {
               <XCircle className="size-3.5" /> <span className="hidden sm:inline">Cancel</span>
             </Button>
           </div>
-        ) : active && order.locked ? (
+        ) : active ? (
+          /* Every active order that isn't editable says so, and says why: a
+             placed order is locked because it's placed, a draft because its
+             cutoff went by. The chip covers cancelling too, which is why it
+             isn't "Editing closed" any more — neither door is open. */
           <span
-            aria-label="Editing closed. This order can no longer be changed"
+            aria-label={`Changes closed. ${changeLockReason(order)}`}
+            title={changeLockReason(order)}
             className="inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1.5 text-2xs font-semibold text-muted-foreground opacity-60"
           >
-            <Lock className="size-3.5" /> Editing closed
+            <Lock className="size-3.5" /> Changes closed
           </span>
         ) : (
           <ChevronRight className="size-5 shrink-0 text-muted-foreground" />

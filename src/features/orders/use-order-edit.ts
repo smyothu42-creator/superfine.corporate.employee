@@ -7,7 +7,7 @@ import { useCartStore } from "@/store/use-cart-store";
 import { useOrdersStore } from "@/store/use-orders-store";
 import { useOrderEditStore } from "@/store/use-order-edit-store";
 import { useUiStore } from "@/store/use-ui-store";
-import { makeLineId } from "@/data/orders";
+import { makeLineId, canChangeOrder, changeLockReason } from "@/data/orders";
 import { currentRecipeVersion } from "@/data/recipe-versions";
 import type { Order, OrderDay } from "@/data/types";
 
@@ -49,6 +49,13 @@ export function useOrderEdit() {
   }
 
   async function beginEdit(order: Order) {
+    // The one gate every edit passes through, however it was started — a stale
+    // tab, a resumed session, a deep link. The buttons are already hidden on a
+    // placed or closed order; this is what makes the hiding true.
+    if (!canChangeOrder(order)) {
+      toast.warning("This order is locked", changeLockReason(order));
+      return;
+    }
     const state = useOrderEditStore.getState();
     if (state.editingOrderId && state.editingOrderId !== order.id) {
       // Already editing a different order — switching abandons those changes.

@@ -536,6 +536,39 @@ export function getOrder(id: string) {
 }
 
 /**
+ * Can the customer still change or cancel this order themselves?
+ *
+ * Only while it is a draft — an Auto-Order the employee hasn't reviewed yet —
+ * and only before that day's cutoff. Confirming is the commitment: once an
+ * order is placed the kitchen is buying and prepping for it, so a self-serve
+ * "Edit" that quietly rewrote a placed order was promising something the
+ * kitchen can't honour. A placed order that turns out to be wrong goes to the
+ * operations team, who can still act on it, rather than to a button that only
+ * looks like it worked.
+ *
+ * Both halves of "still open" are checked: `locked` is decided once, when the
+ * order is built, while `isCutoffPassed` reads the clock now — a draft left
+ * open on screen across its 4 PM cutoff is closed the moment the page renders
+ * again, not whenever the module was last evaluated.
+ */
+export function canChangeOrder(order: Order) {
+  return (
+    order.status === "draft" && !order.locked && !isCutoffPassed(order.date, order.type)
+  );
+}
+
+/**
+ * Why {@link canChangeOrder} said no — the sentence every locked surface shows,
+ * so the chip on the list and the notice on the order page can't drift apart.
+ * A closed door with no reason on it just reads as a broken button.
+ */
+export function changeLockReason(order: Order) {
+  return order.status === "confirmed"
+    ? "This order is placed, so it can't be changed or cancelled here — tell our team if something's wrong."
+    : "The cutoff for changing this delivery has passed.";
+}
+
+/**
  * Match a customer-typed order number against a real order. Deliberately
  * lenient: someone reading a number off a delivery label may type "2891",
  * "ORD-2891", "ord 2891" or "#2891" — we compare on digits alone so any of
