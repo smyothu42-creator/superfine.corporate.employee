@@ -80,7 +80,11 @@ export function CartPanel() {
         "flex items-center justify-between border-b px-4 py-3.5",
         // Editing wears a distinct coral/warning header so it never reads as an
         // ordinary cart — you're changing a placed order, not building a new one.
-        editActive ? "border-warning-border bg-warning-bg" : "border-control",
+        //
+        // Softened with the panel's left edge above: both are decorative rules on
+        // the same panel, so leaving this one at control strength would have made
+        // the header underline the darkest line in the cart.
+        editActive ? "border-warning-border bg-warning-bg" : "border-border-strong",
       )}
     >
       {editActive ? (
@@ -143,7 +147,13 @@ export function CartPanel() {
         {...closedOff}
         className={cn(
           "sticky top-0 hidden h-screen shrink-0 overflow-hidden border-l bg-card transition-[width] duration-300 ease-out lg:block",
-          editActive ? "border-warning-border" : "border-control",
+          // `border-strong`, not `control`. This seam divides the page from the
+          // panel — it is decorative, and nothing here is aimed at, so it never
+          // owed a control's 3:1. At control strength it was the darkest line on
+          // the screen and read as a hard rule down the middle of the app.
+          // `strong` is the tone made for a decorative edge that still has to
+          // hold a large shape together over this much length.
+          editActive ? "border-warning-border" : "border-border-strong",
           open ? WIDTH : "w-0",
         )}
       >
