@@ -142,11 +142,13 @@ export function MenuView() {
   const clearRangePicker = useUiStore((s) => s.clearRangePicker);
   const focusDayRequested = useUiStore((s) => s.focusDayRequested);
   const clearFocusDay = useUiStore((s) => s.clearFocusDay);
-  // Editing a placed order: the delivery date is fixed to the order's day(s), so
-  // the date picker locks and the auto-snap-forward effects stand down.
+  // Editing a placed order: the menu opens on the order's day(s) and the
+  // auto-snap-forward effects stand down (see `editDateLocked` below for which
+  // edits can move their date and which can't).
   const editingOrderId = useOrderEditStore((s) => s.editingOrderId);
   // The order being edited (stable reference), and its day(s), which the menu
-  // date pins to so added meals land on the order's day — never today's default.
+  // date opens on so added meals land on the day being edited — never today's
+  // default.
   const editOrder = useOrdersStore((s) =>
     editingOrderId ? s.orders.find((o) => o.id === editingOrderId) : undefined,
   );
@@ -157,10 +159,25 @@ export function MenuView() {
   // An edit *session* can persist while the user steps out of it to browse — they
   // leave the menu, come back, and the banner offers to resume. Only while the
   // session is *active* (the order's meals are loaded into the cart) does the menu
-  // lock to the order's day(s). When paused, the menu is a clean new-order flow —
-  // the date picker unlocks and any day is orderable — until "Continue editing"
-  // reloads the meals and re-locks the date.
+  // follow the order's day(s). When paused, the menu is a clean new-order flow,
+  // until "Continue editing" reloads the meals.
   const editingActive = useOrderEditStore((s) => s.active);
+  /**
+   * Whether the edit's delivery date is fixed.
+   *
+   * A **single-day** order can be moved to another day mid-edit: "same meal,
+   * different day" is the second most common reason people open the change flow
+   * after "different meal", and refusing it forced a cancel-and-reorder that
+   * loses the order number and the price that was quoted with it. The picker
+   * stays open for those, restricted to picking one day (see `singleOnly` on
+   * {@link UnifiedDatePicker}) — moving *and* fanning an order out across a week
+   * in the same gesture is a new order, not an edit.
+   *
+   * A **multi-day** order stays locked. Its days are a plan the kitchen has
+   * already scheduled around, there is no single date to move, and re-picking a
+   * range would silently drop the meals on any day that fell out of it.
+   */
+  const editDateLocked = editingActive && editOrderDays.length > 1;
   // DoorDash-style horizontal rows, two per row. The responsive breakpoints key
   // off the *viewport*, which can't see the ~400px the cart side panel carves
   // out of the content area — so two columns while the cart is open cram each
@@ -175,6 +192,25 @@ export function MenuView() {
   const categoryRoving = useRoving({ orientation: "horizontal" });
 
   React.useEffect(() => {
+    /**
+     * An open edit session sets the date from the order being edited (see the
+     * seed effect below), and this default would only fight it.
+     *
+     * It used to lose that fight harmlessly, because the seed re-applied itself
+     * on every run. Now that the seed deliberately fires once per session — so a
+     * date the user moved is never dragged back — the last writer wins, and in
+     * development that is this effect: React runs mount effects twice, so the
+     * order came up on today's default rather than its own delivery day.
+     *
+     * Read the store live rather than through this effect's closure. On a cold
+     * load the session rehydrates *after* mount, so the captured value is stale
+     * by the time a second run uses it — which is exactly the case this guards.
+     */
+    if (useOrderEditStore.getState().active) {
+      setMounted(true);
+      return;
+    }
+
     const today = startOfToday();
     // SuperFine can't deliver same-day. Default to the next service day whose
     // cutoff hasn't passed — that's tomorrow at the earliest, and auto-shifts
@@ -295,9 +331,19 @@ export function MenuView() {
   // the day strip's active tab follows the day the user tapped.
   React.useEffect(() => {
     if (!focusDayRequested) return;
-    // While actively editing, the date is driven by the order's day(s) below —
-    // ignore any focus request so it can't pull the menu onto a non-order day.
+    /**
+     * While actively editing, the menu follows the order's own day(s) — a focus
+     * request must not pull it onto a day the order isn't on.
+     *
+     * A day the edit *already covers* is a different thing, and used to be
+     * refused along with the rest. That is the request the cart's empty day card
+     * sends when you press "Order for this day", so on a multi-day edit the menu
+     * stayed on day one and the meal you picked for Thursday landed on Monday.
+     * Honour those; keep refusing everything else.
+     */
     if (editingActive) {
+      const covered = editDateLocked ? editOrderDays : [selectedDate];
+      if (covered.includes(focusDayRequested)) setActiveDate(focusDayRequested);
       clearFocusDay();
       return;
     }
@@ -313,17 +359,49 @@ export function MenuView() {
     setActiveDate(focusDayRequested);
     setSelectedDate(focusDayRequested);
     clearFocusDay();
-  }, [focusDayRequested, cart, clearFocusDay, editingActive]);
+  }, [
+    focusDayRequested,
+    cart,
+    clearFocusDay,
+    editingActive,
+    editDateLocked,
+    editOrderDays,
+    selectedDate,
+  ]);
 
-  // Editing pins the delivery date to the order's own day(s) — deterministically,
-  // so anything added from the menu lands on the day being edited, not today's
-  // default. Single-day orders lock one day; multi-day orders keep their range.
+  /**
+   * Opening an edit puts the menu on the order's own day(s), deterministically,
+   * so anything added lands on the day being edited rather than today's default.
+   *
+   * **Once per session, not once per re-derivation.** `editOrderDays` is derived
+   * from the order in the store, and any write to that store hands back a fresh
+   * object — which used to be harmless, because the date was locked and re-running
+   * this only re-applied the same value. Now that a single-day edit can *move* its
+   * date, a re-run would drag the user's new pick back to the day the order was
+   * saved on, with no way to tell what happened. The ref pins it to the order id
+   * so the seed happens when the session opens and never again.
+   */
+  const seededForOrder = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!editingActive || editOrderDays.length === 0) return;
+    if (!editingActive) {
+      // Session over — the next edit (even of the same order) seeds afresh.
+      seededForOrder.current = null;
+      return;
+    }
+    if (editOrderDays.length === 0 || seededForOrder.current === editingOrderId) return;
+    seededForOrder.current = editingOrderId;
     if (editOrderDays.length === 1) {
       setMode("single");
       setSelectedDate(editOrderDays[0]);
       setActiveDate(editOrderDays[0]);
+      // The range is unused while the edit is on one day, but it must not be left
+      // empty: the mount default that normally fills it stands down for an edit,
+      // and discarding this one hands the user back a picker whose Multi Days tab
+      // would otherwise open on no range at all. Anchored on the order's own day
+      // so it starts somewhere the user was already looking.
+      const week = nextServiceDays(fromISODate(editOrderDays[0]), MULTI_DAY_NUMS, 3).map(toISODate);
+      setRangeStart(week[0] ?? editOrderDays[0]);
+      setRangeEnd(week[week.length - 1] ?? editOrderDays[0]);
     } else {
       setMode("multi");
       setRangeChosen(true);
@@ -332,7 +410,7 @@ export function MenuView() {
       setSelectedDate(editOrderDays[0]);
       setActiveDate(editOrderDays[0]);
     }
-  }, [editingActive, editOrderDays]);
+  }, [editingActive, editingOrderId, editOrderDays]);
 
   // Multi-day progress.
   const daysBoxOpen = mode === "multi" && rangeChosen && rangeDays.length > 0;
@@ -497,10 +575,12 @@ export function MenuView() {
 
   // One unified date picker: a single dropdown whose internal "Single day / Date
   // range" toggle lets the user pick either a single delivery date or a Mon–Fri
-  // range, without any separate mode segments beside it. While actively editing a
-  // placed order the date is fixed to the order's day(s), so it becomes a locked
-  // pill; with the cart closed the user is browsing normally, so it unlocks.
-  const datePicker = editingActive ? (
+  // range, without any separate mode segments beside it.
+  //
+  // While editing a multi-day order the dates are fixed, so it becomes a locked
+  // pill. A single-day edit keeps the picker but drops the range tab — see
+  // `editDateLocked` and `singleOnly` below.
+  const datePicker = editDateLocked ? (
     <LockedDatePill
       mode={mode}
       selectedDate={selectedDate}
@@ -510,6 +590,7 @@ export function MenuView() {
   ) : (
     <UnifiedDatePicker
       mode={mode}
+      singleOnly={editingActive}
       onModeChange={setMode}
       selectedDate={selectedDate}
       singleDays={datePickerDays}
@@ -539,7 +620,16 @@ export function MenuView() {
               `${dropped.join(", ")}. This meal is not available for the selected date. Please choose another meal.`,
             );
           } else if (cart.itemsForDate(iso).length > 0) {
-            toast.success("Date updated", `Your order now delivers ${dayLabel}.`);
+            // Mid-edit the move is only in the cart — the placed order still says
+            // the old day until checkout writes it. Saying "your order now
+            // delivers…" there would claim a change that hasn't happened, and
+            // someone who then walked away would find the original date intact.
+            toast.success(
+              "Date updated",
+              editingActive
+                ? `${editingOrderId} will move to ${dayLabel}. Save and checkout to keep the change.`
+                : `Your order now delivers ${dayLabel}.`,
+            );
           }
         }
       }}
@@ -1392,9 +1482,14 @@ function calMatrix(year: number, month: number): (Date | null)[] {
  * or press Apply (range).
  */
 /**
- * Read-only date pill shown in place of the picker while editing a placed order.
- * The delivery date is fixed to the order's day(s) — you're changing the meal,
- * not moving the order — so this is a non-interactive label with a lock icon.
+ * Read-only date pill shown in place of the picker while editing a **multi-day**
+ * order, whose dates are fixed.
+ *
+ * A single-day edit no longer lands here — it keeps the picker, restricted to
+ * one day (see `editDateLocked`). A multi-day order has no single date to move,
+ * and re-picking a range mid-edit would silently drop the meals on any day that
+ * fell outside the new one, so its days stay put: you're changing the meals, not
+ * rescheduling the plan.
  */
 function LockedDatePill({
   mode,
@@ -1409,7 +1504,11 @@ function LockedDatePill({
 }) {
   return (
     <span
-      title="You're editing this order — the delivery date is locked to the order's day."
+      title={
+        mode === "single"
+          ? "You're editing this order — the delivery date is locked to the order's day."
+          : "This order is delivered across several days. Editing changes the meals; the days stay as they were booked."
+      }
       aria-label={
         mode === "single"
           ? `Delivery date locked to ${formatDayLong(fromISODate(selectedDate))} while editing this order`
@@ -1436,6 +1535,7 @@ function LockedDatePill({
 
 function UnifiedDatePicker({
   mode,
+  singleOnly = false,
   onModeChange,
   selectedDate,
   singleDays,
@@ -1449,6 +1549,17 @@ function UnifiedDatePicker({
   onApplyRange,
 }: {
   mode: Mode;
+  /**
+   * Offer one delivery day and nothing else: the Single day / Multi Days toggle
+   * is not rendered and the range calendar is unreachable.
+   *
+   * Set while editing a single-day order. The user is moving an order that
+   * exists, so "which day" is still a fair question — but "how many days" isn't,
+   * because fanning one order out across a week is a new order, not an edit.
+   * Hidden rather than disabled: a toggle that refuses every press is a worse
+   * answer than a control that was never offered.
+   */
+  singleOnly?: boolean;
   onModeChange: (m: Mode) => void;
   selectedDate: string;
   singleDays: DateOption[];
@@ -1471,7 +1582,11 @@ function UnifiedDatePicker({
   const [mobileTop, setMobileTop] = React.useState<number | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   // Which sub-mode the open dropdown is previewing (defaults to the committed mode).
-  const [tab, setTab] = React.useState<Mode>(mode);
+  const [tabState, setTab] = React.useState<Mode>(mode);
+  // `singleOnly` wins over the state rather than merely hiding the toggle, so the
+  // range calendar cannot be reached by any path — a stale preview from before
+  // the edit began, or a future caller wiring the toggle back up.
+  const tab: Mode = singleOnly ? "single" : tabState;
   // Draft range endpoints — committed to the parent only on Apply.
   const [dStart, setDStart] = React.useState(rangeStart);
   const [dEnd, setDEnd] = React.useState(rangeEnd);
@@ -1511,12 +1626,14 @@ function UnifiedDatePicker({
 
   // Opening resets the preview to the committed state (tab, drafts, month).
   function openMenu() {
-    setTab(mode);
+    setTab(singleOnly ? "single" : mode);
     setDStart(rangeStart);
     setDEnd(rangeEnd);
     setHovered("");
     setRevealed("");
-    const a = fromISODate((mode === "single" ? selectedDate : rangeStart) || toISODate(startOfToday()));
+    const a = fromISODate(
+      (singleOnly || mode === "single" ? selectedDate : rangeStart) || toISODate(startOfToday()),
+    );
     setCursor({ y: a.getFullYear(), m: a.getMonth() });
     if (triggerRef.current && window.matchMedia("(max-width: 639px)").matches) {
       setMobileTop(triggerRef.current.getBoundingClientRect().bottom + 8);
@@ -1599,9 +1716,14 @@ function UnifiedDatePicker({
         type="button"
         aria-expanded={open}
         aria-label={
-          mode === "single"
-            ? `Delivery date: ${formatDayLong(fromISODate(selectedDate))}. Change date`
-            : `Delivery dates: ${formatDay(fromISODate(rangeStart))} to ${formatDay(fromISODate(rangeEnd))}, ${rangeDays.length} days. Change dates`
+          singleOnly
+            ? // Says what the picker will and won't offer, before it is opened —
+              // otherwise a screen-reader user meets a calendar with no range tab
+              // and no explanation for its absence.
+              `Delivery date: ${formatDayLong(fromISODate(selectedDate))}. Move this order to a different day`
+            : mode === "single"
+              ? `Delivery date: ${formatDayLong(fromISODate(selectedDate))}. Change date`
+              : `Delivery dates: ${formatDay(fromISODate(rangeStart))} to ${formatDay(fromISODate(rangeEnd))}, ${rangeDays.length} days. Change dates`
         }
         onClick={() => (open ? setOpen(false) : openMenu())}
         className={cn(
@@ -1610,13 +1732,34 @@ function UnifiedDatePicker({
           // wrapper's 10px itself to land on the same line. Both sit at ~44px on
           // phones (the touch-target floor) and return to the tighter desktop
           // proportions at sm+.
-          "flex max-w-full items-center gap-1 rounded-full px-2.5 py-[15px] text-xs font-semibold text-teal-deep transition-colors sm:gap-1.5 sm:px-3 sm:py-[11px] sm:text-[13px]",
-          open ? "bg-teal-soft" : "bg-teal-wash hover:bg-teal-soft",
+          "flex max-w-full items-center gap-1 rounded-full px-2.5 py-[15px] text-xs font-semibold transition-colors sm:gap-1.5 sm:px-3 sm:py-[11px] sm:text-[13px]",
+          singleOnly
+            ? /**
+               * Editing's amber, so the one control that changes the order's date
+               * sits in the same mode as the banner, the cart header and the note
+               * inside this very dropdown — rather than being the last teal thing
+               * on a screen that has otherwise gone amber.
+               *
+               * The fill does not move on hover or open, and the edge does
+               * instead: `warning-border` is a pale decorative tone that would put
+               * this text at 4.19:1, under the bar, while `warning-bg` holds
+               * `coral-deep` at 5.13:1. A solid edge is what the system gives a
+               * tinted *button* anyway (the topbar's budget pill is the same
+               * shape), and between it and the chevron's 180° turn the open state
+               * is not short of signal.
+               */
+              cn(
+                "border bg-warning-bg text-coral-deep",
+                open ? "border-coral-deep" : "border-warning hover:border-coral-deep",
+              )
+            : cn("text-teal-deep", open ? "bg-teal-soft" : "bg-teal-wash hover:bg-teal-soft"),
         )}
       >
         {mode === "single" ? (
           <>
-            <CalendarDays className="size-4 shrink-0 text-primary" />
+            <CalendarDays
+              className={cn("size-4 shrink-0", singleOnly ? "text-coral-deep" : "text-primary")}
+            />
             {/* Short weekday/month on phones ("Wed, Jul 15"); full label at sm+. */}
             <span className="truncate sm:hidden">{formatDay(fromISODate(selectedDate))}</span>
             <span className="hidden truncate sm:inline">{formatDayLong(fromISODate(selectedDate))}</span>
@@ -1638,7 +1781,13 @@ function UnifiedDatePicker({
             </span>
           </>
         )}
-        <ChevronDown className={cn("size-4 shrink-0 text-primary transition-transform", open && "rotate-180")} />
+        <ChevronDown
+          className={cn(
+            "size-4 shrink-0 transition-transform",
+            singleOnly ? "text-coral-deep" : "text-primary",
+            open && "rotate-180",
+          )}
+        />
       </button>
 
       {open ? (
@@ -1658,38 +1807,53 @@ function UnifiedDatePicker({
               : "absolute right-0 top-full mt-2 w-[19.5rem]",
           )}
         >
-          {/* Single day / Date range toggle — the only mode control now. */}
-          <div
-            className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-border bg-muted/40 p-1"
-            role="tablist"
-            {...tabRoving.props}
-          >
-            {[
-              { id: "single", label: "Single day" },
-              { id: "multi", label: "Multi Days" },
-            ].map((t) => {
-              const active = tab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="tab"
-                  // How the arrow keys find which mode they landed on.
-                  data-tab-id={t.id}
-                  aria-selected={active}
-                  onClick={() => setTab(t.id as Mode)}
-                  className={cn(
-                    "rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors",
-                    active
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
+          {/* Single day / Date range toggle — the only mode control now. Absent
+              while moving a single-day order, where the range half of it has
+              nothing to do (see `singleOnly`); a one-line note takes its place so
+              the missing control reads as scope rather than as something broken. */}
+          {singleOnly ? (
+            // Editing's warning tone, not the menu's teal: this note only exists
+            // inside an edit session, and it's the same colour the edit banner,
+            // the cart's editing header and checkout's editing strip already wear
+            // — so the picker reads as part of that mode rather than as ordinary
+            // menu chrome that happens to be explaining itself.
+            <p className="mb-3 flex items-start gap-1.5 rounded-xl border border-warning-border bg-warning-bg px-3 py-2 text-2xs font-medium text-coral-deep">
+              <CalendarDays className="mt-px size-3.5 shrink-0 text-coral-deep" />
+              <span>Pick the new delivery day for this order. The meals move with it.</span>
+            </p>
+          ) : (
+            <div
+              className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-border bg-muted/40 p-1"
+              role="tablist"
+              {...tabRoving.props}
+            >
+              {[
+                { id: "single", label: "Single day" },
+                { id: "multi", label: "Multi Days" },
+              ].map((t) => {
+                const active = tab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    // How the arrow keys find which mode they landed on.
+                    data-tab-id={t.id}
+                    aria-selected={active}
+                    onClick={() => setTab(t.id as Mode)}
+                    className={cn(
+                      "rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors",
+                      active
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <div className="mb-2 flex items-center justify-between">
             <button

@@ -22,13 +22,47 @@ import { cutoffInfo } from "@/lib/cutoff-messaging";
 import { useDialog } from "@/lib/use-dialog";
 import { subsidyLabel } from "@/lib/subsidy";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
-import type { OrderType } from "@/data/types";
+import type { Order, OrderType } from "@/data/types";
 import { formatCurrency, cn } from "@/lib/utils";
 
 function useMounted() {
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
   return mounted;
+}
+
+/**
+ * The day(s) an in-progress edit covers — which is not always the day(s) the
+ * order was saved with.
+ *
+ * A **single-day** order can be moved to another day mid-edit (the menu's date
+ * picker stays live for those, restricted to one day), so the cart is the truth:
+ * it holds the meals on whatever day they were moved to. Reading the saved date
+ * instead would print a day card for a date nothing is on any more, and would
+ * hold the "every day needs a meal" check against a day that is empty by design
+ * — leaving Save and checkout disabled with nothing on screen to explain why.
+ *
+ * A **multi-day** order's dates are locked, so its saved days stand — including
+ * a day the user has just emptied, which is exactly the case the check exists to
+ * catch.
+ *
+ * `activeDate` covers the one move that empties the cart: a day the meals cannot
+ * follow, because none of them are served on it. The move still happened, the
+ * menu is on the new day, and the warning that named the dropped meals asked the
+ * user to pick another — so the empty day card has to be the day they are being
+ * asked to pick *for*, not the one they just left. The saved day is the last
+ * resort, for a cold load with no menu behind us to have published anything.
+ */
+function editCoveredDays(
+  order: Order | undefined,
+  cartDates: string[],
+  activeDate: string,
+): string[] {
+  if (!order) return [];
+  const saved = order.days.map((d) => d.date);
+  if (saved.length > 1) return saved;
+  if (cartDates.length) return cartDates;
+  return activeDate ? [activeDate] : saved;
 }
 
 /** Full-page cart (the /cart route). */
@@ -161,34 +195,42 @@ export function CartDayList() {
   const editingOrderId = useOrderEditStore((s) => s.editingOrderId);
   const editActive = useOrderEditStore((s) => s.active);
   // Only while actively editing do the order's days belong in the cart — a paused
-  // session is a normal new-order cart. Select the order object (stable
-  // reference), then derive its days (a fresh array from the selector re-renders
-  // every tick).
+  // session is a normal new-order cart. Selected as the order object, so the
+  // reference stays stable (deriving an array in the selector would hand back a
+  // fresh one and re-render every tick).
   const editOrder = useOrdersStore((s) =>
     editActive && editingOrderId ? s.orders.find((o) => o.id === editingOrderId) : undefined,
   );
-  const editOrderDays = React.useMemo(() => editOrder?.days.map((d) => d.date) ?? [], [editOrder]);
+  // The day the menu is ordering for — the fallback for a move that emptied the
+  // cart. See `editCoveredDays`.
+  const activeOrderDate = useUiStore((s) => s.activeOrderDate);
   // Subscribed, not just read: the cart's own store holds no subsidy state, so
   // these re-render the day totals when the contract is switched, or when a
   // guest verifies into a corporate account.
   const subsidyMode = useUiStore((s) => s.subsidyMode);
   const subsidized = isSubsidized(useSessionStore((s) => s.account));
 
+  // The day(s) this edit covers *right now* — see `editCoveredDays`.
+  const editDays = editCoveredDays(editOrder, cart.dates(), activeOrderDate);
+
   // A section for every committed day: days that already hold a meal, plus any
   // day picked as part of a multi-day plan that's still empty. While editing, the
   // order's own days are always kept — removing a meal leaves the day box in
   // place so it's clear the day still needs one. Empty days render a prompt.
-  const dates = Array.from(new Set([...cart.dates(), ...plannedDays, ...editOrderDays])).sort();
+  const dates = Array.from(new Set([...cart.dates(), ...plannedDays, ...editDays])).sort();
 
   return (
     <>
       {editActive ? (
         <Notice tone="warning">
-          Editing your {editOrderDays.length > 1 ? "meals" : "meal"} for{" "}
+          Editing your {editDays.length > 1 ? "meals" : "meal"} for{" "}
           <strong>
-            {editOrderDays.length > 1
-              ? `these ${editOrderDays.length} days`
-              : formatDay(fromISODate(editOrderDays[0] ?? dates[0]))}
+            {editDays.length > 1
+              ? `these ${editDays.length} days`
+              : /* The day the edit is on now, which a single-day order may have
+                   been moved to — quoting the saved date here would contradict
+                   the day card printed directly underneath it. */
+                formatDay(fromISODate(editDays[0] ?? dates[0]))}
           </strong>
           . <strong>Save and checkout</strong> to keep your changes.
         </Notice>
@@ -367,6 +409,7 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
   const closeCart = useUiStore((s) => s.closeCart);
   const requestRangePicker = useUiStore((s) => s.requestRangePicker);
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
+  const activeOrderDate = useUiStore((s) => s.activeOrderDate);
   const requestFocusDay = useUiStore((s) => s.requestFocusDay);
   const subsidyMode = useUiStore((s) => s.subsidyMode);
   const subsidized = isSubsidized(useSessionStore((s) => s.account));
@@ -377,10 +420,16 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
   const editOrder = useOrdersStore((s) =>
     editActive && editingOrderId ? s.orders.find((o) => o.id === editingOrderId) : undefined,
   );
-  const editOrderDays = React.useMemo(() => editOrder?.days.map((d) => d.date) ?? [], [editOrder]);
   // Every day the order covers must keep at least one meal — an emptied day still
   // shows in the list, and Checkout stays blocked until it's filled again.
-  const editHasEmptyDay = editOrderDays.some((d) => cart.itemsForDate(d).length === 0);
+  //
+  // Measured against the day(s) the edit is on *now*, not the ones it was saved
+  // with: a single-day order can be moved to another day mid-edit, and holding it
+  // to the old date would have found that day permanently empty and left Save and
+  // checkout disabled with nothing on screen to explain why.
+  const editHasEmptyDay = editCoveredDays(editOrder, cart.dates(), activeOrderDate).some(
+    (d) => cart.itemsForDate(d).length === 0,
+  );
   const subtotal = cart.subtotal();
   const subsidy = cart.totalSubsidy();
   const tax = cart.tax();
