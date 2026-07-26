@@ -13,8 +13,15 @@
  */
 
 import type { OrderType } from "@/data/types";
-import { WEEKDAY_LONG, fromISODate, formatDay } from "@/lib/dates";
-import { cutoffFor, demoNow } from "@/lib/cutoff";
+import { WEEKDAY_LONG, fromISODate, formatDay, toISODate, startOfToday } from "@/lib/dates";
+import {
+  cutoffFor,
+  demoNow,
+  isServiceDay,
+  isHoliday,
+  isCutoffPassed,
+  HOLIDAYS,
+} from "@/lib/cutoff";
 
 /** ≤ this many ms left → red urgency. */
 export const URGENT_MS = 5 * 60 * 60 * 1000;
@@ -72,6 +79,45 @@ export function formatDuration(ms: number): string {
     return rem ? `1 hour ${rem} min` : "1 hour";
   }
   return `${mins} minutes`;
+}
+
+/** How a calendar should offer one day, and what to say when it can't. */
+export interface DayAvailability {
+  selectable: boolean;
+  /** True only for *time* closures — the day exists, its order cutoff went by.
+   *  Those are the red days, and the only ones offered the kitchen's number. */
+  cutoff: boolean;
+  /** Empty when the day is open. */
+  reason: string;
+}
+
+/**
+ * Classify a delivery day for a calendar — the one function every date picker
+ * asks, so a day that is closed is closed everywhere, for the same stated reason.
+ *
+ * Weekends and holidays are *structural* closures (grey). A weekday whose order
+ * cutoff has passed is a *time* closure (red, with the reason and a way to call
+ * the kitchen) — which covers today, since same-day is never orderable, and
+ * tomorrow once today's 4 PM has gone by. Days before today are simply grey.
+ */
+export function dayAvailability(iso: string, type: OrderType): DayAvailability {
+  const todayISO = toISODate(startOfToday());
+  if (!isServiceDay(iso)) return { selectable: false, cutoff: false, reason: "Weekends are closed" };
+  if (isHoliday(iso)) return { selectable: false, cutoff: false, reason: HOLIDAYS[iso] ?? "Holiday" };
+  if (iso < todayISO) return { selectable: false, cutoff: false, reason: "This day has passed" };
+  if (isCutoffPassed(iso, type)) {
+    return {
+      selectable: false,
+      cutoff: true,
+      reason:
+        iso === todayISO
+          ? "Same-day ordering is closed"
+          : type === "family_style"
+            ? "Order cutoff passed. Family-style closes 72 hours before delivery"
+            : "Order cutoff passed. Closes 4 PM the day before delivery",
+    };
+  }
+  return { selectable: true, cutoff: false, reason: "" };
 }
 
 /** Human description of the rule for a given order type. */

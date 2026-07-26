@@ -16,6 +16,8 @@ import {
   Lock,
   Star,
   X,
+  CalendarDays,
+  ChevronDown,
 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,8 +41,10 @@ import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import { confirm } from "@/store/use-confirm-store";
 import { toast } from "@/store/use-toast-store";
 import { useOOOStore } from "@/store/use-ooo-store";
-import { fromISODate, formatDay, toISODate, startOfToday } from "@/lib/dates";
+import { DateSingleCalendar } from "@/components/ui/date-single-calendar";
+import { fromISODate, formatDay, formatDayLong, toISODate, startOfToday } from "@/lib/dates";
 import { nextOpenDays, earliestDeliveryDate } from "@/lib/cutoff";
+import { cutoffRule, dayAvailability } from "@/lib/cutoff-messaging";
 import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Order } from "@/data/types";
@@ -251,10 +255,11 @@ function OrderCard({ order }: { order: Order }) {
   // Shared change/swap flow (opens the change-order popup, hands off to the menu).
   const { startChange } = useChangeOrder(order);
 
-  // Re-order: drop this order's meals into the cart on the next open delivery
-  // day(s), then send the user to the cart to pick a day and check out.
-  function reorder() {
-    const days = nextOpenDays(toISODate(startOfToday()), order.days.length, order.type);
+  // Re-order: drop this order's meals into the cart on the day chosen in the
+  // modal — a multi-day order fills forward from it across the next open days —
+  // then send the user to the cart to review and check out.
+  function reorder(startISO: string) {
+    const days = nextOpenDays(startISO, order.days.length, order.type);
     const fallback = toISODate(earliestDeliveryDate(order.type));
     order.days.forEach((d, i) => {
       const date = days[i] ?? days[days.length - 1] ?? fallback;
@@ -273,7 +278,9 @@ function OrderCard({ order }: { order: Order }) {
     setReorderOpen(false);
     toast.success(
       "Added to your cart",
-      `${items.length} meal${items.length === 1 ? "" : "s"} from ${order.id} ready to reorder.`,
+      `${items.length} meal${items.length === 1 ? "" : "s"} from ${order.id} ready for ${formatDay(
+        fromISODate(days[0] ?? fallback),
+      )}.`,
     );
     router.push("/cart");
   }
@@ -461,7 +468,12 @@ function OrderCard({ order }: { order: Order }) {
           </span>
         </div>
 
-        {order.status === "delivered" ? (
+        {/* Re-order is offered on a cancelled order as well as a delivered one:
+            a cancelled order is a meal choice someone made and then lost, and
+            re-picking it by hand from the menu is the only thing the card used
+            to leave them. The feedback door stays delivered-only — there is no
+            delivery to report a problem with. */}
+        {order.status === "delivered" || order.status === "cancelled" ? (
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
@@ -473,19 +485,21 @@ function OrderCard({ order }: { order: Order }) {
             >
               <Repeat className="size-3.5" /> Re-Order
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                stop(e);
-                setFeedbackOpen(true);
-              }}
-            >
-              {/* Not "Leave feedback": that label collected delivery
-                  complaints as one-star meals. This button is the logistics
-                  door; the stars on each meal above are the food door. */}
-              <AlertTriangle className="size-3.5" /> Problem with your order?
-            </Button>
+            {order.status === "delivered" ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={(e) => {
+                  stop(e);
+                  setFeedbackOpen(true);
+                }}
+              >
+                {/* Not "Leave feedback": that label collected delivery
+                    complaints as one-star meals. This button is the logistics
+                    door; the stars on each meal above are the food door. */}
+                <AlertTriangle className="size-3.5" /> Problem with your order?
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
@@ -609,7 +623,11 @@ function RateableItemList({ order }: { order: Order }) {
 
 /**
  * Re-order confirmation — shows the past order's meals in a modal and, on
- * confirm, drops them into the cart for the next open delivery day.
+ * confirm, drops them into the cart for the delivery day chosen here.
+ *
+ * The day used to be decided for the user (next open day) and only correctable
+ * afterwards, in the cart. It is the one decision a re-order actually makes, so
+ * it is made here, before the meals move.
  */
 function ReOrderModal({
   order,
@@ -618,10 +636,44 @@ function ReOrderModal({
 }: {
   order: Order;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (startISO: string) => void;
 }) {
   const [shown, setShown] = React.useState(false);
   const items = order.days.flatMap((d) => d.items);
+  // A multi-day order fills forward from the chosen day, so the picker sets the
+  // first of its days rather than the only one.
+  const multiDay = order.days.length > 1;
+
+  // Defaults to the day the old flow would have used, so accepting the default
+  // is the same one tap it was before.
+  const [date, setDate] = React.useState(() => {
+    const [first] = nextOpenDays(toISODate(startOfToday()), 1, order.type);
+    return first ?? toISODate(earliestDeliveryDate(order.type));
+  });
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+
+  // The same classification the menu's calendar uses, so a day closed there is
+  // closed here, in the same colour, for the same stated reason.
+  const dayInfo = React.useCallback((iso: string) => dayAvailability(iso, order.type), [order.type]);
+
+  /**
+   * Opening the calendar scrolls it into the sheet's view.
+   *
+   * The picker sits under the meal list, so on a long order the grid opened
+   * entirely below the fold: the chevron turned, nothing else appeared to happen,
+   * and the calendar was only findable by scrolling for it. Scrolling the *whole*
+   * section (the label and the pill, not just the grid) keeps the day you are
+   * changing on screen above the month you are changing it to.
+   */
+  const dateSectionRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!pickerOpen) return;
+    // After paint, so the grid it is scrolling to exists and has its height.
+    const id = requestAnimationFrame(() => {
+      dateSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [pickerOpen]);
 
   React.useEffect(() => {
     const id = requestAnimationFrame(() => setShown(true));
@@ -692,9 +744,59 @@ function ReOrderModal({
               </li>
             ))}
           </ul>
+          {/* The delivery day, picked here rather than assumed. Collapsed to its
+              value until asked for: the chosen day is the answer most people
+              want, and the month grid is a lot of surface to put above a meal
+              list they came here to check. */}
+          <div ref={dateSectionRef} className="mt-4">
+            <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {multiDay ? "First delivery day" : "Delivery day"}
+            </p>
+            <button
+              type="button"
+              aria-expanded={pickerOpen}
+              aria-label={`${multiDay ? "First delivery day" : "Delivery day"}: ${formatDayLong(
+                fromISODate(date),
+              )}. Choose a different day`}
+              onClick={() => setPickerOpen((o) => !o)}
+              className="mt-1.5 flex h-11 w-full items-center justify-between gap-1.5 rounded-full border border-control bg-card pl-4 pr-3 text-sm font-semibold text-teal-deep shadow-sm outline-none transition-colors hover:border-primary hover:bg-teal-wash focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/30"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <CalendarDays className="size-4 shrink-0 text-primary" />
+                <span className="truncate">{formatDayLong(fromISODate(date))}</span>
+              </span>
+              <ChevronDown
+                className={cn(
+                  "size-4 shrink-0 text-primary transition-transform",
+                  pickerOpen && "rotate-180",
+                )}
+              />
+            </button>
+            {pickerOpen ? (
+              <>
+                <DateSingleCalendar
+                  value={date}
+                  onChange={(iso) => {
+                    setDate(iso);
+                    // Picking is the answer — collapse back to the pill, the way
+                    // the menu's picker closes on a chosen day.
+                    setPickerOpen(false);
+                  }}
+                  dayInfo={dayInfo}
+                  className="mt-2 rounded-2xl border border-border p-3"
+                />
+                <p className="mt-2 text-2xs text-muted-foreground">
+                  Weekdays only (Mon–Fri). {cutoffRule(order.type)}
+                </p>
+              </>
+            ) : null}
+          </div>
+
           <p className="mt-4 rounded-xl bg-muted px-3 py-2.5 text-2xs text-muted-foreground">
-            We&apos;ll add these meals to your cart for the next available delivery day. You can change the
-            day, add sides or drinks, and check out from your cart.
+            {multiDay
+              ? `We'll add these meals to your cart across ${order.days.length} delivery days, starting ${formatDay(fromISODate(date))}.`
+              : `We'll add these meals to your cart for ${formatDay(fromISODate(date))}.`}{" "}
+            You can still change the day, add sides or drinks, and check out from your cart.
           </p>
         </div>
 
@@ -702,7 +804,7 @@ function ReOrderModal({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="teal" onClick={onConfirm}>
+          <Button variant="teal" onClick={() => onConfirm(date)}>
             <Repeat className="size-4" /> Re-order
           </Button>
         </div>
