@@ -84,6 +84,15 @@ function lineUid(
 /** The active subsidy contract, read fresh so a toggle takes effect immediately. */
 const subsidyMode = () => useUiStore.getState().subsidyMode;
 
+/**
+ * Whether a cart is still a re-order's after a removal emptied — or didn't empty
+ * — it. An emptied cart belongs to nobody: the next meal added is whatever the
+ * user is doing now, and it should get the ordinary controls back.
+ */
+function keptReorder(items: CartItem[], reorderOf: string | null) {
+  return items.length ? reorderOf : null;
+}
+
 interface CartState {
   items: CartItem[];
   payment: PaymentChoice;
@@ -99,8 +108,23 @@ interface CartState {
   pickupWindow: string | null;
   /** True when {@link pickupWindow} is a custom, out-of-window pickup (adds a fee). */
   specialPickup: boolean;
+  /**
+   * Set while this cart is *exactly* one re-order's meals and nothing else —
+   * the order they came from. Null for every other cart.
+   *
+   * A re-order picks its delivery day in the re-order modal, before the meals
+   * move, so the cart doesn't then offer to spread it across more days (the
+   * "Add another day" button stands down while this is set). The moment anything
+   * else joins the cart it is an ordinary cart again and gets the ordinary
+   * controls back — which is why `add` clears this, and why the re-order only
+   * sets it when it started from an empty cart.
+   */
+  reorderOf: string | null;
 
   add: (line: Omit<CartItem, "uid" | "unitPrice"> & { unitPrice?: number }) => void;
+  /** Mark the cart as holding nothing but a re-order of `orderId` — call it
+   *  after adding that order's lines to an empty cart (see {@link reorderOf}). */
+  markReorder: (orderId: string) => void;
   setQty: (uid: string, qty: number) => void;
   remove: (uid: string) => void;
   clearDay: (date: string) => void;
@@ -172,6 +196,19 @@ interface CartState {
   count: () => number;
 }
 
+/** The slice of the cart that survives a reload — see `partialize` below. */
+type PersistedCart = Pick<
+  CartState,
+  | "items"
+  | "payment"
+  | "windows"
+  | "addressId"
+  | "packaging"
+  | "pickupWindow"
+  | "specialPickup"
+  | "reorderOf"
+>;
+
 /**
  * The cart outlives the page, and — more importantly — it outlives signing in.
  * This flow deliberately defers identity until checkout, so a guest cart that
@@ -187,35 +224,56 @@ export const useCartStore = create<CartState>()(
   packaging: "disposable",
   pickupWindow: null,
   specialPickup: false,
+  reorderOf: null,
 
   add: (line) => {
     const unitPrice =
       line.unitPrice ?? line.basePrice + line.addOns.reduce((s, a) => s + a.price, 0);
     const uid = lineUid(line.date, line.itemId, line.addOns, line.guests, line.servings);
     set((s) => {
+      // Anything added on top of a re-order makes this an ordinary cart again —
+      // `markReorder` runs *after* the re-order's own lines, so it survives its
+      // own adds and nothing else's.
       const existing = s.items.find((i) => i.uid === uid);
       if (existing) {
         return {
           items: s.items.map((i) => (i.uid === uid ? { ...i, qty: i.qty + line.qty } : i)),
+          reorderOf: null,
         };
       }
-      return { items: [...s.items, { ...line, uid, unitPrice }] };
+      return { items: [...s.items, { ...line, uid, unitPrice }], reorderOf: null };
     });
   },
+  markReorder: (orderId) => set({ reorderOf: orderId }),
   setQty: (uid, qty) =>
-    set((s) => ({
-      items: s.items.map((i) => (i.uid === uid ? { ...i, qty: Math.max(0, qty) } : i)).filter((i) => i.qty > 0),
-    })),
-  remove: (uid) => set((s) => ({ items: s.items.filter((i) => i.uid !== uid) })),
-  clearDay: (date) => set((s) => ({ items: s.items.filter((i) => i.date !== date) })),
+    set((s) => {
+      const items = s.items
+        .map((i) => (i.uid === uid ? { ...i, qty: Math.max(0, qty) } : i))
+        .filter((i) => i.qty > 0);
+      return { items, reorderOf: keptReorder(items, s.reorderOf) };
+    }),
+  remove: (uid) =>
+    set((s) => {
+      const items = s.items.filter((i) => i.uid !== uid);
+      return { items, reorderOf: keptReorder(items, s.reorderOf) };
+    }),
+  clearDay: (date) =>
+    set((s) => {
+      const items = s.items.filter((i) => i.date !== date);
+      return { items, reorderOf: keptReorder(items, s.reorderOf) };
+    }),
   // ISO yyyy-mm-dd sorts lexically, so string comparison is a valid date range check.
   retainRange: (start, end) =>
-    set((s) => ({
-      items: s.items.filter((i) => i.date >= start && i.date <= end),
-      windows: Object.fromEntries(
-        Object.entries(s.windows).filter(([d]) => d >= start && d <= end),
-      ),
-    })),
+    set((s) => {
+      const items = s.items.filter((i) => i.date >= start && i.date <= end);
+      return {
+        items,
+        reorderOf: keptReorder(items, s.reorderOf),
+        windows: Object.fromEntries(
+          Object.entries(s.windows).filter(([d]) => d >= start && d <= end),
+        ),
+      };
+    }),
   moveDay: (from, to, isAvailable) => {
     if (from === to) return [];
     const moving = get().items.filter((i) => i.date === from);
@@ -237,7 +295,7 @@ export const useCartStore = create<CartState>()(
       const windows = { ...s.windows };
       if (windows[from] && !windows[to]) windows[to] = windows[from];
       delete windows[from];
-      return { items: result, windows };
+      return { items: result, windows, reorderOf: keptReorder(result, s.reorderOf) };
     });
     return dropped;
   },
@@ -267,7 +325,15 @@ export const useCartStore = create<CartState>()(
     );
     const windows = Object.fromEntries(order.days.map((d) => [d.date, d.deliveryWindow]));
     // Orders don't carry packaging, so an edit always starts from disposable.
-    set({ items, windows, payment: order.payment, packaging: "disposable", pickupWindow: null, specialPickup: false });
+    set({
+      items,
+      windows,
+      payment: order.payment,
+      packaging: "disposable",
+      pickupWindow: null,
+      specialPickup: false,
+      reorderOf: null,
+    });
   },
   restore: (snap) =>
     set({
@@ -278,8 +344,10 @@ export const useCartStore = create<CartState>()(
       packaging: snap.packaging,
       pickupWindow: snap.pickupWindow,
       specialPickup: snap.specialPickup,
+      reorderOf: null,
     }),
-  clear: () => set({ items: [], packaging: "disposable", pickupWindow: null, specialPickup: false }),
+  clear: () =>
+    set({ items: [], packaging: "disposable", pickupWindow: null, specialPickup: false, reorderOf: null }),
   setPayment: (payment) => set({ payment }),
   setWindow: (date, window) => set((s) => ({ windows: { ...s.windows, [date]: window } })),
   setAddress: (addressId) => set({ addressId }),
@@ -320,6 +388,12 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: "sfk:cart",
+      // v1 drops any `reorderOf` written by an earlier build, which kept the
+      // flag alive through later adds — a cart that had long since become an
+      // ordinary one would come back from storage still missing its
+      // "Add another day" button, with nothing on screen to explain why.
+      version: 1,
+      migrate: (persisted) => ({ ...(persisted as PersistedCart), reorderOf: null }),
       // Read localStorage after mount, never during the first render — the
       // server has no cart, so a synchronously-restored one makes React find a
       // badge in the DOM that the server never wrote. `StoreHydrator` does it.
@@ -327,7 +401,7 @@ export const useCartStore = create<CartState>()(
       // Only the contents. The selectors are functions, and prices are re-derived
       // from the live session on every read — a persisted subsidised total would
       // otherwise survive a sign-out.
-      partialize: (s) => ({
+      partialize: (s): PersistedCart => ({
         items: s.items,
         payment: s.payment,
         windows: s.windows,
@@ -335,6 +409,9 @@ export const useCartStore = create<CartState>()(
         packaging: s.packaging,
         pickupWindow: s.pickupWindow,
         specialPickup: s.specialPickup,
+        // Persisted with the contents: reloading /cart mid-re-order must not
+        // hand back a control the flow deliberately doesn't offer.
+        reorderOf: s.reorderOf,
       }),
     },
   ),

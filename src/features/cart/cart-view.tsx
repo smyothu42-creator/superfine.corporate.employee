@@ -391,6 +391,9 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
   const editOrder = useOrdersStore((s) =>
     editActive && editingOrderId ? s.orders.find((o) => o.id === editingOrderId) : undefined,
   );
+  // This cart came straight from a re-order, whose day was already chosen — see
+  // `reorderOf` on the cart store.
+  const fromReorder = useCartStore((s) => s.reorderOf) !== null;
   // Every day the order covers must keep at least one meal — an emptied day still
   // shows in the list, and Checkout stays blocked until it's filled again.
   const editHasEmptyDay = editCoveredDays(editOrder).some(
@@ -506,6 +509,18 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
               Add a meal to every day before you can save.
             </p>
           ) : null}
+        </div>
+      ) : fromReorder ? (
+        // A re-order settled its delivery day in the re-order modal, before the
+        // meals moved. Offering to spread it across more days here would reopen
+        // a question the flow has already asked and answered — and answering it
+        // again means the range picker, which would fan one order out into a
+        // week. Checkout keeps its own size and its place on the right; only the
+        // day button is gone.
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-end">
+          <Button size="lg" onClick={handleCheckout}>
+            Checkout <ArrowRight className="size-4" />
+          </Button>
         </div>
       ) : (
         <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-between">
