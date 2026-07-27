@@ -275,9 +275,6 @@ function OrderCard({ order }: { order: Order }) {
         });
       });
     });
-    // The day was settled in the modal, so the cart this lands in drops its
-    // "Add another day" invitation — however it arrived there.
-    cart.markReorder(order.id);
     setReorderOpen(false);
     toast.success(
       "Added to your cart",

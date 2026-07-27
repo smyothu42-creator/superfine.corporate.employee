@@ -100,27 +100,8 @@ interface CartState {
   pickupWindow: string | null;
   /** True when {@link pickupWindow} is a custom, out-of-window pickup (adds a fee). */
   specialPickup: boolean;
-  /**
-   * The order a re-order dropped into this cart, and the exact lines it dropped.
-   *
-   * Together these answer one question — "is this cart still nothing but that
-   * re-order?" — and {@link isReorderCart} answers it by *comparing them to the
-   * cart*, not by trusting that they are current. That matters: the cart is
-   * mutated from a dozen places, and a flag maintained by each of them in turn is
-   * a flag that eventually describes a cart that no longer exists. Here a stale
-   * marker simply stops matching, and the cart reads as ordinary again.
-   *
-   * Null / empty for every cart that didn't come from the re-order modal.
-   */
-  reorderOf: string | null;
-  reorderLines: string[];
 
   add: (line: Omit<CartItem, "uid" | "unitPrice"> & { unitPrice?: number }) => void;
-  /**
-   * Record that everything now in the cart came from re-ordering `orderId` —
-   * call it straight after adding that order's lines.
-   */
-  markReorder: (orderId: string) => void;
   setQty: (uid: string, qty: number) => void;
   remove: (uid: string) => void;
   clearDay: (date: string) => void;
@@ -190,18 +171,6 @@ interface CartState {
   /** Final amount the employee pays: out-of-pocket meals + tax + packaging. */
   total: () => number;
   count: () => number;
-  /**
-   * Is this cart still nothing but the meals a re-order put in it?
-   *
-   * True only while {@link reorderLines} is exactly the set of lines present. One
-   * meal added from the menu, one line removed, one day dropped — any of them and
-   * this is an ordinary cart again, whatever a leftover marker says. Derived
-   * rather than tracked on purpose: see {@link reorderOf}.
-   *
-   * Quantities are deliberately not part of it. Two of the same meal is still
-   * that meal, and the re-order's day is still the only day in play.
-   */
-  isReorderCart: () => boolean;
 }
 
 /** The slice of the cart that survives a reload — see `partialize` below. */
@@ -214,8 +183,6 @@ type PersistedCart = Pick<
   | "packaging"
   | "pickupWindow"
   | "specialPickup"
-  | "reorderOf"
-  | "reorderLines"
 >;
 
 /**
@@ -233,8 +200,6 @@ export const useCartStore = create<CartState>()(
   packaging: "disposable",
   pickupWindow: null,
   specialPickup: false,
-  reorderOf: null,
-  reorderLines: [],
 
   add: (line) => {
     const unitPrice =
@@ -250,8 +215,6 @@ export const useCartStore = create<CartState>()(
       return { items: [...s.items, { ...line, uid, unitPrice }] };
     });
   },
-  markReorder: (orderId) =>
-    set((s) => ({ reorderOf: orderId, reorderLines: s.items.map((i) => i.uid) })),
   setQty: (uid, qty) =>
     set((s) => ({
       items: s.items.map((i) => (i.uid === uid ? { ...i, qty: Math.max(0, qty) } : i)).filter((i) => i.qty > 0),
@@ -324,8 +287,6 @@ export const useCartStore = create<CartState>()(
       packaging: "disposable",
       pickupWindow: null,
       specialPickup: false,
-      reorderOf: null,
-      reorderLines: [],
     });
   },
   restore: (snap) =>
@@ -337,8 +298,6 @@ export const useCartStore = create<CartState>()(
       packaging: snap.packaging,
       pickupWindow: snap.pickupWindow,
       specialPickup: snap.specialPickup,
-      reorderOf: null,
-      reorderLines: [],
     }),
   clear: () =>
     set({
@@ -346,8 +305,6 @@ export const useCartStore = create<CartState>()(
       packaging: "disposable",
       pickupWindow: null,
       specialPickup: false,
-      reorderOf: null,
-      reorderLines: [],
     }),
   setPayment: (payment) => set({ payment }),
   setWindow: (date, window) => set((s) => ({ windows: { ...s.windows, [date]: window } })),
@@ -386,26 +343,20 @@ export const useCartStore = create<CartState>()(
   // pickup fee is ZIP-based and lives at the checkout layer, which has the ZIP.
   total: () => get().totalEmployeePaid() + get().tax() + get().packagingFee(),
   count: () => get().items.reduce((s, i) => s + i.qty, 0),
-  isReorderCart: () => {
-    const { reorderOf, reorderLines, items } = get();
-    if (!reorderOf || items.length === 0) return false;
-    if (items.length !== reorderLines.length) return false;
-    const marked = new Set(reorderLines);
-    return items.every((i) => marked.has(i.uid));
-  },
     }),
     {
       name: "sfk:cart",
-      // Earlier builds wrote a `reorderOf` that was maintained by hand on every
-      // mutation, so a stored one can describe a cart that has since changed
-      // beyond recognition. There is nothing to salvage: drop the marker and let
-      // the cart be an ordinary one.
-      version: 2,
-      migrate: (persisted) => ({
-        ...(persisted as PersistedCart),
-        reorderOf: null,
-        reorderLines: [],
-      }),
+      // Earlier builds stored a re-order marker beside the contents, to withhold
+      // "Add another day" from a cart that held nothing but a re-order. Every
+      // cart offers it now, so the marker means nothing — strip it rather than
+      // let a merge carry a dead key back into state.
+      version: 3,
+      migrate: (persisted) => {
+        const cart = { ...(persisted as PersistedCart) } as Record<string, unknown>;
+        delete cart.reorderOf;
+        delete cart.reorderLines;
+        return cart as PersistedCart;
+      },
       // Read localStorage after mount, never during the first render — the
       // server has no cart, so a synchronously-restored one makes React find a
       // badge in the DOM that the server never wrote. `StoreHydrator` does it.
@@ -421,10 +372,6 @@ export const useCartStore = create<CartState>()(
         packaging: s.packaging,
         pickupWindow: s.pickupWindow,
         specialPickup: s.specialPickup,
-        // Persisted with the contents: reloading /cart mid-re-order must not
-        // hand back a control the flow deliberately doesn't offer.
-        reorderOf: s.reorderOf,
-        reorderLines: s.reorderLines,
       }),
     },
   ),
