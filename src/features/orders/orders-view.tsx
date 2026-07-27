@@ -261,9 +261,6 @@ function OrderCard({ order }: { order: Order }) {
   function reorder(startISO: string) {
     const days = nextOpenDays(startISO, order.days.length, order.type);
     const fallback = toISODate(earliestDeliveryDate(order.type));
-    // Only a cart that holds nothing else becomes "the re-order's" — dropping
-    // these meals into a cart someone was already building leaves it theirs.
-    const cartWasEmpty = cart.count() === 0;
     order.days.forEach((d, i) => {
       const date = days[i] ?? days[days.length - 1] ?? fallback;
       d.items.forEach((it) => {
@@ -278,9 +275,9 @@ function OrderCard({ order }: { order: Order }) {
         });
       });
     });
-    // The day was settled in the modal, so a cart that is only these meals drops
-    // its "Add another day" invitation.
-    if (cartWasEmpty) cart.markReorder(order.id);
+    // The day was settled in the modal, so the cart this lands in drops its
+    // "Add another day" invitation — however it arrived there.
+    cart.markReorder(order.id);
     setReorderOpen(false);
     toast.success(
       "Added to your cart",

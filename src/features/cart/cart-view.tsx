@@ -391,9 +391,10 @@ function CartSummaryCard({ bare = false }: { bare?: boolean }) {
   const editOrder = useOrdersStore((s) =>
     editActive && editingOrderId ? s.orders.find((o) => o.id === editingOrderId) : undefined,
   );
-  // This cart came straight from a re-order, whose day was already chosen — see
-  // `reorderOf` on the cart store.
-  const fromReorder = useCartStore((s) => s.reorderOf) !== null;
+  // Nothing in this cart but a re-order, whose day was already chosen in the
+  // re-order modal — see `isReorderCart` on the cart store. Anything added from
+  // the menu (or removed) makes it an ordinary cart again.
+  const fromReorder = useCartStore((s) => s.isReorderCart());
   // Every day the order covers must keep at least one meal — an emptied day still
   // shows in the list, and Checkout stays blocked until it's filled again.
   const editHasEmptyDay = editCoveredDays(editOrder).some(
