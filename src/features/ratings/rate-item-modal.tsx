@@ -10,17 +10,17 @@ import { cn } from "@/lib/utils";
 import type { Order } from "@/data/types";
 
 /**
- * Rate one meal, in place.
+ * Rate a past order without leaving it — every meal in it, or just the one.
  *
  * The dedicated page (`/rate`) is the flow for "I want to say something about
  * lunch" arriving cold. This is the other case: already looking at a past order
- * in My Orders, one meal in it worth a word. Navigating away to a page and back
- * for a single tap of a star would cost more than the rating is worth, so this
- * one stays a sheet.
+ * in My Orders, with something to say about it. Navigating away to a page and
+ * back for a tap of a star would cost more than the rating is worth, so this one
+ * stays a sheet.
  *
- * It is the same {@link RateItems} underneath — scoped to one line — so the star
- * control, the tags, the 24-hour lock and the submit path cannot drift from the
- * page's.
+ * It is the same {@link RateItems} underneath — the whole order by default, one
+ * line when the caller names one — so the star control, the tags, the 24-hour
+ * lock and the submit path cannot drift from the page's.
  */
 export function RateItemModal({
   order,
@@ -29,8 +29,9 @@ export function RateItemModal({
   onClose,
 }: {
   order: Order;
-  lineId: string;
-  itemName: string;
+  /** Narrow the sheet to a single meal. Omitted, it offers the whole order. */
+  lineId?: string;
+  itemName?: string;
   onClose: () => void;
 }) {
   const [shown, setShown] = React.useState(false);
@@ -89,10 +90,11 @@ export function RateItemModal({
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
             <h2 id="rate-item-title" className="font-display text-lg font-semibold tracking-tight">
-              Rate this meal
+              {lineId ? "Rate this meal" : "Rate your meals"}
             </h2>
             <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
-              {itemName} · delivered {formatDay(fromISODate(order.date))}
+              {lineId ? itemName : `${order.id} · ${mealCount(order)}`} · delivered{" "}
+              {formatDay(fromISODate(order.date))}
             </p>
           </div>
           <button
@@ -105,11 +107,28 @@ export function RateItemModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <RateItems order={order} lineId={lineId} source="account" onDone={onClose} compact />
+        {/* No bottom padding: the flow's submit bar is `sticky` on the floor of
+            this scroller and has to be able to reach it, so it carries the
+            spacing under the button itself. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5">
+          <RateItems
+            order={order}
+            lineId={lineId}
+            source="account"
+            onDone={onClose}
+            compact
+            stickyFooter
+          />
         </div>
+
       </div>
     </div>,
     document.body,
   );
+}
+
+/** "3 meals" / "1 meal", across however many days the order covers. */
+function mealCount(order: Order) {
+  const n = order.days.reduce((sum, d) => sum + d.items.length, 0);
+  return `${n} meal${n === 1 ? "" : "s"}`;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Star, Check, PartyPopper } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
@@ -48,15 +49,41 @@ export function RateItems({
   order,
   source,
   onDone,
+  doneLabel,
+  onSubmitted,
   compact,
+  stickyFooter,
+  footerHost,
   lineId,
 }: {
   order: Order;
   source: ItemRating["source"];
   /** Called from the thank-you screen — the sheet closes itself with it. */
   onDone?: () => void;
+  /** The label for that button, when "Done" isn't what it does. */
+  doneLabel?: string;
+  /** Fired once the ratings are in, so a container can drop the instructions it
+   *  was showing above a form that no longer exists. */
+  onSubmitted?: () => void;
   /** Tighter type and spacing, for the feedback sheet. */
   compact?: boolean;
+  /**
+   * Stick the submit control to the floor of the sheet's own scroller, so it
+   * stays on screen while the meals scroll past it. An order of five put the
+   * only way to send a rating below the fold, and tapping a star then appeared
+   * to do nothing at all.
+   */
+  stickyFooter?: boolean;
+  /**
+   * Render the submit control into a container the page owns, instead of at the
+   * end of the form.
+   *
+   * The rating page pins one bar to the foot of the viewport carrying both this
+   * button and its own "Problem with your order?" row. Two separately pinned
+   * bars, one per owner, would stack up as furniture — so the page supplies the
+   * bar and this flow hands over the one control inside it that it owns.
+   */
+  footerHost?: HTMLElement | null;
   /**
    * Narrow the flow to a single line. Used by the per-item popup on a past
    * order, where the row that was pressed names the meal — showing its three
@@ -127,9 +154,42 @@ export function RateItems({
       saved: results.filter((r) => r.status === "saved").length,
       locked: results.filter((r) => r.status !== "saved").length,
     });
+    onSubmitted?.();
   }
 
-  if (done) return <ThankYou result={done} remaining={lines.length - byLine.size} onDone={onDone} />;
+  /* With every meal already rated there is nothing the button can do, and a
+     permanently disabled control reads as a fault. Say what happened instead —
+     the stars above are the record, and they're right there. */
+  const footer = lines.every((l) => byLine.has(l.lineId)) ? (
+    <p className="text-center text-[13px] text-muted-foreground">
+      You&apos;ve rated {lines.length === 1 ? "this meal" : "every meal in this order"} — the stars
+      above are what you said.
+    </p>
+  ) : (
+    <Button block size="lg" disabled={pending.length === 0} onClick={send}>
+      {pending.length === 0
+        ? "Pick a rating to send"
+        : `Submit ${pending.length} rating${pending.length === 1 ? "" : "s"}`}
+    </Button>
+  );
+
+  if (done)
+    return (
+      <ThankYou
+        result={done}
+        /* This order's unrated lines, not `lines.length - byLine.size`:
+           `byLine` holds every rating this account has ever left, so that
+           subtraction counted other lunches against this order and came out
+           negative on anyone with a history — which is why the "still open"
+           line never appeared. */
+        remaining={lines.filter((l) => !byLine.has(l.lineId)).length}
+        onDone={onDone}
+        doneLabel={doneLabel}
+        /* The way on from here is a button like any other in this flow, so it
+           belongs in the same bar the submit button just left. */
+        footerHost={footerHost}
+      />
+    );
 
   return (
     <div className="space-y-4">
@@ -151,20 +211,21 @@ export function RateItems({
         })}
       </div>
 
-      {/* With every meal already rated there is nothing the button can do, and a
-          permanently disabled control reads as a fault. Say what happened
-          instead — the stars above are the record, and they're right there. */}
-      {lines.every((l) => byLine.has(l.lineId)) ? (
-        <p className="text-center text-[13px] text-muted-foreground">
-          You&apos;ve rated {lines.length === 1 ? "this meal" : "every meal in this order"} — the
-          stars above are what you said.
-        </p>
+      {/* Where the page owns the pinned bar, the control goes to it; otherwise
+          it stays here, either stuck to the sheet's floor or simply last in the
+          form. `-mx-5` spans the sheet's side padding, and the sheet leaves its
+          floor unpadded (`px-5 pt-5`) so this can reach it — with a bottom
+          padding under it, a strip of the meal behind showed through. */}
+      {footerHost ? (
+        createPortal(footer, footerHost)
       ) : (
-        <Button block size="lg" disabled={pending.length === 0} onClick={send}>
-          {pending.length === 0
-            ? "Pick a rating to send"
-            : `Submit ${pending.length} rating${pending.length === 1 ? "" : "s"}`}
-        </Button>
+        <div
+          className={cn(
+            stickyFooter && "sticky bottom-0 -mx-5 border-t border-border bg-card px-5 py-4",
+          )}
+        >
+          {footer}
+        </div>
       )}
     </div>
   );
@@ -371,39 +432,88 @@ function Stars({
  * After submitting. Says what landed *and* what didn't — a line rejected by the
  * lock has to be accounted for, or the count silently disagrees with what was
  * tapped.
+ *
+ * It is a panel of its own rather than three centred things floating in the
+ * card: what replaced a page of stars should look like a considered end to the
+ * job, not like the form failed to render. Under the headline sits one quiet
+ * line, and only when there is something to say — a line the lock refused, or
+ * meals still open — rather than a running count of what plainly just worked.
  */
 function ThankYou({
   result,
   remaining,
   onDone,
+  doneLabel = "Done",
+  footerHost,
 }: {
   result: { saved: number; locked: number };
   remaining: number;
   onDone?: () => void;
+  /** Says where the button goes — "Done" closes a sheet, the page sends you
+   *  back to the order list. A button labelled for the wrong container is how
+   *  "Done" ends up meaning three different things. */
+  doneLabel?: string;
+  /** The page's pinned bar, when it has one. See {@link RateItems}. */
+  footerHost?: HTMLElement | null;
 }) {
+  /**
+   * The submit button unmounted under the press that got here, so focus is on
+   * `<body>` and a screen-reader user is told nothing happened. The heading is
+   * what replaced it, so the heading takes the focus.
+   */
+  const heading = React.useRef<HTMLHeadingElement>(null);
+  React.useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+  }, []);
+
+  const footnotes = [
+    /* The count is worth saying only where it would otherwise disagree with
+       what was tapped: five stars go in, one line is refused by the lock, and
+       an unexplained four is a bug as far as the reader can tell. On the plain
+       path the stars themselves are the receipt. */
+    result.locked
+      ? `${result.saved} ${result.saved === 1 ? "rating" : "ratings"} saved. ${result.locked} ${result.locked === 1 ? "meal had" : "meals had"} already been rated.`
+      : "",
+    remaining > 0
+      ? `${remaining} more ${remaining === 1 ? "meal is" : "meals are"} still open if you want to come back.`
+      : "",
+  ].filter(Boolean);
+
   return (
-    <div className="space-y-4 py-4 text-center">
-      <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-bg text-success">
-        <PartyPopper className="size-7" />
+    <div className="rounded-2xl border border-success-border bg-success-bg/50 px-5 py-8 text-center">
+      <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-card text-success shadow-sm">
+        <PartyPopper className="size-7" aria-hidden />
       </span>
-      <div className="space-y-1">
-        <h3 className="font-display text-lg font-semibold tracking-tight">
-          Thanks — the kitchen reads every one.
-        </h3>
-        <p className="text-[13px] text-muted-foreground">
-          {result.saved} {result.saved === 1 ? "rating" : "ratings"} saved
-          {result.locked
-            ? `. ${result.locked} ${result.locked === 1 ? "meal had" : "meals had"} already been rated.`
-            : "."}
-          {remaining > 0
-            ? ` ${remaining} more ${remaining === 1 ? "meal is" : "meals are"} still open if you want to come back.`
-            : ""}
+
+      <h3
+        ref={heading}
+        tabIndex={-1}
+        className="mt-4 font-display text-lg font-semibold tracking-tight focus:outline-none"
+      >
+        Thanks! The kitchen reads every one.
+      </h3>
+
+      {footnotes.length ? (
+        <p className="mx-auto mt-3 max-w-xs text-[13px] leading-relaxed text-muted-foreground">
+          {footnotes.join(" ")}
         </p>
-      </div>
+      ) : null}
+
       {onDone ? (
-        <Button block onClick={onDone}>
-          Done
-        </Button>
+        footerHost ? (
+          createPortal(
+            <Button block size="lg" onClick={onDone}>
+              {doneLabel}
+            </Button>,
+            footerHost,
+          )
+        ) : (
+          <div className="mt-6 flex justify-center">
+            <Button className="w-full max-w-[17rem]" onClick={onDone}>
+              {doneLabel}
+            </Button>
+          </div>
+        )
       ) : null}
     </div>
   );

@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Apple, LoaderCircle, ChevronDown, Search, Check, SlidersHorizontal, X } from "lucide-react";
+import { Apple, LoaderCircle, ChevronDown, Check, SlidersHorizontal, X } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
+import { PageHero } from "@/components/layout/standalone-page";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/input";
 import { OptionGroups, useItemOptions } from "@/components/menu/option-groups";
@@ -16,8 +17,8 @@ import type { MenuItem, Nutrition } from "@/data/types";
  * In-app nutrition lookup — pick an item, resolve its options (a combo's label
  * depends on the exact combination), then "View nutrition" fetches and renders
  * the label in place. Nutrition is a general reference here, never tied to an
- * order. Rendered both in the standalone `/nutrition` route and in the sidebar's
- * nutrition modal, so the content stays identical wherever it's opened.
+ * order. Rendered inside the `/nutrition` route's `StandalonePage` shell, and
+ * carries that page's yellow title hero as the head of its own picker card.
  */
 const LOOKUP_ITEMS: MenuItem[] = menu
   .filter((i) => i.type === "individual" && i.nutrition)
@@ -31,23 +32,14 @@ export function NutritionLookup({ initialItemId }: { initialItemId?: string }) {
 
   return (
     <>
-      {/* No overflow-hidden — it would clip the meal dropdown. The header rounds
+      {/* No overflow-hidden — it would clip the meal dropdown. `PageHero` rounds
           its own top corners instead so the yellow still fits the card. */}
       <Card>
-        {/* Lemon-yellow hero header, mirroring the Auto-Order box: a white-wash
-            icon chip, title, and a supporting line. */}
-        <div className="rounded-t-2xl bg-hero-yellow px-6 py-8 text-teal-deep">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-white/40">
-            <Apple className="size-6" />
-          </span>
-          <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight">
-            Check the nutrition of any meal
-          </h1>
-          <p className="mt-1 text-sm">
-            Pick a dish and build it exactly how you&apos;d eat it. The label reflects the options
-            you choose. No account or order needed.
-          </p>
-        </div>
+        <PageHero
+          icon={Apple}
+          title="Check the nutrition of any meal"
+          description="Pick a dish and build it exactly how you'd eat it. The label reflects the options you choose. No account or order needed."
+        />
 
         <CardBody className="p-6 sm:p-7">
           <Label htmlFor="nutrition-item">Choose an item</Label>
@@ -70,7 +62,13 @@ export function NutritionLookup({ initialItemId }: { initialItemId?: string }) {
  * Themed, searchable single-select for the meal picker. Replaces the native
  * `<select>` (whose option list is OS-styled and unsearchable) with a dropdown
  * that matches the app's dropdowns — cream/white surface, teal selected
- * highlight — and a type-to-filter search box inside the panel.
+ * highlight — and filters as you type.
+ *
+ * One field, not two. The panel used to open its own search box directly under
+ * the trigger, which put two identical-looking boxes on top of each other, both
+ * ringed in teal, and left it to the reader to work out that the top one was
+ * the answer and the bottom one the question. The field you press is the field
+ * you type in.
  */
 function MealCombobox({
   id,
@@ -94,14 +92,22 @@ function MealCombobox({
 
   const selected = value ? items.find((i) => i.id === value) : undefined;
 
-  // Close on outside click / Escape while open.
+  /**
+   * Close on outside click / Escape while open — and drop the half-typed query
+   * with it, so the field goes back to reading as the meal that is chosen
+   * rather than keeping the search that was abandoned.
+   */
   React.useEffect(() => {
     if (!open) return;
+    function shut() {
+      setOpen(false);
+      setQuery("");
+    }
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) shut();
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") shut();
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -109,11 +115,6 @@ function MealCombobox({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
-
-  // Focus the search box as the panel opens so you can type immediately.
-  React.useEffect(() => {
-    if (open) inputRef.current?.focus();
   }, [open]);
 
   const q = query.trim().toLowerCase();
@@ -132,23 +133,80 @@ function MealCombobox({
 
   return (
     <div ref={ref} className="relative w-full">
-      {/* Trigger — styled to match the native Select it replaces. */}
-      <button
+      {/* The one field: reads as the chosen meal when shut, takes the typing
+          when open. `role="combobox"` + `aria-activedescendant` is what makes
+          the arrow keys audible — they move a highlight down the list, and
+          without this a screen reader is never told which meal it landed on, so
+          pressing Enter is a guess. */}
+      <input
         id={id}
-        type="button"
+        ref={inputRef}
+        type="text"
+        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        aria-controls={open ? listId : undefined}
+        aria-autocomplete="list"
+        aria-activedescendant={open && filtered.length ? `${listId}-opt-${activeIndex}` : undefined}
+        autoComplete="off"
+        spellCheck={false}
+        /* Shut, the field *is* the answer. Open, the answer steps back to a
+           placeholder — still on screen, and still ticked in the list — so the
+           box is empty for the question being asked of it. */
+        value={open ? query : (selected?.name ?? "")}
+        placeholder={open ? (selected?.name ?? "Search meals…") : "Select a meal…"}
+        onFocus={() => setOpen(true)}
+        /* Focus alone isn't enough to reopen: choosing a meal leaves the caret
+           right here, so the next press on the field fired no `focus` event and
+           the list stayed shut. */
+        onMouseDown={() => setOpen(true)}
+        onChange={(e) => {
+          setOpen(true);
+          setQuery(e.target.value);
+          setActiveIndex(0);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (!open) {
+              setOpen(true);
+              return;
+            }
+            setActiveIndex((i) => (filtered.length ? (i + 1) % filtered.length : 0));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveIndex((i) => (filtered.length ? (i - 1 + filtered.length) % filtered.length : 0));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            const pick = filtered[activeIndex];
+            if (open && pick) choose(pick.id);
+          }
+        }}
         className={cn(
-          "flex h-11 w-full items-center justify-between gap-2 rounded-xl border bg-card pl-3.5 pr-3 text-base text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:text-sm",
+          "h-11 w-full rounded-xl border bg-card pl-3.5 pr-10 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none sm:text-sm",
           open ? "border-primary ring-2 ring-ring/30" : "border-input hover:border-primary",
         )}
+      />
+      {/* Decorative: the field itself opens the list, and a second tab stop over
+          a chevron is one more press between here and the meal. `mousedown`
+          rather than `click` so the toggle beats the focus that would reopen
+          it. */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (open) setOpen(false);
+          else inputRef.current?.focus();
+        }}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center"
       >
-        <span className={cn("truncate", !selected && "text-muted-foreground")}>
-          {selected ? selected.name : "Select a meal…"}
-        </span>
         <ChevronDown
-          className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
         />
       </button>
 
@@ -159,52 +217,6 @@ function MealCombobox({
           data-escape-layer
           className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-raised"
         >
-          {/* Search box inside the panel. */}
-          <div className="flex items-center gap-2 border-b border-border px-3">
-            <Search className="size-4 shrink-0 text-muted-foreground" />
-            {/* `role="combobox"` + `aria-activedescendant` is what makes the
-                arrow keys audible: they already moved a highlight down the list,
-                but a screen reader was never told which meal the highlight had
-                landed on, so pressing Enter was a guess. */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              aria-label="Search meals"
-              role="combobox"
-              aria-haspopup="listbox"
-              aria-expanded
-              aria-controls={listId}
-              aria-autocomplete="list"
-              aria-activedescendant={filtered.length ? `${listId}-opt-${activeIndex}` : undefined}
-              placeholder="Search meals…"
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setActiveIndex(0);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setActiveIndex((i) => (filtered.length ? (i + 1) % filtered.length : 0));
-                } else if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setActiveIndex((i) => (filtered.length ? (i - 1 + filtered.length) % filtered.length : 0));
-                } else if (e.key === "Enter") {
-                  e.preventDefault();
-                  const pick = filtered[activeIndex];
-                  if (pick) choose(pick.id);
-                }
-              }}
-              // `rounded-xl` draws nothing here — the field is transparent and
-              // borderless — but the focus outline follows an element's own
-              // radius, and without one this row was the last field in the app
-              // still ringed by a hard-cornered rectangle. Nothing to light up
-              // around it (the row is a divider inside an already-open panel),
-              // so the outline stays; it just takes the shape of everything else.
-              className="h-11 min-w-0 flex-1 rounded-xl bg-transparent text-base text-foreground placeholder:text-muted-foreground outline-none sm:text-sm"
-            />
-          </div>
-
           <div id={listId} role="listbox" aria-label="Meals" className="max-h-64 overflow-auto p-1.5">
             {filtered.map((i, idx) => {
               const active = i.id === value;

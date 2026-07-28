@@ -1171,12 +1171,29 @@ interface Promo {
   /** Icon shown in the eyebrow badge. */
   icon: React.ComponentType<{ className?: string }>;
   title: string;
-  body: React.ReactNode;
+  /** One line, {@link PROMO_BODY_MAX} characters or fewer — see the constant. */
+  body: string;
   href: string;
   cta: string;
   image: string;
   alt: string;
 }
+
+/**
+ * The most a promo body may carry.
+ *
+ * The card gives this line one line and clips the rest, so the limit is a
+ * property of the layout rather than a style guide: the copy column is at its
+ * narrowest on a phone — 189px, the full-width card beside its 38% photo — and
+ * that is what this is measured against, not the 256px it gets on a desktop.
+ * Anything longer doesn't say more; it ends in an ellipsis on the smallest
+ * screen that shows it, which is most of them.
+ *
+ * 32 is where the widest 13px line still fits that column. Wide characters can
+ * still push a legal-length line over, so check a new one on a phone rather
+ * than trusting the count alone.
+ */
+const PROMO_BODY_MAX = 32;
 
 /** Campaigns shown in the promo carousel; paged two-at-a-time. */
 const PROMOS: Promo[] = [
@@ -1185,11 +1202,7 @@ const PROMOS: Promo[] = [
     tag: "New",
     icon: Sparkles,
     title: "Try our new summer bowls",
-    body: (
-      <>
-        Fresh seasonal bowls and grills, just added. See what&apos;s new on the menu.
-      </>
-    ),
+    body: "Fresh bowls and grills, just in.",
     href: "/menu",
     cta: "See the menu",
     image: "https://www.themealdb.com/images/media/meals/rqtxvr1511792990.jpg",
@@ -1200,11 +1213,7 @@ const PROMOS: Promo[] = [
     tag: "Limited",
     icon: Truck,
     title: "Free delivery this week only",
-    body: (
-      <>
-        Delivery is on us on every order this week. No code needed.
-      </>
-    ),
+    body: "Delivery is on us. No code.",
     href: "/menu",
     cta: "Order now",
     image: "https://www.themealdb.com/images/media/meals/1548772327.jpg",
@@ -1215,11 +1224,7 @@ const PROMOS: Promo[] = [
     tag: "Seasonal",
     icon: Gift,
     title: "Christmas specials now available",
-    body: (
-      <>
-        Festive mains and sides, on the menu through the holidays.
-      </>
-    ),
+    body: "Festive mains and sides.",
     href: "/menu",
     cta: "See the menu",
     image: "https://www.themealdb.com/images/media/meals/1550441882.jpg",
@@ -1230,17 +1235,26 @@ const PROMOS: Promo[] = [
     tag: "New",
     icon: BadgePercent,
     title: "New referral rewards just launched",
-    body: (
-      <>
-        You both earn $15 in credit on their first order. Share your link.
-      </>
-    ),
+    body: "You both get $15 in credit.",
     href: "/account",
     cta: "Get your link",
     image: "https://www.themealdb.com/images/media/meals/bqx8mc1782684286.jpg",
     alt: "Fresh harvest salad",
   },
 ];
+
+/* Whoever writes the next campaign gets told here, rather than finding out from
+   an ellipsis on a phone nobody tested it on. Dev only — a long line is a copy
+   bug to fix before it ships, not something to shout about in production. */
+if (process.env.NODE_ENV !== "production") {
+  const tooLong = PROMOS.filter((p) => p.body.length > PROMO_BODY_MAX);
+  if (tooLong.length) {
+    console.warn(
+      `Promo body copy is limited to ${PROMO_BODY_MAX} characters and will be clipped to one line. Over the limit: ` +
+        tooLong.map((p) => `${p.id} (${p.body.length})`).join(", "),
+    );
+  }
+}
 
 /** One promo card — copy + CTA on the left, food photo on the right. */
 function PromoCard({ promo }: { promo: Promo }) {
@@ -1258,7 +1272,10 @@ function PromoCard({ promo }: { promo: Promo }) {
         <h3 className="mt-0.5 font-display text-sm font-bold leading-tight tracking-tight text-teal-deep sm:line-clamp-1 sm:text-xl">
           {promo.title}
         </h3>
-        <p className="line-clamp-2 text-[13px] leading-snug text-teal-deep/75">{promo.body}</p>
+        {/* One line, always. Two lines pushed the CTA down by a row on the card
+            that happened to have the longer sentence, so a pair of promos side
+            by side had their buttons at different heights. */}
+        <p className="line-clamp-1 text-[13px] leading-snug text-teal-deep/75">{promo.body}</p>
         <Link
           href={promo.href}
           className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-deep px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-primary"

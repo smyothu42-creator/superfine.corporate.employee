@@ -246,12 +246,27 @@ function OrderCard({ order }: { order: Order }) {
   const href = `/orders/${order.id}`;
   const items = order.days.flatMap((d) => d.items);
   const active = ["draft", "confirmed"].includes(order.status);
+  /**
+   * Delivered or cancelled — an order with nothing left to change, and the two
+   * that get a re-order. A cancelled one is a meal choice someone made and then
+   * lost, and re-picking it by hand off the menu was all the card left them.
+   */
+  const past = order.status === "delivered" || order.status === "cancelled";
   // Drafts before their cutoff only — a placed order is the kitchen's now.
   const editable = canChangeOrder(order);
   // Re-order confirmation modal (past orders).
   const [reorderOpen, setReorderOpen] = React.useState(false);
   // In-platform feedback form (delivered orders).
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
+  // Rate every meal in this order, in one sheet (delivered orders).
+  const [rateOpen, setRateOpen] = React.useState(false);
+  const ratings = useRatingsStore((s) => s.ratings);
+  const ratedCount = React.useMemo(() => {
+    const rated = new Set(ratings.map((r) => r.lineId));
+    return items.filter((it) => rated.has(it.lineId)).length;
+  }, [ratings, items]);
+  /** Once every meal has a score the sheet is a record, not a form. */
+  const rateLabel = ratedCount === items.length ? "Your ratings" : "Rate meals";
   // Shared change/swap flow (opens the change-order popup, hands off to the menu).
   const { startChange } = useChangeOrder(order);
 
@@ -387,6 +402,44 @@ function OrderCard({ order }: { order: Order }) {
           >
             <Lock className="size-3.5" /> Changes closed
           </span>
+        ) : past ? (
+          /* A past order's two doors sit where an active order's Edit and
+             Cancel do — same corner, same buttons, icon-only on phones. They
+             were a row of pills at the foot of the card, which put the thing
+             you are most likely to want (order this again) furthest from the
+             top and made every past card taller than the meals it lists. The
+             chevron goes with them: two labelled buttons in the corner say
+             "there is more here" better than an arrow did. */
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-8 px-0 sm:w-auto sm:px-4"
+              aria-label="Re-order"
+              title="Re-order"
+              onClick={(e) => {
+                stop(e);
+                setReorderOpen(true);
+              }}
+            >
+              <Repeat className="size-3.5" /> <span className="hidden sm:inline">Re-Order</span>
+            </Button>
+            {order.status === "delivered" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-8 px-0 sm:w-auto sm:px-4"
+                aria-label={rateLabel}
+                title={rateLabel}
+                onClick={(e) => {
+                  stop(e);
+                  setRateOpen(true);
+                }}
+              >
+                <Star className="size-3.5" /> <span className="hidden sm:inline">{rateLabel}</span>
+              </Button>
+            ) : null}
+          </div>
         ) : (
           <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
         )}
@@ -399,11 +452,13 @@ function OrderCard({ order }: { order: Order }) {
           </div>
         ) : null}
 
-        {/* A delivered order is the one place every meal needs its own control,
-            so it gets a row per item instead of the stacked-avatar summary. */}
-        {order.status === "delivered" ? (
-          <RateableItemList order={order} />
-        ) : items.length > 1 ? (
+        {/* Every multi-meal order wears the same stacked-avatar summary, past
+            ones included. A delivered order used to be the exception — a row per
+            meal, each with its own "Rate" button — which made the card that had
+            already happened the tallest and busiest on the page, and put five
+            controls where the order it repeats has none. The rating lives behind
+            one button below now, and rates every meal in the same sheet. */}
+        {items.length > 1 ? (
           <div className="flex items-center gap-3">
             <div className="flex shrink-0 -space-x-3">
               {items.slice(0, 3).map((it, i) => (
@@ -419,7 +474,17 @@ function OrderCard({ order }: { order: Order }) {
               ))}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold">{items.length} meal orders</p>
+              <p className="text-sm font-semibold">
+                {items.length} meal orders
+                {/* What the per-meal rows used to show back: how much of this
+                    order you've already had your say on. */}
+                {order.status === "delivered" && ratedCount > 0 ? (
+                  <span className="font-medium text-muted-foreground">
+                    {" "}
+                    · {ratedCount} of {items.length} rated
+                  </span>
+                ) : null}
+              </p>
               <p className="truncate text-2xs text-muted-foreground">
                 {items.map((it) => it.name).join(" · ")}
               </p>
@@ -468,39 +533,23 @@ function OrderCard({ order }: { order: Order }) {
           </span>
         </div>
 
-        {/* Re-order is offered on a cancelled order as well as a delivered one:
-            a cancelled order is a meal choice someone made and then lost, and
-            re-picking it by hand from the menu is the only thing the card used
-            to leave them. The feedback door stays delivered-only — there is no
-            delivery to report a problem with. */}
-        {order.status === "delivered" || order.status === "cancelled" ? (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                stop(e);
-                setReorderOpen(true);
-              }}
-            >
-              <Repeat className="size-3.5" /> Re-Order
-            </Button>
-            {order.status === "delivered" ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(e) => {
-                  stop(e);
-                  setFeedbackOpen(true);
-                }}
-              >
-                {/* Not "Leave feedback": that label collected delivery
-                    complaints as one-star meals. This button is the logistics
-                    door; the stars on each meal above are the food door. */}
-                <AlertTriangle className="size-3.5" /> Problem with your order?
-              </Button>
-            ) : null}
-          </div>
+        {/* The logistics door, and the only one still down here. A link rather
+            than a third pill: something went wrong with the delivery is the
+            rare case, and it should not stand as an equal to "order this again"
+            on every past card. Not "Leave feedback" either — that label
+            collected delivery complaints as one-star meals. */}
+        {order.status === "delivered" ? (
+          <Button
+            size="sm"
+            variant="link"
+            className="h-auto px-0"
+            onClick={(e) => {
+              stop(e);
+              setFeedbackOpen(true);
+            }}
+          >
+            <AlertTriangle className="size-3.5" /> Problem with your order?
+          </Button>
         ) : null}
 
         {order.locked && active ? (
@@ -517,106 +566,7 @@ function OrderCard({ order }: { order: Order }) {
     {feedbackOpen ? (
       <FeedbackModal orderId={order.id} onClose={() => setFeedbackOpen(false)} />
     ) : null}
-    </>
-  );
-}
-
-/**
- * The meals in a delivered order, each with its own rating control.
- *
- * Per item rather than per order because that is the grain of the opinion: the
- * Bibimbap was excellent and the salad arrived warm, and one number across both
- * says neither. A rated line shows its score back instead of the button — the
- * row is the record as well as the entry point.
- */
-function RateableItemList({ order }: { order: Order }) {
-  const ratings = useRatingsStore((s) => s.ratings);
-  const [rating, setRating] = React.useState<{ lineId: string; name: string } | null>(null);
-
-  const byLine = React.useMemo(() => new Map(ratings.map((r) => [r.lineId, r])), [ratings]);
-
-  return (
-    <>
-      <ul className="space-y-1.5">
-        {order.days.map((d) =>
-          d.items.map((it) => {
-            const rated = byLine.get(it.lineId);
-            return (
-              <li key={it.lineId} className="flex items-center justify-between gap-3 text-[13px]">
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <FoodPhoto
-                    src={getItem(it.itemId)?.image}
-                    alt=""
-                    className="size-10 shrink-0 rounded-full"
-                    iconClassName="size-4"
-                  />
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">
-                      {it.name} ×{it.qty}
-                    </span>
-                    {it.addOns.length ? (
-                      <span className="block truncate text-2xs text-muted-foreground">
-                        {it.addOns.join(" · ")}
-                      </span>
-                    ) : null}
-                  </span>
-                </span>
-
-                {rated ? (
-                  <span className="flex shrink-0 items-center">
-                    <span aria-hidden className="flex items-center">
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <Star
-                          key={n}
-                          className={cn(
-                            "size-3",
-                            n <= rated.stars
-                              // The empty stars are what say "out of five" to
-                              // anyone reading this by eye — the sr-only
-                              // sentence below covers everyone else. Faded to
-                              // 40% they were all but invisible, leaving a
-                              // three-star rating looking like the whole scale.
-                              ? "fill-yellow text-yellow"
-                              : "fill-transparent text-muted-foreground",
-                          )}
-                        />
-                      ))}
-                    </span>
-                    <span className="sr-only">
-                      You rated {it.name} {rated.stars} out of 5 stars
-                    </span>
-                  </span>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label={`Rate ${it.name}`}
-                    onClick={(e) => {
-                      // The card itself navigates; this must not follow it.
-                      // (Called inline rather than via OrderCard's `stop`, which
-                      // is scoped to that component — the bare name resolves to
-                      // `window.stop` out here, which silently does nothing.)
-                      e.stopPropagation();
-                      setRating({ lineId: it.lineId, name: it.name });
-                    }}
-                  >
-                    <Star className="size-3.5" aria-hidden /> Rate
-                  </Button>
-                )}
-              </li>
-            );
-          }),
-        )}
-      </ul>
-
-      {rating ? (
-        <RateItemModal
-          order={order}
-          lineId={rating.lineId}
-          itemName={rating.name}
-          onClose={() => setRating(null)}
-        />
-      ) : null}
+    {rateOpen ? <RateItemModal order={order} onClose={() => setRateOpen(false)} /> : null}
     </>
   );
 }

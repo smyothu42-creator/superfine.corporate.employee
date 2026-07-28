@@ -95,6 +95,7 @@ export function FeedbackForm({
   onDone,
   onFindOrder,
   orderSource = "link",
+  stickySubmit,
 }: {
   initialOrder?: string;
   /** Heading to sit above the fields — and to step aside for the confirmation,
@@ -124,6 +125,17 @@ export function FeedbackForm({
    * that didn't have it is the picker arguing with the answer.
    */
   orderSource?: "link" | "lookup";
+  /**
+   * Ride the send button at the foot of the viewport instead of leaving it at
+   * the end of the form.
+   *
+   * For the `/rate` problem view, where the order list, six topics and a note
+   * box put it well below the fold: someone who has tapped "Arrived late" is
+   * finished, and should not have to go looking for the way to send it. The
+   * `/feedback` route leaves it alone — the form there is centred in its own
+   * column beside the hero, and it is the only thing on that half of the page.
+   */
+  stickySubmit?: boolean;
 }) {
   const submitFeedback = useFeedbackStore((s) => s.submit);
   const orders = useOrdersStore((s) => s.orders);
@@ -194,9 +206,7 @@ export function FeedbackForm({
       <section className="space-y-2">
         <Label id="fb-order-label" className="mb-0">
           Which order?{" "}
-          <span className="font-normal normal-case text-muted-foreground">
-            (skip if it&apos;s not about one)
-          </span>
+          <span className="font-normal normal-case text-muted-foreground">(optional)</span>
         </Label>
 
         {recent.length > 0 || (picked && !pickedIsListed) ? (
@@ -251,9 +261,18 @@ export function FeedbackForm({
         <Label id="fb-topic-label" className="mb-0">
           {relatedToOrder ? "What went wrong?" : "What's it about?"}
         </Label>
-        {/* `toolbar`, not `group`: the arrows this implies are answered now. */}
+        {/* A two-column grid, not free-wrapping pills. Six labels of six
+            different lengths wrapped four-and-two, which left a ragged edge and
+            a hole where the second row ran out — the answers to one question
+            reading as a scattering of unrelated buttons. On a grid they are one
+            block of equal choices, and the edge is straight at every width.
+
+            `toolbar`, not `group`: the arrows this implies are answered now. */}
         <div
-          className="flex flex-wrap gap-2"
+          /* One column on a phone: two columns of ~165px cut "Damaged or
+             spilled" and "Billing or charge" to an ellipsis, and a choice you
+             can't read is not a choice. */
+          className="grid gap-2 sm:grid-cols-2"
           role="toolbar"
           aria-labelledby="fb-topic-label"
           {...topicRoving.props}
@@ -267,15 +286,17 @@ export function FeedbackForm({
                 aria-pressed={on}
                 onClick={() => setTopic(on ? "" : t.id)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[13px] font-semibold transition-colors",
+                  "flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-[13px] font-semibold transition-colors",
                   on
                     ? "border-primary bg-teal-wash text-teal-deep"
                     : "border-control bg-card text-muted-foreground hover:border-primary hover:text-foreground",
                 )}
               >
-                <t.icon className={cn("size-3.5 shrink-0", on ? "text-primary" : "text-muted-foreground")} />
-                {t.label}
-                {on ? <Check className="size-3.5 shrink-0 text-primary" /> : null}
+                <t.icon
+                  className={cn("size-4 shrink-0", on ? "text-primary" : "text-muted-foreground")}
+                />
+                <span className="min-w-0 flex-1 truncate">{t.label}</span>
+                {on ? <Check className="size-4 shrink-0 text-primary" /> : null}
               </button>
             );
           })}
@@ -304,7 +325,14 @@ export function FeedbackForm({
         />
       </section>
 
-      <div className="space-y-2">
+      {/* The hint travels with the button — it says why the button is disabled,
+          which is no use back where the button used to be. */}
+      <div
+        className={cn(
+          "space-y-2",
+          stickySubmit && "sticky bottom-4 z-10 rounded-2xl border border-border bg-card p-2.5 shadow-raised",
+        )}
+      >
         <Button block size="lg" disabled={!canSubmit} onClick={submit}>
           <Send className="size-4" /> {relatedToOrder ? "Report the problem" : "Send to our team"}
         </Button>
@@ -313,18 +341,6 @@ export function FeedbackForm({
             {topic ? "Add a few words so we know what happened." : "Pick one above, or write a note."}
           </p>
         ) : null}
-        {/* The other door, named where the mistake gets made — one quiet line
-            rather than a boxed-off paragraph competing with the form. */}
-        <p className="text-center text-2xs text-muted-foreground">
-          Telling us how the food was?{" "}
-          <Link
-            href={picked ? `/rate?order=${picked}` : "/rate"}
-            className="font-semibold text-primary underline underline-offset-2"
-          >
-            Rate the meals
-          </Link>{" "}
-          instead — stars go to the kitchen.
-        </p>
       </div>
     </div>
   );

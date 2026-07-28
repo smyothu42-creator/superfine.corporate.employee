@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
+import { PageHero } from "@/components/layout/standalone-page";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { RateItems } from "@/features/ratings/rate-items";
 import { FeedbackForm } from "@/features/feedback/feedback-form";
@@ -179,6 +180,21 @@ export function RateEntry({
   }, [initialOrder, initialEmail, initialView, account]);
 
   /**
+   * The order whose ratings have just been sent, so the view above the
+   * thank-you note can stop explaining a form that is no longer there. Held as
+   * an id rather than a flag: coming back for a *different* order must ask its
+   * question again.
+   */
+  const [rated, setRated] = React.useState<string | null>(null);
+
+  /**
+   * The slot in the pinned bar that the meal list's submit button renders into.
+   * A callback ref rather than a `useRef`: the flow needs to re-render once the
+   * node exists, and a ref object mutating in place doesn't tell it to.
+   */
+  const [footerHost, setFooterHost] = React.useState<HTMLDivElement | null>(null);
+
+  /**
    * Move focus to the new view's heading. The control that was pressed unmounts
    * on the same tick, so without this focus falls to `<body>` and a
    * screen-reader user is told nothing changed.
@@ -196,48 +212,69 @@ export function RateEntry({
   if (view.name === "rate") {
     return (
       <div className="space-y-4">
-        <BackLink onClick={() => setView({ name: "pick" })}>Choose a different order</BackLink>
-
-        <div className="space-y-1">
-          <h2 ref={heading} tabIndex={-1} className={HEADING}>
-            How was {formatDayLong(fromISODate(view.order.date))}?
-          </h2>
-          <p className="text-[13px] text-muted-foreground">
-            Order {view.order.id} · stars are for the food only — rate what you&apos;d like, one
-            meal, a few, or all of them.
-          </p>
-        </div>
-
         <Card>
-          <CardBody>
-            <RateItems order={view.order} source={view.source} />
+          <RateHero />
+          <CardBody className="space-y-4 p-6 sm:p-7">
+            <BackLink onClick={() => setView({ name: "pick" })}>Choose a different order</BackLink>
+
+            <div className="space-y-1">
+              <h2 ref={heading} tabIndex={-1} className={HEADING}>
+                How was {formatDayLong(fromISODate(view.order.date))}?
+              </h2>
+              {/* Once the ratings are sent there are no stars left to explain,
+                  and a how-to hanging over a thank-you note is the leftover of a
+                  screen that has already gone. The order number stays: it is
+                  what says which lunch this was. */}
+              <p className="text-[13px] text-muted-foreground">
+                Order {view.order.id}
+                {rated === view.order.id
+                  ? ""
+                  : " · stars are for the food only — rate what you'd like, one meal, a few, or all of them."}
+              </p>
+            </div>
+
+            <RateItems
+              order={view.order}
+              source={view.source}
+              /* The submit button belongs to the bar below, not to the end of
+                 the meal list. */
+              footerHost={footerHost}
+              onSubmitted={() => setRated(view.order.id)}
+              onDone={() => setView({ name: "pick" })}
+              doneLabel="Rate another order"
+            />
           </CardBody>
         </Card>
 
-        {/* Order-level problems. Kept a separate destination from the stars: a
-            1-star Bibimbap and a missing delivery need different people to read
-            them, and someone whose lunch never arrived will happily give the
-            recipe one star to say so unless there's somewhere better to go.
+        {/* One bar at the foot of the viewport, carrying both of this view's
+            standing offers: send what you've rated, and — kept a separate
+            destination, because a 1-star Bibimbap and a missing delivery need
+            different people to read them — the door out to the problem form.
 
-            Stuck to the foot of the viewport, so it is on screen from the first
-            meal rather than under five of them. That is the whole point of it:
-            someone whose lunch never turned up should not have to scroll past
-            the stars for their own meals to find the door marked "this wasn't
-            about the food". `sticky` rather than `fixed` — it rides inside the
-            column, so it can't overhang the yellow hero on desktop, and it
-            settles into place at the end of the list instead of covering it. */}
+            Both have to be reachable from the first meal rather than under five
+            of them, and two pinned bars, one per owner, would stack up as
+            furniture. So the page owns the bar and `RateItems` hands its submit
+            button into the top of it. `sticky` rather than `fixed`: it rides
+            inside the content column, so it stays the column's width at every
+            size and settles at the end of the list instead of covering it. */}
         <Card className="sticky bottom-4 z-10 shadow-raised">
-          <CardBody className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[13px] text-muted-foreground">
-              Late, missing, wrong item or a delivery issue?
-            </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setView({ name: "note", orderId: view.order.id })}
-            >
-              <AlertTriangle className="size-3.5" aria-hidden /> Problem with your order?
-            </Button>
+          <CardBody className="flex flex-col gap-3 py-4">
+            {/* Where the submit button lands. Empty on the thank-you screen,
+                which brings its own button — `empty:hidden` so it leaves no gap
+                when it has nothing in it. */}
+            <div ref={setFooterHost} className="empty:hidden" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-[13px] text-muted-foreground">
+                Late, missing, wrong item or a delivery issue?
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setView({ name: "note", orderId: view.order.id })}
+              >
+                <AlertTriangle className="size-3.5" aria-hidden /> Problem with your order?
+              </Button>
+            </div>
           </CardBody>
         </Card>
       </div>
@@ -257,134 +294,162 @@ export function RateEntry({
   if (view.name === "lookup") {
     const fromNote = view.fromNote;
     return (
-      <div className="space-y-4">
-        <BackLink
-          onClick={() =>
-            setView(fromNote ? { name: "note", orderId: fromNote.orderId } : { name: "pick" })
-          }
-        >
-          Back
-        </BackLink>
-        <div className="space-y-1">
-          <h2 ref={heading} tabIndex={-1} className={HEADING}>
-            Find your order
-          </h2>
-          <p className="text-[13px] text-muted-foreground">
-            An order placed under a different email address — or by a colleague on your behalf —
-            won&apos;t appear in your list. Look it up here instead.
-          </p>
-        </div>
-        <Card>
-          <CardBody>
-            <OrderLookup
-              initialOrder={initialOrder}
-              initialEmail={initialEmail}
-              /* Back where they came from, holding what they came for: to the
-                 problem form with the order found, or — arriving from the
-                 picker — straight onto its stars. */
-              onFound={(order) =>
-                setView(
-                  fromNote
-                    ? { name: "note", orderId: order.id, found: true }
-                    : { name: "rate", order, source: "public_link" },
-                )
-              }
-            />
-          </CardBody>
-        </Card>
-      </div>
+      <Card>
+        <RateHero />
+        <CardBody className="space-y-4 p-6 sm:p-7">
+          <BackLink
+            onClick={() =>
+              setView(fromNote ? { name: "note", orderId: fromNote.orderId } : { name: "pick" })
+            }
+          >
+            Back
+          </BackLink>
+          <div className="space-y-1">
+            <h2 ref={heading} tabIndex={-1} className={HEADING}>
+              Find your order
+            </h2>
+            <p className="text-[13px] text-muted-foreground">
+              If your order was placed under another email, or by a colleague for you, it
+              won&apos;t be in your list. Look it up here.
+            </p>
+          </div>
+          <OrderLookup
+            initialOrder={initialOrder}
+            initialEmail={initialEmail}
+            /* Back where they came from, holding what they came for: to the
+               problem form with the order found, or — arriving from the
+               picker — straight onto its stars. */
+            onFound={(order) =>
+              setView(
+                fromNote
+                  ? { name: "note", orderId: order.id, found: true }
+                  : { name: "rate", order, source: "public_link" },
+              )
+            }
+          />
+        </CardBody>
+      </Card>
     );
   }
 
   if (view.name === "note") {
     return (
-      <div className="space-y-4">
-        <BackLink onClick={() => setView({ name: "pick" })}>Back</BackLink>
-        <div className="space-y-1">
-          <h2 ref={heading} tabIndex={-1} className={HEADING}>
-            Problem with your order?
-          </h2>
-          <p className="text-[13px] text-muted-foreground">
-            Late, missing, wrong item, a refund to chase, or anything else about the service. Goes
-            to our operations team — no stars involved.
-          </p>
-        </div>
-        <Card>
-          <CardBody>
-            {/* The escape sits under the order list, where the question it
-                answers gets asked. The lookup is a view of this same page, so
-                it is a state change rather than a navigation, and the order it
-                finds comes back to this form. */}
-            <FeedbackForm
-              initialOrder={view.orderId}
-              orderSource={view.found ? "lookup" : "link"}
-              onFindOrder={() => setView({ name: "lookup", fromNote: { orderId: view.orderId } })}
-            />
-          </CardBody>
-        </Card>
-      </div>
+      <Card>
+        <RateHero />
+        <CardBody className="space-y-4 p-6 sm:p-7">
+          <BackLink onClick={() => setView({ name: "pick" })}>Back</BackLink>
+          <div className="space-y-1">
+            <h2 ref={heading} tabIndex={-1} className={HEADING}>
+              Problem with your order?
+            </h2>
+            {/* The list of examples was doing the work the topic chips below do
+                anyway. All this line still has to say is who reads it. */}
+            <p className="text-[13px] text-muted-foreground">
+              Anything about your delivery, billing or the service. Goes to our operations team.
+            </p>
+          </div>
+          {/* The escape sits under the order list, where the question it
+              answers gets asked. The lookup is a view of this same page, so it
+              is a state change rather than a navigation, and the order it finds
+              comes back to this form. */}
+          <FeedbackForm
+            initialOrder={view.orderId}
+            orderSource={view.found ? "lookup" : "link"}
+            onFindOrder={() => setView({ name: "lookup", fromNote: { orderId: view.orderId } })}
+            stickySubmit
+          />
+        </CardBody>
+      </Card>
     );
   }
 
   /**
    * Signed in, the order list *is* the page and the lookup is an edge case, so
-   * it sits at the foot as a row out to its own view. Signed out there is no
-   * list, so the same lookup is the only way through and stands on its own,
-   * inline, with its own heading.
+   * it leaves the card entirely and rides the bar below as a way out to its own
+   * view. Signed out there is no list, so the same lookup is the only way
+   * through and stands on its own, inline, with its own heading.
    *
    * Both were once stacked as equal, always-open sections under `OR` rules,
    * which made a page with one obvious action look like a page with three.
    */
   return (
-    <div className="space-y-6">
-      <Link
-        href="/menu"
-        className="inline-flex min-h-[24px] items-center gap-1.5 text-[13px] font-semibold text-primary hover:underline"
-      >
-        <ArrowLeft className="size-4" aria-hidden /> Back to menu
-      </Link>
+    <div className="space-y-4">
+      <Card>
+        <RateHero />
+        {/* No "Back to menu" here — the page shell's sticky bar carries it, and
+            two competing ones read as a maze. */}
+        <CardBody className="p-6 sm:p-7">
+          {account ? (
+            <OrderPicker
+              name={account.name ?? account.email}
+              rows={rateable}
+              onPick={(order) => setView({ name: "rate", order, source: "account" })}
+            />
+          ) : (
+            <OrderLookup
+              standalone
+              initialOrder={initialOrder}
+              initialEmail={initialEmail}
+              onFound={(order) => setView({ name: "rate", order, source: "public_link" })}
+            />
+          )}
+        </CardBody>
+      </Card>
 
-      {account ? (
-        <OrderPicker
-          name={account.name ?? account.email}
-          rows={rateable}
-          onPick={(order) => setView({ name: "rate", order, source: "account" })}
-        />
-      ) : (
-        <OrderLookup
-          standalone
-          initialOrder={initialOrder}
-          initialEmail={initialEmail}
-          onFound={(order) => setView({ name: "rate", order, source: "public_link" })}
-        />
-      )}
+      {/* The two ways out of "I can't do what I came for" — the order lookup and
+          the problem form.
 
-      <div className="space-y-1.5 border-t border-border pt-5">
-        {/* Both feet of the page are the same shape: an icon, a sentence, and a
-            chevron that means "this opens somewhere else". They are the two ways
-            out of "I can't do what I came for", so they should not look like two
-            different kinds of control. */}
-        {account ? (
-          <button type="button" onClick={() => setView({ name: "lookup" })} className={QUIET_ROW}>
-            <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="flex-1">My order isn&apos;t listed</span>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          </button>
-        ) : null}
+          They used to be quiet rows under the list, which put them below a
+          fortnight of lunches: someone whose order isn't listed had to scroll
+          past ten orders that aren't theirs to find the door marked "it isn't
+          here", and someone whose lunch never arrived had to scroll past the
+          same ten to say so. Both exits were off screen for exactly the people
+          who need them.
 
-        {/* The logistics path, which needs no order at all — a quiet row,
-            because almost everyone arriving here has a specific lunch in mind. */}
-        <button
-          type="button"
-          onClick={() => setView({ name: "note", orderId: "" })}
-          className={QUIET_ROW}
-        >
-          <AlertTriangle className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="flex-1">Problem with your order? Delivery, billing or service</span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        </button>
-      </div>
+          So they ride a bar stuck to the foot of the viewport instead — the
+          same device, and the same reasoning, as the problem bar on the stars
+          view. `sticky` rather than `fixed`: it stays inside the content column
+          at every width, and on a short list it settles under the list instead
+          of hovering over a half-empty page. */}
+      <Card className="sticky bottom-4 z-10 shadow-raised">
+        <CardBody className="flex items-center justify-between gap-3 px-5 py-3.5">
+          {/* The sentence is the desktop bar's left half; on a phone the two
+              labels have to have the width to themselves or the bar grows to
+              three stacked lines and eats the list it is meant to sit beside. */}
+          <p className="hidden text-[13px] text-muted-foreground sm:block">
+            {account
+              ? "Can't find the order you mean?"
+              : "Late, missing, wrong item or a delivery issue?"}
+          </p>
+          <div className="flex flex-1 items-center justify-center gap-2 sm:flex-none">
+            {account ? (
+              <Button variant="ghost" size="sm" onClick={() => setView({ name: "lookup" })}>
+                <Search className="size-3.5" aria-hidden /> My order isn&apos;t listed
+              </Button>
+            ) : null}
+            {/* The logistics path, which needs no order at all. */}
+            <Button variant="ghost" size="sm" onClick={() => setView({ name: "note", orderId: "" })}>
+              <AlertTriangle className="size-3.5" aria-hidden /> Report a problem
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
     </div>
+  );
+}
+
+/**
+ * The page's yellow title, flush against the top of whichever view's card is on
+ * screen. Every view carries it — it is the page's identity, not the view's, and
+ * each view's own `h2` says which of the four you are looking at underneath it.
+ */
+function RateHero() {
+  return (
+    <PageHero
+      icon={Star}
+      title="How was your lunch?"
+      description="Rate the meals themselves. A tap each is plenty, and it's how the kitchen decides what stays on the menu and what comes back."
+    />
   );
 }
 
@@ -402,17 +467,6 @@ const FOCUS =
  */
 const ROW = cn(
   "mt-2 flex w-full items-center gap-3 rounded-2xl border border-control bg-background p-3.5 text-left transition-colors hover:border-primary hover:bg-teal-wash/40",
-  FOCUS,
-);
-
-/**
- * The rows at the foot of the page. Styled as secondary buttons — bordered and
- * in body ink — rather than muted text: they are still the lesser path, but a
- * borderless grey row reads as a caption, and someone who genuinely can't find
- * their order has to be able to see the way out.
- */
-const QUIET_ROW = cn(
-  "flex w-full items-center gap-2.5 rounded-xl border border-control bg-card px-3.5 py-3 text-left text-[13px] font-semibold text-foreground transition-colors hover:border-primary hover:bg-muted",
   FOCUS,
 );
 
@@ -602,10 +656,17 @@ function OrderLookup({
     setError(result.status);
   }
 
-  const describedBy = error ? "rate-lookup-error" : "rate-lookup-hint";
+  /* Only ever names something that is on the page: the hint exists on the
+     standalone lookup alone, so off it the fields describe themselves until an
+     error arrives. */
+  const describedBy = error ? "rate-lookup-error" : standalone ? "rate-lookup-hint" : undefined;
 
   return (
     <section aria-labelledby={standalone ? "rate-lookup" : undefined}>
+      {/* No line of its own on the lookup view: the view's heading and
+          description above already say what this is and why, and a third
+          sentence restating the two field labels underneath them was telling
+          people what they can plainly see. */}
       {standalone ? (
         <>
           <h2 id="rate-lookup" className={HEADING}>
@@ -615,13 +676,9 @@ function OrderLookup({
             No account needed — both details are on your confirmation email.
           </p>
         </>
-      ) : (
-        <p id="rate-lookup-hint" className="text-[13px] text-muted-foreground">
-          Enter the order number and the email it was placed under.
-        </p>
-      )}
+      ) : null}
 
-      <div className="mt-3 space-y-3">
+      <div className={cn("space-y-3", standalone && "mt-3")}>
         <div>
           <Label htmlFor="rate-order">Order number</Label>
           <Input
