@@ -248,7 +248,7 @@ export function OrderDetailView({ order: initialOrder }: { order: Order }) {
             </Card>
           ))}
 
-          {order.status === "delivered" ? <FeedbackCard orderId={order.id} /> : null}
+          {order.status === "delivered" ? <FeedbackLine orderId={order.id} /> : null}
         </div>
 
         {/* Sidebar: delivery, payment, actions */}
@@ -358,37 +358,30 @@ function PlacedNotice({ order }: { order: Order }) {
   );
 }
 
-function FeedbackCard({ orderId }: { orderId: string }) {
+function FeedbackLine({ orderId }: { orderId: string }) {
   // The logistics door for this order — late, missing, wrong, or a refund to
   // chase. Deliberately not a rating: how the food tasted is the stars on each
   // meal, and mixing the two turns a driver's bad day into a one-star recipe.
+  //
+  // A delivered order is usually fine, so this sits under the meals as one
+  // quiet line rather than a card: the door named, nothing explained until
+  // it's asked for. The modal carries the detail. No "rate the meals" steer
+  // either — the ratings card sits directly above on this page, so the only
+  // thing left to say here is the one thing it doesn't cover.
   const [open, setOpen] = React.useState(false);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Problem with your order?</CardTitle>
-      </CardHeader>
-      <CardBody className="space-y-3">
-        <p className="text-[13px] text-muted-foreground">
-          Late, missing, wrong item, or a delivery or billing issue with {orderId}? Tell our
-          operations team here. To say how the food itself was,{" "}
-          <Link
-            href={`/rate?order=${orderId}`}
-            className="font-semibold text-primary underline underline-offset-2"
-          >
-            rate the meals
-          </Link>{" "}
-          instead.
-        </p>
-        {/* The card's own heading already asks the question, so the button
-            answers it rather than repeating it back. */}
-        <Button size="sm" onClick={() => setOpen(true)}>
-          <AlertTriangle className="size-4" /> Report the problem
-        </Button>
-      </CardBody>
+    <div className="flex flex-wrap items-center gap-x-2 px-1 text-[13px] text-muted-foreground">
+      <span>Something wrong with this order?</span>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex min-h-[28px] items-center font-semibold text-primary underline underline-offset-2"
+      >
+        Report a problem
+      </button>
       {open ? <FeedbackModal orderId={orderId} onClose={() => setOpen(false)} /> : null}
-    </Card>
+    </div>
   );
 }
 

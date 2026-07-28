@@ -474,17 +474,7 @@ function OrderCard({ order }: { order: Order }) {
               ))}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold">
-                {items.length} meal orders
-                {/* What the per-meal rows used to show back: how much of this
-                    order you've already had your say on. */}
-                {order.status === "delivered" && ratedCount > 0 ? (
-                  <span className="font-medium text-muted-foreground">
-                    {" "}
-                    · {ratedCount} of {items.length} rated
-                  </span>
-                ) : null}
-              </p>
+              <p className="text-sm font-semibold">{items.length} meal orders</p>
               <p className="truncate text-2xs text-muted-foreground">
                 {items.map((it) => it.name).join(" · ")}
               </p>
