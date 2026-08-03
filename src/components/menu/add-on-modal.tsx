@@ -178,30 +178,29 @@ export function AddOnModal({
 
   // Shared between the popup and the embedded (detail-page) render, so the two
   // can't drift.
-  const optionsBody = groups.length ? (
-    combos.map((combo, i) => (
-      <div key={i} ref={(el) => { blocks.current[i] = el; }}>
-        <ComboBlock
-          index={i}
-          solo={solo}
-          groups={groups}
-          picked={combo.picked}
-          built={built[i]}
-          open={open === i}
-          showPrice={program.showPrices}
-          onOpen={() => focusCombo(i)}
-          onToggle={(group, optionId) => handleToggle(i, group, optionId)}
-          onSave={() => handleSave(i)}
-          onDelete={() => handleDeleteCombo(i)}
-          onSetQty={(next) => handleSetComboQty(i, next)}
-        />
-      </div>
-    ))
-  ) : (
-    <p className="text-[13px] text-muted-foreground">
-      This meal comes as it is. Nothing to choose.
-    </p>
-  );
+  // A meal with no option groups says nothing here. The absence of any question
+  // is already the answer — printing "nothing to choose" only draws the eye to
+  // an empty space on the way to the Add button.
+  const optionsBody = groups.length
+    ? combos.map((combo, i) => (
+        <div key={i} ref={(el) => { blocks.current[i] = el; }}>
+          <ComboBlock
+            index={i}
+            solo={solo}
+            groups={groups}
+            picked={combo.picked}
+            built={built[i]}
+            open={open === i}
+            showPrice={program.showPrices}
+            onOpen={() => focusCombo(i)}
+            onToggle={(group, optionId) => handleToggle(i, group, optionId)}
+            onSave={() => handleSave(i)}
+            onDelete={() => handleDeleteCombo(i)}
+            onSetQty={(next) => handleSetComboQty(i, next)}
+          />
+        </div>
+      ))
+    : null;
 
   /* The action bar, as pieces. Both renders show all of them and wire them to
      the same handlers — only the arrangement differs, because the popup is a
@@ -299,7 +298,7 @@ export function AddOnModal({
             )}
           </p>
         ) : null}
-        <div className="space-y-3">{optionsBody}</div>
+        {optionsBody ? <div className="space-y-3">{optionsBody}</div> : null}
 
         {/* Docked at the foot of the viewport, exactly as the popup keeps its
             footer above a scrolling body — the popup got that for free from the
@@ -403,7 +402,12 @@ export function AddOnModal({
           </button>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto p-5">{optionsBody}</div>
+        {/* Only claims the sheet's spare height when there is something to
+            scroll — an options-less meal would otherwise open a padded void
+            between the header and the action bar. */}
+        {optionsBody ? (
+          <div className="flex-1 space-y-3 overflow-y-auto p-5">{optionsBody}</div>
+        ) : null}
 
         <div className="space-y-2.5 border-t border-border p-4">{actionBar}</div>
       </div>

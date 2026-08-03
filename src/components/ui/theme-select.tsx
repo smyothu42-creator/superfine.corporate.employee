@@ -30,6 +30,10 @@ interface ThemeSelectProps {
   /** Extra classes on the trigger's label span — e.g. `hidden sm:inline` to
    *  collapse to an icon-only trigger on small screens. */
   labelClassName?: string;
+  /** Extra classes on the trigger's chevron — e.g. `hidden sm:block` so a
+   *  trigger that has already collapsed to its icon reads as a plain icon
+   *  button rather than an icon with a stray caret beside it. */
+  chevronClassName?: string;
 }
 
 /** Air between the trigger and its open list, and between the list and the viewport edge. */
@@ -74,6 +78,7 @@ export function ThemeSelect({
   triggerClassName,
   icon: Icon,
   labelClassName,
+  chevronClassName,
   ...props
 }: ThemeSelectProps) {
   const [open, setOpen] = React.useState(false);
@@ -255,7 +260,11 @@ export function ThemeSelect({
         {Icon ? <Icon className="size-4 shrink-0 text-primary" /> : null}
         <span className={cn("truncate", labelClassName)}>{current?.label}</span>
         <ChevronDown
-          className={cn("size-4 shrink-0 text-primary transition-transform", open && "rotate-180")}
+          className={cn(
+            "size-4 shrink-0 text-primary transition-transform",
+            open && "rotate-180",
+            chevronClassName,
+          )}
         />
       </button>
 

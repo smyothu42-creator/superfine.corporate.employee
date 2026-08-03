@@ -480,8 +480,13 @@ function ThankYou({
   ].filter(Boolean);
 
   return (
-    <div className="rounded-2xl border border-success-border bg-success-bg/50 px-5 py-8 text-center">
-      <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-card text-success shadow-sm">
+    // No tinted panel. Every caller already renders this inside a white card or
+    // sheet, so a bordered green box within it reads as a box inside a box —
+    // the popper is green enough to carry "this worked".
+    <div className="px-5 py-8 text-center">
+      {/* The tint moves here, off the panel and onto the one thing that needs to
+          say "this worked" — a white disc on a white card would vanish. */}
+      <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-bg text-success">
         <PartyPopper className="size-7" aria-hidden />
       </span>
 

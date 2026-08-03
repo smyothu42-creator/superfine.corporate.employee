@@ -177,6 +177,10 @@ export function OrdersView() {
               aria-label="Sort orders"
               icon={ArrowDownUp}
               labelClassName="hidden sm:inline"
+              // Once the label is gone the caret has nothing to point at, and
+              // the sort control sits beside a plain icon button (the date
+              // filter) — so on phones it drops to a bare icon to match.
+              chevronClassName="hidden sm:block"
               className="w-auto"
               triggerClassName="h-10"
             />

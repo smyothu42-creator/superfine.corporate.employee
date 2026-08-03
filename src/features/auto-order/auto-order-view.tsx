@@ -43,8 +43,8 @@ export function AutoOrderView() {
 
   // Drive the topbar title per state: while picking meals it's "Edit Your Auto
   // Order" when an active/paused config already exists (you came in via Edit),
-  // else "Build Your Auto Order". Once active it's "Auto Order Dashboard",
-  // otherwise plain "Auto-Order".
+  // else "Build Auto Order". Once active it's "Auto Order", otherwise plain
+  // "Auto-Order".
   const setNavTitle = useAutoOrderStore((s) => s.setNavTitle);
   React.useEffect(() => {
     // Not enabled: the page is an explainer, so it keeps the plain nav title —
@@ -54,9 +54,9 @@ export function AutoOrderView() {
       setupOpen && companyEnabled
         ? active
           ? "Edit Your Auto Order"
-          : "Build Your Auto Order"
+          : "Build Auto Order"
         : active
-          ? "Auto Order Dashboard"
+          ? "Auto Order"
           : "Auto-Order",
     );
     return () => setNavTitle(null);
@@ -170,7 +170,7 @@ export function AutoOrderView() {
           {hasFavorites ? (
             <div className="grid gap-2 pt-2 sm:grid-cols-2">
               <Button variant="teal" size="lg" block data-tour="setup-btn" onClick={() => setSetupOpen(true)}>
-                <Repeat className="size-4" /> Set up Auto-Order
+                <Repeat className="size-4" /> Auto Order
               </Button>
               <Button
                 variant="ghost"

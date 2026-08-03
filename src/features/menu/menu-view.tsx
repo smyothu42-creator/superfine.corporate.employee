@@ -1079,7 +1079,7 @@ function DayStrip({
               <span className="font-display text-base font-semibold leading-none">{cell.dayNum}</span>
               <span
                 className={cn(
-                  "mt-0.5 text-[11px]",
+                  "mt-0.5 text-2xs",
                   cell.has && "font-bold",
                   active ? "text-primary-foreground/80" : "text-muted-foreground",
                 )}
@@ -1092,7 +1092,7 @@ function DayStrip({
               {cell.has && program.showPrices ? (
                 <span
                   className={cn(
-                    "text-[11px] font-semibold nums lg:hidden",
+                    "text-2xs font-semibold nums lg:hidden",
                     active ? "text-primary-foreground/80" : "text-muted-foreground",
                   )}
                 >

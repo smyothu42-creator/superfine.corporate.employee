@@ -1,5 +1,6 @@
 import type { Order, OrderDay, OrderItem } from "./types";
 import { me } from "./me";
+import { getItem } from "./menu";
 import { program } from "./program";
 import { currentRecipeVersion } from "./recipe-versions";
 import { startOfToday, fromISODate, toISODate, addDays } from "@/lib/dates";
@@ -18,6 +19,65 @@ export function orderPayment(order: Order, corporate: boolean) {
   const share = corporate ? order.employeePaid : order.subtotal;
   const tax = round(share * program.taxRate);
   return { share, tax, total: round(share + tax) };
+}
+
+/** The groups the tax breakdown rolls up to. Menu categories collapse into these. */
+export type TaxCategory = "Food" | "Beverage";
+
+export interface TaxLine {
+  category: TaxCategory;
+  rate: number;
+  /** The employee-taxed dollars attributable to this category. */
+  taxable: number;
+  amount: number;
+}
+
+/** Beverages are their own line; everything else on the menu is food. */
+function taxCategoryOf(itemId: string): TaxCategory {
+  return getItem(itemId)?.category === "Beverages" ? "Beverage" : "Food";
+}
+
+/**
+ * {@link orderPayment}'s single `tax` figure, decomposed by tax category so the
+ * order page can show "food tax" and "beverage tax" separately.
+ *
+ * It *decomposes* rather than recomputes: the taxable base is split across
+ * categories in proportion to each category's share of the order, and the final
+ * cent of rounding drift is handed to the largest line. So the lines always sum
+ * to exactly the number the summary row shows — a breakdown that doesn't add up
+ * to its own total is worse than no breakdown.
+ *
+ * `rate` is per line rather than global. Today every category carries
+ * {@link program.taxRate}, but a jurisdiction that taxes drinks differently
+ * changes this function and nothing else.
+ */
+export function orderTaxLines(order: Order, corporate: boolean): TaxLine[] {
+  const { share, tax } = orderPayment(order, corporate);
+  if (tax <= 0) return [];
+
+  const lines = order.days.flatMap((d) => d.items);
+  const gross = lines.reduce((n, l) => n + l.price * l.qty, 0);
+  if (gross <= 0) return [];
+
+  const byCategory = new Map<TaxCategory, number>();
+  for (const l of lines) {
+    const cat = taxCategoryOf(l.itemId);
+    byCategory.set(cat, (byCategory.get(cat) ?? 0) + l.price * l.qty);
+  }
+
+  const out: TaxLine[] = (["Food", "Beverage"] as TaxCategory[])
+    .filter((c) => byCategory.has(c))
+    .map((category) => {
+      const taxable = round(share * ((byCategory.get(category) as number) / gross));
+      return { category, rate: program.taxRate, taxable, amount: round(taxable * program.taxRate) };
+    });
+
+  const drift = round(tax - out.reduce((n, l) => n + l.amount, 0));
+  if (drift !== 0) {
+    const largest = out.reduce((a, b) => (b.amount > a.amount ? b : a));
+    largest.amount = round(largest.amount + drift);
+  }
+  return out;
 }
 
 /**
@@ -229,13 +289,16 @@ const seedOrders: SeedOrder[] = [
         deliveryWindow: "12:00 PM – 12:30 PM",
         items: [
           { itemId: "buddha-bowl", name: "Green Buddha Bowl", qty: 1, addOns: ["Chicken"], price: 15.5 },
+          // The one seeded order with a drink on it, so the order page's tax
+          // breakdown has a second category to actually break down.
+          { itemId: "iced-matcha-latte", name: "Iced Matcha Latte", qty: 1, addOns: [], price: 5.5 },
         ],
       },
     ],
     address: "HQ · Floor 3 Kitchen",
-    subtotal: 15.5,
+    subtotal: 21.0,
     subsidy: 15.0,
-    employeePaid: 0.5,
+    employeePaid: 6.0,
     payment: "pay_later",
     status: "confirmed",
     locked: false,

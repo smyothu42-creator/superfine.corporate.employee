@@ -102,7 +102,12 @@ const config: Config = {
         serif: ["var(--font-sans)", "system-ui", "sans-serif"],
       },
       fontSize: {
-        "2xs": ["0.6875rem", { lineHeight: "0.9rem" }],
+        // Both steps resolve through custom properties so the phone breakpoint
+        // can raise them to a 13px floor in one place — see `globals.css`.
+        // A `sm:` variant still wins over the media query, since it is a class
+        // on the element rather than a re-declared variable.
+        "2xs": ["var(--fs-2xs)", { lineHeight: "var(--lh-2xs)" }],
+        xs: ["var(--fs-xs)", { lineHeight: "var(--lh-xs)" }],
       },
       borderRadius: {
         lg: "1rem",

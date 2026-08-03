@@ -93,6 +93,27 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
     router.push("/menu");
   }
 
+  /** Does the configurator have a question to put on the page? */
+  const asksSomething = family || (item.addOns?.length ?? 0) > 0;
+
+  const configurator = family ? (
+    <FamilyStyleModal
+      embedded
+      item={item}
+      dateLabel={activeDate ? formatDay(fromISODate(activeDate)) : ""}
+      onClose={() => {}}
+      onConfirm={confirmFamily}
+    />
+  ) : (
+    <AddOnModal
+      embedded
+      item={item}
+      dateLabel={activeDate ? formatDay(fromISODate(activeDate)) : ""}
+      onClose={() => {}}
+      onConfirm={confirmIndividual}
+    />
+  );
+
   return (
     <div className="space-y-5">
       <Link href="/menu" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-primary hover:underline">
@@ -179,29 +200,20 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
           </CardBody>
         </Card>
 
+        {/* Options + add — the full configurator inline (same as the popup).
+            The card is drawn only when there is something to hold: a meal with
+            nothing to choose renders no body at all (its Add button is docked
+            to the viewport, not to this column), so the card would be an empty
+            pill under the details. Family packages always ask for a headcount,
+            so they always get one. */}
         <div className="space-y-5">
-          {/* Options + add — the full configurator inline (same as the popup). */}
-          <Card>
-            <CardBody className="space-y-3">
-              {family ? (
-                <FamilyStyleModal
-                  embedded
-                  item={item}
-                  dateLabel={activeDate ? formatDay(fromISODate(activeDate)) : ""}
-                  onClose={() => {}}
-                  onConfirm={confirmFamily}
-                />
-              ) : (
-                <AddOnModal
-                  embedded
-                  item={item}
-                  dateLabel={activeDate ? formatDay(fromISODate(activeDate)) : ""}
-                  onClose={() => {}}
-                  onConfirm={confirmIndividual}
-                />
-              )}
-            </CardBody>
-          </Card>
+          {asksSomething ? (
+            <Card>
+              <CardBody className="space-y-3">{configurator}</CardBody>
+            </Card>
+          ) : (
+            configurator
+          )}
         </div>
       </div>
 

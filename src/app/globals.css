@@ -16,6 +16,30 @@
        element sinks below the content it's meant to sit beside, because sticky
        pushes a box *down* when its resting place is above the offset. */
     --topbar-h: 4rem;
+
+    /* The two smallest steps of the type scale, wired through `tailwind.config`
+       so `text-2xs` / `text-xs` read them. Phones get a 13px floor — below that
+       a caption is uncomfortable to read at arm's length, and iOS/Android both
+       treat sub-13px body copy as a legibility fault. Desktop keeps the tighter
+       11/12px, where the reading distance is shorter and the same caption is
+       carrying a denser layout.
+
+       Anything with an arbitrary size (`text-[11px]`) opts out of this floor by
+       definition — those are set per-site, so keep new ones >= 13px unless the
+       glyphs are a mark rather than words (see `card-fields.tsx`). */
+    --fs-2xs: 0.8125rem;
+    --lh-2xs: 1.05rem;
+    --fs-xs: 0.8125rem;
+    --lh-xs: 1.1rem;
+  }
+
+  @media (min-width: 640px) {
+    :root {
+      --fs-2xs: 0.6875rem;
+      --lh-2xs: 0.9rem;
+      --fs-xs: 0.75rem;
+      --lh-xs: 1rem;
+    }
   }
 
   html {

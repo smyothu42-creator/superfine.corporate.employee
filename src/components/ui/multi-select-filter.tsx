@@ -186,7 +186,7 @@ export function MultiSelectFilter({
       >
         <span className="truncate">{label}</span>
         {count > 0 ? (
-          <span className="flex min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold leading-[18px] text-primary-foreground nums">
+          <span className="flex min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-2xs font-bold leading-[18px] text-primary-foreground nums">
             {count}
           </span>
         ) : null}
