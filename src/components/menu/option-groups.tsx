@@ -3,8 +3,9 @@
 import * as React from "react";
 import { Check } from "lucide-react";
 import { RadioGroup } from "@/components/ui/radio-group";
+import { PortionPicker } from "@/components/menu/portion-picker";
 import { formatCurrency, cn } from "@/lib/utils";
-import { summarizeAddOns, cleanOptionName } from "@/data/menu";
+import { portionOf, summarizeAddOns, cleanOptionName } from "@/data/menu";
 import type { MenuItem, AddOnGroup } from "@/data/types";
 import type { CartAddOn } from "@/store/use-cart-store";
 
@@ -78,13 +79,22 @@ export function useItemOptions(item: MenuItem, omitGroup?: (g: AddOnGroup) => bo
 export function OptionGroups({
   groups,
   picked,
+  portions,
   onToggle,
+  onSetPortion,
   className,
   showPrices = true,
 }: {
   groups: AddOnGroup[];
   picked: Record<string, string[]>;
+  /**
+   * groupId → chosen portionId. Omitted by callers that aren't buying anything
+   * (the nutrition lookup), which is also what stands the picker down there —
+   * a portion with no price attached is a question with no consequence.
+   */
+  portions?: Record<string, string>;
   onToggle: (group: AddOnGroup, optionId: string) => void;
+  onSetPortion?: (group: AddOnGroup, portionId: string) => void;
   className?: string;
   /** Hide the per-option price badge — e.g. the nutrition lookup, where price
       is irrelevant. Defaults to showing prices (menu/order surfaces). */
@@ -106,6 +116,12 @@ export function OptionGroups({
         // checkbox list correctly stays one Tab stop per box, because each is an
         // independent yes/no rather than one choice among several.
         const List = single ? RadioGroup : "div";
+        // The portion needs somewhere to go and something to cost before it's
+        // worth asking — see the `portions` prop.
+        const portioned = showPrices && onSetPortion && group.portions?.length ? group : null;
+        const portionPrice = portioned
+          ? portionOf(portioned, portions?.[group.id])?.price ?? 0
+          : 0;
         return (
           <section key={group.id}>
             {/* An unanswered required group is a question still open, not an
@@ -118,6 +134,18 @@ export function OptionGroups({
                 <span className="text-2xs text-muted-foreground">Optional</span>
               ) : null}
             </div>
+
+            {/* Above the list, because it changes what every row in it costs.
+                It's its own `radiogroup`, and a sibling of the options' one —
+                nesting them would hand the portion's arrow keys to the list. */}
+            {portioned ? (
+              <PortionPicker
+                groupName={group.name}
+                portions={portioned.portions!}
+                value={portions?.[group.id]}
+                onChange={(portionId) => onSetPortion!(group, portionId)}
+              />
+            ) : null}
 
             <List
               className="space-y-1.5"
@@ -158,7 +186,22 @@ export function OptionGroups({
                         <span className="block truncate font-medium">{cleanOptionName(option.name)}</span>
                       </span>
                     </span>
-                    {showPrices ? (
+                    {/* Under a group portion the price is a sum, and it shows as
+                        one line — no "option + portion" breakdown here.
+
+                        The family-style sheet prints that breakdown because the
+                        headcount is split across several proteins at once, and
+                        the split is what proves the upgrade costs the same on
+                        each. An individual plate holds exactly one protein, so
+                        there's no comparison to make and the second line was
+                        only ever restating the row above it. */}
+                    {portioned ? (
+                      <span className="shrink-0 font-semibold nums">
+                        {option.price + portionPrice > 0
+                          ? `+${formatCurrency(option.price + portionPrice)}`
+                          : "$0"}
+                      </span>
+                    ) : showPrices ? (
                       option.price > 0 ? (
                         <span className="shrink-0 font-semibold nums">+{formatCurrency(option.price)}</span>
                       ) : (

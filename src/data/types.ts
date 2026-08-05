@@ -46,6 +46,24 @@ export interface AddOnOption {
 }
 
 /**
+ * A portion size chosen **once for a whole choice group** — "Standard portion"
+ * or "Extra portion" over every protein in the group, rather than a separate
+ * "extra" twin of each option.
+ *
+ * The two halves price independently: an option keeps its own up-charge, and
+ * the portion adds the same amount whichever option it lands on. That's what
+ * lets the sheet print "option $2 + portion $4" and have it stay true for every
+ * row — upgrading costs the same no matter which protein was picked.
+ */
+export interface PortionOption {
+  id: string;
+  /** Display label, e.g. "Standard portion". */
+  name: string;
+  /** Added to *each* serving on top of the option's own price. 0 = included. */
+  price: number;
+}
+
+/**
  * A group of add-ons attached to a menu item. `required` groups must be
  * resolved before the item can be added (the User Flow's "mandatory add-on"
  * branch); optional groups appear behind "Customize".
@@ -59,6 +77,11 @@ export interface AddOnGroup {
   /** For multi groups, an optional cap on selections. */
   max?: number;
   options: AddOnOption[];
+  /**
+   * Portion sizes offered across the whole group. The first is the default and
+   * should be the included ($0) one. Omit for groups that don't scale.
+   */
+  portions?: PortionOption[];
 }
 
 /* ── Family Style ────────────────────────────────────────────────────────────
@@ -97,6 +120,11 @@ export interface ServingGroup {
   /** Word for one unit, e.g. "serving", "taco", "slice". Defaults to "serving". */
   unit?: string;
   options: ServingOption[];
+  /**
+   * Portion sizes for the group as a whole — chosen once and applied to every
+   * serving assigned below it. The first is the default (the included one).
+   */
+  portions?: PortionOption[];
 }
 
 /** A dish that comes with every family-style package — no choice to make. */

@@ -18,7 +18,12 @@ export function ServingBreakdown({ servings }: { servings: CartServing[] }) {
           key={groupName}
           className="flex flex-wrap items-baseline gap-x-1.5 text-[13px]"
         >
-          <span className="font-semibold text-foreground/70">{groupName}:</span>
+          {/* The portion was chosen once for the group, so it's named once with
+              the group — every line under it carries the same one. */}
+          <span className="font-semibold text-foreground/70">
+            {groupName}
+            {lines[0].portionName ? ` (${lines[0].portionName})` : ""}:
+          </span>
           {lines.map((s, i) => (
             <span key={s.optionId} className="text-muted-foreground">
               <span className="font-semibold nums text-foreground">

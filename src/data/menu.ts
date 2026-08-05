@@ -3,15 +3,34 @@ import type {
   MenuCombo,
   AddOnGroup,
   OrderType,
+  PortionOption,
   ProteinType,
   ServingGroup,
   ServingOption,
 } from "./types";
 
 /**
+ * How much protein arrives, asked once for the whole group instead of doubling
+ * every option into a "regular" and an "extra" twin. The kitchen scales the
+ * portion the same way whichever protein it is, so the price does too — see
+ * {@link PortionOption}.
+ */
+export const PROTEIN_PORTIONS: PortionOption[] = [
+  { id: "standard", name: "Standard portion", price: 0 },
+  { id: "extra", name: "Extra portion", price: 4 },
+];
+
+/**
  * The option groups an individual meal is built from, straight out of the admin
  * SKU setup: Protein, Sauce, Side — nothing else. Combos are the cross-product
  * of these three, so every individual plate offers the same shape of choice.
+ *
+ * Protein additionally carries a portion, chosen once for the group. It's the
+ * tight case for that control — a single-select group only ever holds one
+ * answer, so "applies to every protein below" governs one row — but it's still
+ * the right shape: the portion is a property of the group's answer rather than
+ * of any one option, and asking it here means an individual plate and its
+ * family-style counterpart price the upgrade identically.
  *
  * Shared by reference across items; nothing mutates a group.
  */
@@ -26,6 +45,10 @@ export const INDIVIDUAL_OPTION_GROUPS: AddOnGroup[] = [
       { id: "beef", name: "Beef", price: 3 },
       { id: "tofu", name: "Tofu", price: 1.5 },
     ],
+    // How much protein, asked once for the group — the same question the
+    // family-style packages ask, so a dish is portioned the same way whether
+    // it's ordered as one plate or as a tray for twenty.
+    portions: PROTEIN_PORTIONS,
   },
   {
     id: "sauce",
@@ -79,6 +102,10 @@ const SEPARATE_PACKING_GROUPS: ServingGroup[] = [
     helper: "Packed separately. One per person.",
     perGuest: 1,
     options: FAMILY_PROTEIN_CHOICES,
+    // Asked once for the tray, not per guest: a table is portioned the same way
+    // throughout, and pricing the upgrade on the group keeps it costing the same
+    // whichever proteins the headcount ends up split across.
+    portions: PROTEIN_PORTIONS,
   },
   {
     id: "sauce",
@@ -934,6 +961,60 @@ export function hasOptionalAddOns(item: MenuItem) {
   return (item.addOns ?? []).some((g) => !g.required);
 }
 
+/* ── Portions ─────────────────────────────────────────────────────────────
+ * A portion is chosen once for a whole choice group and priced on top of each
+ * option's own up-charge. Both sheets — the individual combo builder and the
+ * family-style configurator — hold the same `groupId → portionId` map, so these
+ * read either shape of group.
+ */
+
+/** Any group that can carry portions — an AddOnGroup or a ServingGroup. */
+type PortionedGroup = { id: string; portions?: PortionOption[] };
+
+/** The portion a group opens on: the first, which is always the included one. */
+export function defaultPortion(group: PortionedGroup): PortionOption | undefined {
+  return group.portions?.[0];
+}
+
+/**
+ * Resolve a chosen portion, falling back to the default. Nothing downstream has
+ * to care whether the map has been seeded yet, or whether a persisted portionId
+ * still exists on the menu.
+ */
+export function portionOf(
+  group: PortionedGroup,
+  portionId?: string,
+): PortionOption | undefined {
+  return group.portions?.find((p) => p.id === portionId) ?? defaultPortion(group);
+}
+
+/** What the group's chosen portion adds to one serving. 0 when it has none. */
+export function portionUpcharge(group: PortionedGroup, portionId?: string) {
+  return portionOf(group, portionId)?.price ?? 0;
+}
+
+/**
+ * The pseudo-group a chosen portion is stored under on an individual cart line.
+ *
+ * A cart add-on is `{groupId, optionId, name, price}`, and the portion is a
+ * second answer from the same group — so it needs a key of its own, or it would
+ * collide with the protein it modifies. Deriving it keeps the round trip
+ * lossless: reopening a line to edit it can find the portion again by name.
+ */
+export function portionGroupId(groupId: string) {
+  return `${groupId}:portion`;
+}
+
+/** Open every portioned group on its default — `groupId → portionId`. */
+export function seedPortions(groups: PortionedGroup[]): Record<string, string> {
+  return Object.fromEntries(
+    groups.flatMap((g) => {
+      const first = defaultPortion(g);
+      return first ? [[g.id, first.id] as const] : [];
+    }),
+  );
+}
+
 /* ── Family Style ────────────────────────────────────────────────────────── */
 
 export function isFamilyStyle(item: MenuItem) {
@@ -982,17 +1063,25 @@ export function counterpart(item: MenuItem): MenuItem | undefined {
  *
  * A combined pairing already carries the sum of its Protein and Sauce
  * up-charges, so both packings price through the same loop.
+ *
+ * `portions` is the group-level portion choice (`groupId → portionId`). It adds
+ * the same amount to every serving in its group, so a table that upgraded its
+ * protein pays the upgrade once per guest regardless of how the proteins were
+ * split — which is the whole promise the sheet makes when it prints
+ * "option $2 + portion $4" against every row.
  */
 export function familyStyleTotal(
   item: MenuItem,
   guests: number,
   quantities: Record<string, Record<string, number>>,
+  portions: Record<string, string> = {},
 ): number {
   let total = pricePerGuestFor(item) * guests;
   for (const group of item.servingGroups ?? []) {
+    const perServing = portionUpcharge(group, portions[group.id]);
     for (const option of group.options) {
       const qty = quantities[group.id]?.[option.id] ?? 0;
-      total += qty * option.upchargePerServing;
+      total += qty * (option.upchargePerServing + perServing);
     }
   }
   return Math.round(total * 100) / 100;

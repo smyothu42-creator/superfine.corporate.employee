@@ -33,6 +33,13 @@ export interface CartServing {
   qty: number;
   /** Unit word for the group, e.g. "serving", "taco", "tray". */
   unit: string;
+  /**
+   * The portion chosen for the whole group. It's a group-level answer, so every
+   * row from the same group repeats it — the cart prints it once, against the
+   * group name. Absent on groups that don't offer portions.
+   */
+  portionId?: string;
+  portionName?: string;
 }
 
 /** One line in the cart — a specific item, on a specific date, with its choices. */
@@ -73,9 +80,11 @@ function lineUid(
     .sort()
     .join("|");
   // A combined pairing is its own optionId, so the split already distinguishes
-  // 4 chicken-with-ranch from 4 chicken-with-bbq.
+  // 4 chicken-with-ranch from 4 chicken-with-bbq. The portion rides on the key
+  // too: the same split on a standard and an extra portion are two different
+  // packages at two different prices, and merging them would quietly reprice one.
   const split = (servings ?? [])
-    .map((s) => `${s.groupId}:${s.optionId}=${s.qty}`)
+    .map((s) => `${s.groupId}:${s.optionId}@${s.portionId ?? ""}=${s.qty}`)
     .sort()
     .join("|");
   return `${date}__${itemId}__${choices}__${guests ?? ""}__${split}`;

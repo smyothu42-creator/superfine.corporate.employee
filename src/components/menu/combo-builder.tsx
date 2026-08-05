@@ -3,7 +3,14 @@
 import * as React from "react";
 import { Check, Minus, Pencil, Plus, Trash2 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
-import { cleanOptionName, summarizeAddOns } from "@/data/menu";
+import {
+  cleanOptionName,
+  defaultPortion,
+  portionGroupId,
+  portionOf,
+  seedPortions,
+  summarizeAddOns,
+} from "@/data/menu";
 import { OptionGroups } from "@/components/menu/option-groups";
 import type { MenuItem, AddOnGroup } from "@/data/types";
 import type { CartAddOn } from "@/store/use-cart-store";
@@ -26,9 +33,17 @@ import type { CartAddOn } from "@/store/use-cart-store";
 /** groupId → selected optionIds. Single-select groups hold exactly one. */
 type Picked = Record<string, string[]>;
 
+/** groupId → chosen portionId, for the groups that offer portions. */
+export type Portions = Record<string, string>;
+
 /** One row of the builder: a set of choices, and how many of it to pack. */
 interface ComboState {
   picked: Picked;
+  /**
+   * Per combo, not per sheet: each combo is its own package, so one plate can
+   * take the extra protein while the next one beside it doesn't.
+   */
+  portions: Portions;
   qty: number;
 }
 
@@ -56,7 +71,14 @@ export function useComboBuilder(
   );
 
   const emptyCombo = React.useCallback(
-    (): ComboState => ({ picked: Object.fromEntries(groups.map((g) => [g.id, []])), qty: 1 }),
+    (): ComboState => ({
+      picked: Object.fromEntries(groups.map((g) => [g.id, []])),
+      // Unlike the options, portions open on a default: the standard portion is
+      // what the menu price already covers, so it's the state the sheet was
+      // quoted in, not an answer put in the user's mouth.
+      portions: seedPortions(groups),
+      qty: 1,
+    }),
     [groups],
   );
 
@@ -70,7 +92,14 @@ export function useComboBuilder(
       const group = groups.find((g) => g.id === a.groupId);
       if (group && group.options.some((o) => o.id === a.optionId)) {
         first.picked[a.groupId] = [...(first.picked[a.groupId] ?? []), a.optionId];
+        continue;
       }
+      // A portion is stored under its own pseudo-group, so re-opening a line to
+      // edit it puts the sheet back on the portion it was ordered with rather
+      // than silently dropping the upgrade back to standard.
+      const portioned = groups.find((g) => portionGroupId(g.id) === a.groupId);
+      const portion = portioned?.portions?.find((p) => p.id === a.optionId);
+      if (portioned && portion) first.portions[portioned.id] = portion.id;
     }
     return [first];
   });
@@ -92,7 +121,10 @@ export function useComboBuilder(
         const picked = source
           ? Object.fromEntries(Object.entries(source.picked).map(([id, opts]) => [id, [...opts]]))
           : Object.fromEntries(groups.map((g) => [g.id, []]));
-        return [...prev, { picked, qty: 1 }];
+        // "Repeat previous choices" repeats the portion too — it's one of the
+        // choices, and a copy that quietly downgraded it wouldn't be a copy.
+        const portions = source ? { ...source.portions } : seedPortions(groups);
+        return [...prev, { picked, portions, qty: 1 }];
       });
     },
     [groups],
@@ -128,17 +160,46 @@ export function useComboBuilder(
     );
   }
 
-  const built: BuiltCombo[] = combos.map(({ picked, qty }) => {
-    const addOns: CartAddOn[] = groups.flatMap((g) =>
-      (picked[g.id] ?? []).flatMap((optionId) => {
+  function setPortion(index: number, group: AddOnGroup, portionId: string) {
+    setCombos((prev) =>
+      prev.map((combo, i) =>
+        i === index
+          ? { ...combo, portions: { ...combo.portions, [group.id]: portionId } }
+          : combo,
+      ),
+    );
+  }
+
+  const built: BuiltCombo[] = combos.map(({ picked, portions, qty }) => {
+    const addOns: CartAddOn[] = groups.flatMap((g) => {
+      const chosen = (picked[g.id] ?? []).flatMap((optionId) => {
         const option = g.options.find((o) => o.id === optionId);
         // Store the cleaned label: the cart and the order lines print these names
         // verbatim, and "Extra brisket (+$4)" beside its own price reads as a typo.
         return option
           ? [{ groupId: g.id, optionId: option.id, name: cleanOptionName(option.name), price: option.price }]
           : [];
-      }),
-    );
+      });
+      // The portion is charged per chosen option, and only once the group has
+      // been answered — a portion size for a protein nobody picked yet isn't
+      // something to bill for, and it would put a price on the button before the
+      // question above it was resolved.
+      //
+      // The default portion is left off the line entirely: it's the standard the
+      // menu price already quotes, so printing "Standard portion" in the cart
+      // beside every meal would be noise on the meals that changed nothing.
+      const portion = g.portions ? portionOf(g, portions[g.id]) : undefined;
+      if (!portion || !chosen.length || portion.id === defaultPortion(g)?.id) return chosen;
+      return [
+        ...chosen,
+        {
+          groupId: portionGroupId(g.id),
+          optionId: portion.id,
+          name: portion.name,
+          price: portion.price * chosen.length,
+        },
+      ];
+    });
     const missing = groups.filter((g) => g.required && (picked[g.id] ?? []).length === 0);
     return {
       addOns,
@@ -163,6 +224,7 @@ export function useComboBuilder(
     addCombo,
     setComboQty,
     toggle,
+    setPortion,
     total,
     /** Index of the first combo still missing a required answer, or -1. */
     firstIncomplete,
@@ -181,11 +243,13 @@ export function ComboBlock({
   solo,
   groups,
   picked,
+  portions,
   built,
   open,
   showPrice,
   onOpen,
   onToggle,
+  onSetPortion,
   onSave,
   onDelete,
   onSetQty,
@@ -195,18 +259,28 @@ export function ComboBlock({
   solo: boolean;
   groups: AddOnGroup[];
   picked: Picked;
+  portions: Portions;
   built: BuiltCombo;
   open: boolean;
   showPrice: boolean;
   onOpen: () => void;
   onToggle: (group: AddOnGroup, optionId: string) => void;
+  onSetPortion: (group: AddOnGroup, portionId: string) => void;
   onSave: () => void;
   /** Drop this combo entirely — the row and all its packages. */
   onDelete: () => void;
   onSetQty: (qty: number) => void;
 }) {
   if (solo) {
-    return <OptionGroups groups={groups} picked={picked} onToggle={onToggle} />;
+    return (
+      <OptionGroups
+        groups={groups}
+        picked={picked}
+        portions={portions}
+        onToggle={onToggle}
+        onSetPortion={onSetPortion}
+      />
+    );
   }
 
   if (!open) {
@@ -308,7 +382,13 @@ export function ComboBlock({
         </div>
       </header>
 
-      <OptionGroups groups={groups} picked={picked} onToggle={onToggle} />
+      <OptionGroups
+        groups={groups}
+        picked={picked}
+        portions={portions}
+        onToggle={onToggle}
+        onSetPortion={onSetPortion}
+      />
     </section>
   );
 }

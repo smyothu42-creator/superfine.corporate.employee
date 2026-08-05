@@ -7,10 +7,13 @@ import { Button } from "@/components/ui/button";
 import {
   minGuestsFor,
   pricePerGuestFor,
+  portionOf,
+  seedPortions,
   servingsRequired,
   servingUnit,
   familyStyleTotal,
 } from "@/data/menu";
+import { PortionPicker, PortionedPrice } from "@/components/menu/portion-picker";
 import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { MenuItem, ServingGroup } from "@/data/types";
@@ -18,6 +21,9 @@ import type { CartServing } from "@/store/use-cart-store";
 
 /** groupId → optionId → servings assigned. */
 type Quantities = Record<string, Record<string, number>>;
+
+/** groupId → chosen portionId, for the groups that offer portions. */
+type Portions = Record<string, string>;
 
 interface FamilyStyleModalProps {
   item: MenuItem;
@@ -77,6 +83,14 @@ export function FamilyStyleModal({
   const [quantities, setQuantities] = React.useState<Quantities>(() =>
     seedQuantities(groups),
   );
+  /**
+   * Portions *do* open on a default, unlike the serving counts above — the
+   * standard portion is what the package already includes, so it's the answer
+   * the price on the card was quoted against, not a choice made on the user's
+   * behalf. Leaving it blank would block the sheet on a question whose answer is
+   * "the thing you were already buying".
+   */
+  const [portions, setPortions] = React.useState<Portions>(() => seedPortions(groups));
 
   /**
    * Changing the headcount changes what every required group owes. Adding guests
@@ -149,7 +163,7 @@ export function FamilyStyleModal({
     (g) => assignedIn(g) !== servingsRequired(g, guests),
   );
   const valid = unbalanced.length === 0;
-  const total = familyStyleTotal(item, guests, quantities);
+  const total = familyStyleTotal(item, guests, quantities, portions);
 
   // Scroll the blocked CTA's target group into view — the same "the button is a
   // signpost, never a dead end" pattern the individual-meal sheet uses.
@@ -159,8 +173,12 @@ export function FamilyStyleModal({
   }
 
   function confirm() {
-    const servings: CartServing[] = groups.flatMap((group) =>
-      group.options
+    const servings: CartServing[] = groups.flatMap((group) => {
+      // The portion is a property of the group, but the cart stores one row per
+      // option — so every row in the group carries the same portion, and the
+      // cart prints it once against the group name.
+      const portion = group.portions ? portionOf(group, portions[group.id]) : undefined;
+      return group.options
         .filter((o) => (quantities[group.id]?.[o.id] ?? 0) > 0)
         .map((o) => ({
           groupId: group.id,
@@ -169,8 +187,10 @@ export function FamilyStyleModal({
           name: o.name,
           qty: quantities[group.id][o.id],
           unit: group.unit ?? "serving",
-        })),
-    );
+          portionId: portion?.id,
+          portionName: portion?.name,
+        }));
+    });
     onConfirm(guests, servings, total);
   }
 
@@ -218,25 +238,17 @@ export function FamilyStyleModal({
             </h3>
           ) : null}
 
-          {required.map((group) => (
+          {[...required, ...extras].map((group) => (
             <div key={group.id} ref={(el) => { groupRefs.current[group.id] = el; }}>
               <ServingGroupPicker
                 group={group}
                 guests={guests}
                 quantities={quantities[group.id] ?? {}}
                 assigned={assignedIn(group)}
-                onSetQty={(optionId, qty) => setQty(group.id, optionId, qty)}
-              />
-            </div>
-          ))}
-
-          {extras.map((group) => (
-            <div key={group.id} ref={(el) => { groupRefs.current[group.id] = el; }}>
-              <ServingGroupPicker
-                group={group}
-                guests={guests}
-                quantities={quantities[group.id] ?? {}}
-                assigned={assignedIn(group)}
+                portionId={portions[group.id]}
+                onSetPortion={(portionId) =>
+                  setPortions((prev) => ({ ...prev, [group.id]: portionId }))
+                }
                 onSetQty={(optionId, qty) => setQty(group.id, optionId, qty)}
               />
             </div>
@@ -414,18 +426,25 @@ function ServingGroupPicker({
   guests,
   quantities,
   assigned,
+  portionId,
+  onSetPortion,
   onSetQty,
 }: {
   group: ServingGroup;
   guests: number;
   quantities: Record<string, number>;
   assigned: number;
+  /** Chosen portion for the whole group, when it offers any. */
+  portionId?: string;
+  onSetPortion: (portionId: string) => void;
   onSetQty: (optionId: string, qty: number) => void;
 }) {
   const optional = group.perGuest === 0;
   const target = servingsRequired(group, guests);
   const remaining = target - assigned;
   const balanced = remaining === 0;
+  // The same number for every option in the group — that's the point of it.
+  const portionPrice = portionOf(group, portionId)?.price ?? 0;
 
   return (
     <section>
@@ -464,6 +483,15 @@ function ServingGroupPicker({
         )}
       </div>
 
+      {/* Above the options, because it changes what every one of them costs. */}
+      {group.portions?.length ? (
+        <PortionPicker
+          groupName={group.name}
+          portions={group.portions}
+          value={portionId}
+          onChange={onSetPortion}
+        />
+      ) : null}
 
       <div className="space-y-1.5">
         {group.options.map((option) => {
@@ -483,7 +511,16 @@ function ServingGroupPicker({
                   <p className="truncate text-[13px] font-medium">
                     {option.name}
                   </p>
-                  {option.upchargePerServing > 0 ? (
+                  {/* With a portion on the group, every row shows the sum and
+                      both halves of it; without one there's nothing to break
+                      down, so a bare up-charge stays a bare up-charge. */}
+                  {group.portions?.length ? (
+                    <PortionedPrice
+                      each
+                      optionPrice={option.upchargePerServing}
+                      portionPrice={portionPrice}
+                    />
+                  ) : option.upchargePerServing > 0 ? (
                     <p className="mt-0.5 text-2xs font-semibold text-foreground">
                       +{formatCurrency(option.upchargePerServing)} each
                     </p>

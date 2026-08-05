@@ -71,6 +71,7 @@ export function AddOnModal({
     addCombo,
     setComboQty,
     toggle,
+    setPortion,
     total,
     firstIncomplete,
     valid,
@@ -189,11 +190,13 @@ export function AddOnModal({
             solo={solo}
             groups={groups}
             picked={combo.picked}
+            portions={combo.portions}
             built={built[i]}
             open={open === i}
             showPrice={program.showPrices}
             onOpen={() => focusCombo(i)}
             onToggle={(group, optionId) => handleToggle(i, group, optionId)}
+            onSetPortion={(group, portionId) => setPortion(i, group, portionId)}
             onSave={() => handleSave(i)}
             onDelete={() => handleDeleteCombo(i)}
             onSetQty={(next) => handleSetComboQty(i, next)}
