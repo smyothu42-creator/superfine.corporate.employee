@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { PortionOption } from "@/data/types";
@@ -25,7 +24,7 @@ export function PortionPicker({
   onChange,
   className,
 }: {
-  /** The group this portion governs, e.g. "Protein" — named in the caption. */
+  /** The group this portion governs, e.g. "Protein" — names the radio group. */
   groupName: string;
   portions: PortionOption[];
   /** Chosen portion id. Falls back to the first (included) portion. */
@@ -33,10 +32,6 @@ export function PortionPicker({
   onChange: (portionId: string) => void;
   className?: string;
 }) {
-  // Scoped to this instance: the combo builder can put the same group on screen
-  // more than once, and two elements sharing an id make `aria-labelledby` point
-  // at whichever one the browser saw first.
-  const captionId = React.useId();
   if (!portions.length) return null;
   const selected = portions.find((p) => p.id === value) ?? portions[0];
 
@@ -46,20 +41,20 @@ export function PortionPicker({
     // as two more proteins — a list of six, two of which behave strangely. The
     // line says the control above governs the list below.
     <div className={cn("mb-3 border-b border-border pb-3", className)}>
-      {/* Says what the control governs *before* it's used, because its effect is
-          on rows further down the sheet — a radio pair labelled only "Portion"
-          reads as a property of the group heading it sits under. */}
-      <p id={captionId} className="mb-1.5 text-2xs text-muted-foreground">
-        Portion — applies to every {groupName.toLowerCase()} below
-      </p>
-
       {/* Side by side when the pair fits, stacked when it doesn't — and that's
           a question about the *container*, not the viewport. Both sheets this
           renders in are ~400px columns at every screen size, so a `sm:` grid
           went two-up on a desktop that had no more room to give and clipped
           "Standard portion" to "Standard porti…". A flex basis wide enough for
           the longest label lets the row make that call for itself. */}
-      <RadioGroup aria-labelledby={captionId} className="flex flex-wrap gap-2">
+      {/* No visible caption, so the name is carried here: "Portion" alone would
+          read as a property of the group heading above rather than of the rows
+          below, which is exactly the ambiguity the sighted layout resolves by
+          position. */}
+      <RadioGroup
+        aria-label={`Portion — applies to every ${groupName.toLowerCase()} below`}
+        className="flex flex-wrap gap-2"
+      >
         {portions.map((portion) => {
           const checked = portion.id === selected.id;
           return (
