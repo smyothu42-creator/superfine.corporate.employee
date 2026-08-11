@@ -124,7 +124,7 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
         <Card className="overflow-hidden">
           {/* Decorative: the <h2> directly below is the meal's name. Naming the
               photo as well makes a screen reader say it twice in a row. */}
-          <FoodPhoto src={item.image} alt="" className="aspect-[5/4]" iconClassName="size-16" />
+          <FoodPhoto src={item.image} alt="" className="aspect-[5/3]" iconClassName="size-16" />
           <CardBody className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
