@@ -44,6 +44,7 @@ import {
   hasOptionalAddOns,
   isFamilyStyle,
 } from "@/data/menu";
+import type { MenuCategory } from "@/data/menu";
 import { program } from "@/data/program";
 import { useSessionStore } from "@/store/use-session-store";
 import { useProfileStore } from "@/store/use-profile-store";
@@ -800,8 +801,9 @@ export function MenuView() {
 
       </div>
 
-      {/* Promo push — sits under the category tags, above the grid. */}
-      <PromoBanner />
+      {/* Promo push — sits under the category tags, above the grid, and follows
+          the section they point at. */}
+      <PromoBanner category={category} />
 
       {/**
        * How many meals the filters left, said out loud.
@@ -1164,19 +1166,88 @@ function DayStrip({
   );
 }
 
+/**
+ * A promo runs against the whole menu unless it names a section, and the
+ * whole-menu case is spelled out rather than left blank — a campaign list that
+ * says "All categories" out loud is one nobody has to guess the default of.
+ */
+const ALL_CATEGORIES = "All categories";
+
+/** What a promo may be aimed at: the whole menu, or one branded section. */
+type PromoTarget = typeof ALL_CATEGORIES | MenuCategory;
+
+/** CTA label used when a promo has no wording of its own. */
+const DEFAULT_CTA = "Learn more";
+
+/**
+ * The only three things a campaign badge may say.
+ *
+ * A free-text badge grows a vocabulary nobody agreed to — "Catering", "10% OFF",
+ * "Chef's pick" — and a shopper reading three cards in a row has to work out
+ * what kind of thing each label even is. Three fixed words, and the badge means
+ * something: it is new, it runs for a short window, or it comes round with the
+ * season. Anything else belongs in the title.
+ */
+type PromoTag = "New" | "Limited" | "Seasonal";
+
 interface Promo {
   id: string;
-  /** Short eyebrow badge, e.g. "10% OFF" / "NEW". */
-  tag: string;
+  /** Short eyebrow badge — one of the three {@link PromoTag} words. */
+  tag: PromoTag;
   /** Icon shown in the eyebrow badge. */
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   /** One line, {@link PROMO_BODY_MAX} characters or fewer — see the constant. */
   body: string;
+  /**
+   * Where the button goes. Required — every card carries a button, so every
+   * campaign has to name somewhere worth going. Even the ones that read as an
+   * announcement ("free delivery this week") point at the menu they are meant
+   * to send someone to.
+   *
+   * An in-app path routes client-side; a custom `https://…` link (a campaign
+   * microsite, a caterer's booking page) opens in a new tab so the shopper
+   * doesn't lose a half-built cart to it.
+   */
   href: string;
-  cta: string;
+  /** Button wording. Optional — {@link DEFAULT_CTA} when left off. */
+  cta?: string;
   image: string;
   alt: string;
+  /**
+   * The window the campaign runs in, as `YYYY-MM-DD`, both ends **inclusive**:
+   * a promo ending on its last day is still up that whole day. Either end may
+   * be left off — no `startsOn` is "already running", no `endsOn` is "until
+   * someone takes it down". Outside the window the card simply isn't rendered.
+   */
+  startsOn?: string;
+  endsOn?: string;
+  /** Section to run against. Omitted is {@link ALL_CATEGORIES}. */
+  category?: PromoTarget;
+}
+
+/** Whether `today` falls inside the promo's run window (both ends inclusive). */
+function isPromoLive(promo: Promo, today: Date) {
+  if (promo.startsOn && fromISODate(promo.startsOn) > today) return false;
+  if (promo.endsOn && fromISODate(promo.endsOn) < today) return false;
+  return true;
+}
+
+/**
+ * Whether the promo belongs on the section being browsed. `category` is `""`
+ * when the *All* chip is active — nothing is being narrowed, so nothing is
+ * held back; pick a section and only that section's campaigns (plus the
+ * menu-wide ones) stay.
+ */
+function isPromoInCategory(promo: Promo, category: string) {
+  if (!category) return true;
+  const target = promo.category ?? ALL_CATEGORIES;
+  return target === ALL_CATEGORIES || target === category;
+}
+
+/** A custom link off the app, as opposed to an in-app route. */
+function isCustomLink(href: string) {
+  return /^https?:\/\//i.test(href);
 }
 
 /**
@@ -1184,42 +1255,53 @@ interface Promo {
  *
  * The card gives this line one line and clips the rest, so the limit is a
  * property of the layout rather than a style guide: the copy column is at its
- * narrowest on a phone — 189px, the full-width card beside its 38% photo — and
- * that is what this is measured against, not the 256px it gets on a desktop.
- * Anything longer doesn't say more; it ends in an ellipsis on the smallest
- * screen that shows it, which is most of them.
+ * narrowest on a phone — 150px, the full-width card beside its half-width photo
+ * — and that is what this is measured against, not the 240px it gets on a
+ * desktop. Anything longer doesn't say more; it ends in an ellipsis on the
+ * smallest screen that shows it, which is most of them.
  *
- * 32 is where the widest 13px line still fits that column. Wide characters can
- * still push a legal-length line over, so check a new one on a phone rather
- * than trusting the count alone.
+ * 24 is where the widest 13px line still fits that column, measured at 390px.
+ * It was 32 when the photo took 38% of the card; the photo is half of it now,
+ * and the sentence that has to fit beside it got shorter to match. Wide
+ * characters can still push a legal-length line over, so check a new one on a
+ * phone rather than trusting the count alone.
  */
-const PROMO_BODY_MAX = 32;
+const PROMO_BODY_MAX = 24;
 
 /** Campaigns shown in the promo carousel; paged two-at-a-time. */
 const PROMOS: Promo[] = [
   {
     id: "summerbowls",
-    tag: "New",
+    // Seasonal, not New: it runs a summer-shaped window and comes back next
+    // June — the badge says which of those two things a campaign is.
+    tag: "Seasonal",
     icon: Sparkles,
     title: "Try our new summer bowls",
-    body: "Fresh bowls and grills, just in.",
+    body: "Fresh bowls, just in.",
     href: "/menu",
     cta: "See the menu",
     image: "https://www.themealdb.com/images/media/meals/rqtxvr1511792990.jpg",
     alt: "Summer grain bowl",
+    startsOn: "2026-06-01",
+    endsOn: "2026-09-15",
+    category: "Sizzlin' Summer",
   },
   {
     id: "freedelivery",
     tag: "Limited",
     icon: Truck,
     title: "Free delivery this week only",
-    body: "Delivery is on us. No code.",
+    body: "Delivery is on us.",
     href: "/menu",
-    cta: "Order now",
+    cta: "Start an order",
     image: "https://www.themealdb.com/images/media/meals/1548772327.jpg",
     alt: "Shared family-style spread",
+    startsOn: "2026-08-17",
+    endsOn: "2026-08-23",
+    category: ALL_CATEGORIES,
   },
   {
+    // Out of window until December — kept here so next season is one date away.
     id: "christmas",
     tag: "Seasonal",
     icon: Gift,
@@ -1229,17 +1311,37 @@ const PROMOS: Promo[] = [
     cta: "See the menu",
     image: "https://www.themealdb.com/images/media/meals/1550441882.jpg",
     alt: "Holiday feast platter",
+    startsOn: "2026-12-01",
+    endsOn: "2026-12-26",
+    category: ALL_CATEGORIES,
   },
   {
+    // No window at all — an evergreen promo that runs until it is taken down.
     id: "refer",
     tag: "New",
     icon: BadgePercent,
     title: "New referral rewards just launched",
-    body: "You both get $15 in credit.",
+    body: "You both get $15 credit.",
     href: "/account",
     cta: "Get your link",
     image: "https://www.themealdb.com/images/media/meals/bqx8mc1782684286.jpg",
     alt: "Fresh harvest salad",
+    category: ALL_CATEGORIES,
+  },
+  {
+    // A custom link off the app — opens in a new tab, cart intact.
+    id: "catering",
+    tag: "New",
+    icon: CalendarRange,
+    title: "Book catering for your team",
+    body: "Platters for 10 or more.",
+    href: "https://superfinekitchen.com/catering",
+    cta: "Plan an event",
+    // Shares the seasonal card's photo — the two never run in the same window.
+    image: "https://www.themealdb.com/images/media/meals/1550441882.jpg",
+    alt: "Roast potato skillet",
+    startsOn: "2026-08-01",
+    category: ALL_CATEGORIES,
   },
 ];
 
@@ -1256,50 +1358,111 @@ if (process.env.NODE_ENV !== "production") {
   }
 }
 
+/**
+ * The promo's destination, as an in-app route or a new-tab jump off the app.
+ *
+ * Used twice on a card — once by the button, once by the photo behind it — so
+ * that the two can't drift apart on where they go or how they open. Pass
+ * `decorative` for the second copy: same destination, but skipped by Tab and
+ * hidden from screen readers, so a card is one stop in the reading order
+ * rather than two that say the same thing.
+ */
+function PromoLink({
+  promo,
+  className,
+  decorative,
+  children,
+}: {
+  promo: Promo;
+  className: string;
+  decorative?: boolean;
+  children: React.ReactNode;
+}) {
+  const hidden = decorative ? ({ "aria-hidden": true, tabIndex: -1 } as const) : null;
+
+  return isCustomLink(promo.href) ? (
+    <a href={promo.href} target="_blank" rel="noreferrer" className={className} {...hidden}>
+      {children}
+    </a>
+  ) : (
+    <Link href={promo.href} className={className} {...hidden}>
+      {children}
+    </Link>
+  );
+}
+
 /** One promo card — copy + CTA on the left, food photo on the right. */
 function PromoCard({ promo }: { promo: Promo }) {
+  const cta = promo.cta ?? DEFAULT_CTA;
+  const custom = isCustomLink(promo.href);
+  const ctaClass =
+    "mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-deep px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-primary";
+
   return (
     <div className="group relative flex items-stretch overflow-hidden rounded-2xl border border-teal-soft bg-gradient-to-br from-teal-wash via-teal-wash to-teal-soft/70 shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-raised">
       {/* Soft decorative glow behind the copy for depth. */}
       <div className="pointer-events-none absolute -left-10 -top-12 size-40 rounded-full bg-primary/10 blur-2xl" />
 
-      <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-center gap-1.5 py-5 pl-5 pr-3 sm:pl-6">
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-center gap-1.5 py-5 pl-4 pr-3 sm:pl-6">
         <span className="inline-flex w-fit items-center rounded-full bg-coral px-2.5 py-0.5 text-2xs font-bold text-white shadow-sm">
           {promo.tag}
         </span>
-        {/* Phones: no clamp + smaller font so the whole title shows (no "…");
-            single-line clamp at the original size from sm+. */}
-        <h3 className="mt-0.5 font-display text-sm font-bold leading-tight tracking-tight text-teal-deep sm:line-clamp-1 sm:text-xl">
+        {/**
+         * Two lines, and always two lines' worth of room.
+         *
+         * Half the card is photo now, so the copy column is 240px on a desktop
+         * and 150px on a phone — no campaign headline worth writing fits on one
+         * line of that, and the old single-line clamp turned every one of them
+         * into "Try our new summer…". The min-height is what keeps a one-line
+         * title from riding its CTA half a line higher than the card beside it:
+         * two lines of `leading-tight` at each size, reserved whether or not
+         * the second one is used.
+         */}
+        <h3 className="mt-0.5 line-clamp-2 min-h-[35px] font-display text-sm font-bold leading-tight tracking-tight text-teal-deep sm:min-h-[50px] sm:text-xl">
           {promo.title}
         </h3>
         {/* One line, always. Two lines pushed the CTA down by a row on the card
             that happened to have the longer sentence, so a pair of promos side
             by side had their buttons at different heights. */}
         <p className="line-clamp-1 text-[13px] leading-snug text-teal-deep/75">{promo.body}</p>
-        <Link
-          href={promo.href}
-          className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-deep px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-primary"
-        >
-          {promo.cta} <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-        </Link>
+        {/* Every card gets a button, and every button gets the same arrow —
+            the pair of cards on screen at once shouldn't look like two
+            different components because one of them leaves the app. That a
+            link opens a tab is said rather than drawn, so it reaches the
+            people a swapped-out glyph never reached anyway. */}
+        <PromoLink promo={promo} className={ctaClass}>
+          {cta}
+          {custom ? <span className="sr-only"> (opens in a new tab)</span> : null}
+          <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+        </PromoLink>
       </div>
 
       {/* Full-bleed real food photo on the right, fading into the card gradient.
-          Shown on every size — including mobile, where the card is a single box. */}
-      <div className="relative block w-[38%] max-w-[220px] shrink-0 self-stretch">
+          Shown on every size — including mobile, where the card is a single box.
+
+          Half the card, uncapped, and it goes where the button goes. The photo
+          is the half of a promo that gets looked at, so it gets half the room —
+          no max width any more, since a cap only ever fired on the widest
+          screens, which is exactly where the 50/50 was worth having. On a phone
+          it is also the half worth aiming a thumb at, so a tap on it shouldn't
+          land on nothing. */}
+      <PromoLink promo={promo} decorative className="relative block w-1/2 shrink-0 self-stretch">
         <FoodPhoto src={promo.image} alt={promo.alt} className="size-full" iconClassName="size-10" />
         <div className="pointer-events-none absolute inset-y-0 left-0 w-14 bg-gradient-to-r from-teal-wash to-transparent" />
-      </div>
+      </PromoLink>
     </div>
   );
 }
 
 /**
  * Top promo carousel — seasonal / campaign menu pushes shown two cards at a
- * time. Left/right arrows page through {@link PROMOS}; edit that list to run
- * different promotions.
+ * time. Left/right arrows page through the campaigns that are live today and
+ * belong on the section being browsed; edit {@link PROMOS} to run different
+ * promotions.
+ *
+ * `category` is the active section chip, `""` for *All*.
  */
-function PromoBanner() {
+function PromoBanner({ category }: { category: string }) {
   // One card per page on mobile (a single full-width box, not two stacked),
   // two on sm+. Mirrors the (max-width: 639px) breakpoint used elsewhere here.
   const [isMobile, setIsMobile] = React.useState(false);
@@ -1311,18 +1474,39 @@ function PromoBanner() {
     return () => mq.removeEventListener("change", update);
   }, []);
 
+  /**
+   * Today, taken once. A campaign window is a date range, not a clock, so this
+   * only has to be right to the day — and pinning it for the life of the mount
+   * keeps a card from disappearing under someone at midnight mid-scroll.
+   */
+  const today = React.useMemo(() => startOfToday(), []);
+  const running = React.useMemo(
+    () => PROMOS.filter((p) => isPromoLive(p, today) && isPromoInCategory(p, category)),
+    [today, category],
+  );
+
   const perPage = isMobile ? 1 : 2;
-  const pageCount = Math.ceil(PROMOS.length / perPage);
+  const pageCount = Math.ceil(running.length / perPage);
   const [page, setPage] = React.useState(0);
 
-  // Keep the page in range when perPage flips across the breakpoint.
+  // Keep the page in range when perPage flips across the breakpoint, or when a
+  // section change leaves fewer campaigns than there were pages.
   React.useEffect(() => {
-    setPage((p) => Math.min(p, pageCount - 1));
+    setPage((p) => Math.max(0, Math.min(p, pageCount - 1)));
   }, [pageCount]);
+
+  // A new section is a new set of campaigns — start it at the first one rather
+  // than wherever the last section happened to be paged to.
+  React.useEffect(() => {
+    setPage(0);
+  }, [category]);
 
   const canLeft = page > 0;
   const canRight = page < pageCount - 1;
-  const visible = PROMOS.slice(page * perPage, page * perPage + perPage);
+  const visible = running.slice(page * perPage, page * perPage + perPage);
+
+  // Nothing live for this section: no empty rail, no stray arrows.
+  if (!running.length) return null;
 
   return (
     <div className="relative">
@@ -1336,30 +1520,40 @@ function PromoBanner() {
       {/* Move arrows — page left/right through the promos. */}
       {pageCount > 1 ? (
         <>
-          <button
-            type="button"
-            aria-label="Previous promotions"
+          {/**
+           * On a tablet or a desktop the arrows ride the outer card edges,
+           * where there is margin for them to sit in.
+           *
+           * On a phone there isn't: the card runs the full width of the page
+           * gutter to gutter, so an arrow parked on its edge lands on top of
+           * the body copy — and with the photo taking half the card, that copy
+           * has no room to give. They move down into the dot row below instead,
+           * which is where a thumb was going anyway.
+           */}
+          <PromoArrow
+            dir="prev"
             disabled={!canLeft}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
-            className="touch-target absolute -left-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-control bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
-          >
-            <ChevronLeft className="size-5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Next promotions"
+            className="absolute -left-3 top-1/2 z-10 hidden -translate-y-1/2 sm:flex"
+          />
+          <PromoArrow
+            dir="next"
             disabled={!canRight}
             onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-            className="touch-target absolute -right-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-control bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
-          >
-            <ChevronRight className="size-5" />
-          </button>
+            className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 sm:flex"
+          />
 
           {/* Page dots. The *dot* stays 6px because that's the design; the
               button around it is 24px square, which is the size a finger or a
               shaky hand actually has to hit. A 6px tap target next to another
               6px tap target was the app's only measured target-size failure. */}
-          <div className="mt-1 flex items-center justify-center">
+          <div className="mt-1 flex items-center justify-center gap-1">
+            <PromoArrow
+              dir="prev"
+              disabled={!canLeft}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              className="flex sm:hidden"
+            />
             {Array.from({ length: pageCount }).map((_, i) => (
               <button
                 key={i}
@@ -1378,10 +1572,49 @@ function PromoBanner() {
                 />
               </button>
             ))}
+            <PromoArrow
+              dir="next"
+              disabled={!canRight}
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              className="flex sm:hidden"
+            />
           </div>
         </>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * One paging arrow for the promo rail. The same button in two places — over the
+ * card edge on a desktop, in the dot row on a phone — so only its position and
+ * which breakpoint shows it differ between the two.
+ */
+function PromoArrow({
+  dir,
+  disabled,
+  onClick,
+  className,
+}: {
+  dir: "prev" | "next";
+  disabled: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
+  const Icon = dir === "prev" ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      aria-label={dir === "prev" ? "Previous promotions" : "Next promotions"}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "touch-target size-9 items-center justify-center rounded-full border border-control bg-card text-foreground shadow-raised transition hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40",
+        className,
+      )}
+    >
+      <Icon className="size-5" />
+    </button>
   );
 }
 
