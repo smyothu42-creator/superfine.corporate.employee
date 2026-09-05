@@ -137,6 +137,8 @@ export function MenuView() {
   const cart = useCartStore();
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
   const setPlannedDays = useUiStore((s) => s.setPlannedDays);
+  const skippedDays = useUiStore((s) => s.skippedDays);
+  const clearSkippedDays = useUiStore((s) => s.clearSkippedDays);
   const openCart = useUiStore((s) => s.openCart);
   const cartOpen = useUiStore((s) => s.cartOpen);
   const rangePickerRequested = useUiStore((s) => s.rangePickerRequested);
@@ -237,10 +239,39 @@ export function MenuView() {
     const end = fromISODate(rangeEnd);
     if (end < start) return [];
     const todayISO = toISODate(startOfToday());
-    return serviceDaysInRange(start, end, MULTI_DAY_NUMS)
-      .map(toISODate)
-      .filter((iso) => iso >= todayISO && !isHoliday(iso) && !isCutoffPassed(iso, menuType));
-  }, [rangeStart, rangeEnd, menuType]);
+    return (
+      serviceDaysInRange(start, end, MULTI_DAY_NUMS)
+        .map(toISODate)
+        .filter((iso) => iso >= todayISO && !isHoliday(iso) && !isCutoffPassed(iso, menuType))
+        // A day dropped from the cart leaves the plan everywhere — the day
+        // strip, the counters and `plannedDays` all read this list — and stays
+        // out until a new range is applied. Subtracting it here rather than in
+        // the cart is what makes the removal stick: the effect below rebuilds
+        // the plan from this list on every cart change.
+        .filter((iso) => !skippedDays.includes(iso))
+    );
+  }, [rangeStart, rangeEnd, menuType, skippedDays]);
+
+  /**
+   * Keep the date pill and the picker in step with the day strip.
+   *
+   * `rangeDays` is the plan after everything that can drop a day from it — a
+   * passed cutoff, a holiday, the cart's bin — so when the day dropped was one
+   * of the range's own endpoints, the range has to close up behind it. Without
+   * this the pill still reads "Mon, Sep 7 → Fri, Sep 11 · 5 days" over a strip
+   * that starts on Tuesday and counts four.
+   *
+   * A day taken out of the *middle* can't shrink anything: the range still spans
+   * it, and re-applying those dates is what brings it back. Idempotent, so it
+   * settles in one pass — the endpoints it writes are the ones it reads.
+   */
+  React.useEffect(() => {
+    if (mode !== "multi" || rangeDays.length === 0) return;
+    const first = rangeDays[0];
+    const last = rangeDays[rangeDays.length - 1];
+    if (rangeStart !== first) setRangeStart(first);
+    if (rangeEnd !== last) setRangeEnd(last);
+  }, [mode, rangeDays, rangeStart, rangeEnd]);
 
   // Keep the active multi-day tab valid.
   React.useEffect(() => {
@@ -600,6 +631,7 @@ export function MenuView() {
         setRangeEnd(end);
         setRangeChosen(true);
         setMode("multi");
+        clearSkippedDays();
         // Drop cart items for days no longer in the range; days still inside it keep theirs.
         cart.retainRange(start, end);
         const days = openServiceDays(start, end);
@@ -919,6 +951,7 @@ export function MenuView() {
             setRangeEnd(end);
             setRangeChosen(true);
             setRangePickerOpen(false);
+            clearSkippedDays();
             // Drop cart items for days no longer in the range; days still inside it keep theirs.
             cart.retainRange(start, end);
             const days = openServiceDays(start, end);

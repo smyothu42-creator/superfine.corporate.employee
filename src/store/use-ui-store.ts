@@ -21,6 +21,17 @@ interface UiState {
   /** Service days planned in a multi-day order — drives "days remaining". */
   plannedDays: string[];
   setPlannedDays: (days: string[]) => void;
+  /**
+   * Days the user dropped from a multi-day plan with the cart's bin.
+   *
+   * The plan is otherwise *derived* — the menu recomputes it from the chosen
+   * date range every time the cart changes — so a day taken out of
+   * `plannedDays` alone would come straight back on the next add. This is the
+   * subtraction the derivation reads, and it lasts until a new range is applied.
+   */
+  skippedDays: string[];
+  skipDay: (iso: string) => void;
+  clearSkippedDays: () => void;
   /** Cross-view request to (re)open the multi-day date-range picker on /menu. */
   rangePickerRequested: boolean;
   requestRangePicker: () => void;
@@ -83,6 +94,13 @@ export const useUiStore = create<UiState>((set) => ({
   setActiveOrderDate: (activeOrderDate) => set({ activeOrderDate }),
   plannedDays: [],
   setPlannedDays: (plannedDays) => set({ plannedDays }),
+  skippedDays: [],
+  skipDay: (iso) =>
+    set((s) => ({
+      skippedDays: s.skippedDays.includes(iso) ? s.skippedDays : [...s.skippedDays, iso],
+      plannedDays: s.plannedDays.filter((d) => d !== iso),
+    })),
+  clearSkippedDays: () => set({ skippedDays: [] }),
   rangePickerRequested: false,
   requestRangePicker: () => set({ rangePickerRequested: true }),
   clearRangePicker: () => set({ rangePickerRequested: false }),

@@ -12,6 +12,7 @@ import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ServingBreakdown } from "@/components/cart/serving-breakdown";
 import { useCartStore } from "@/store/use-cart-store";
+import { confirm } from "@/store/use-confirm-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { useOrderEditStore } from "@/store/use-order-edit-store";
 import { useOrdersStore } from "@/store/use-orders-store";
@@ -21,6 +22,7 @@ import { fromISODate, formatDay } from "@/lib/dates";
 import { cutoffInfo } from "@/lib/cutoff-messaging";
 import { useDialog } from "@/lib/use-dialog";
 import { subsidyLabel } from "@/lib/subsidy";
+import { toast } from "@/store/use-toast-store";
 import { useSessionStore, isSubsidized } from "@/store/use-session-store";
 import type { Order, OrderType } from "@/data/types";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -167,6 +169,63 @@ function ItemCutoffLine({ date, type }: { date: string; type: OrderType }) {
   );
 }
 
+/**
+ * Drop a whole day: its meals and its place in the multi-day plan.
+ *
+ * A day with no meal in it is only a plan, so it goes at once — nothing is lost
+ * that a second tap on the calendar wouldn't bring back. A day that holds meals
+ * asks first, because the one tap would delete several lines the user chose one
+ * at a time, and the bins beside those lines have taught them that a bin here
+ * removes *one* thing.
+ */
+function useRemoveDay() {
+  const skipDay = useUiStore((s) => s.skipDay);
+
+  return React.useCallback(
+    async (date: string) => {
+      // Read at call time, not at render: the confirm below is awaited, and a
+      // snapshot taken before it could be a cart the user has since changed.
+      const items = useCartStore.getState().itemsForDate(date);
+      const label = formatDay(fromISODate(date));
+
+      if (items.length > 0) {
+        const meals = items.reduce((n, i) => n + i.qty, 0);
+        const ok = await confirm({
+          title: `Remove ${label}?`,
+          description: `${meals} ${meals === 1 ? "meal" : "meals"} for this day will be taken out of your cart.`,
+          confirmLabel: "Remove day",
+          tone: "danger",
+        });
+        if (!ok) return;
+        for (const item of items) useCartStore.getState().remove(item.uid);
+      }
+
+      // Drops it from the plan *and* records it as skipped — the menu rebuilds
+      // `plannedDays` from the chosen date range on every cart change, so
+      // without the second half the day would reappear on the next add.
+      skipDay(date);
+      toast.success(`${label} removed`, "Pick the dates again to bring the day back.");
+    },
+    [skipDay],
+  );
+}
+
+/** The day header's bin. Same shape as the bin on a meal line, one level up. */
+function RemoveDayButton({ date, onRemove }: { date: string; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={`Remove ${formatDay(fromISODate(date))} from your cart`}
+      onClick={onRemove}
+      className="flex size-11 shrink-0 items-center justify-center sm:size-8"
+    >
+      <span className="flex size-9 items-center justify-center rounded-full border border-control bg-card text-danger hover:bg-danger-bg sm:size-8">
+        <Trash2 className="size-3.5" />
+      </span>
+    </button>
+  );
+}
+
 export function CartDayList() {
   const cart = useCartStore();
   const plannedDays = useUiStore((s) => s.plannedDays);
@@ -187,6 +246,7 @@ export function CartDayList() {
 
   // The day(s) this edit covers — see `editCoveredDays`.
   const editDays = editCoveredDays(editOrder);
+  const removeDay = useRemoveDay();
 
   // A section for every committed day: days that already hold a meal, plus any
   // day picked as part of a multi-day plan that's still empty. While editing, the
@@ -215,7 +275,15 @@ export function CartDayList() {
 
       {dates.map((date) => {
         const items = cart.itemsForDate(date);
-        if (items.length === 0) return <EmptyDayCard key={date} date={date} />;
+        if (items.length === 0) {
+          return (
+            <EmptyDayCard
+              key={date}
+              date={date}
+              onRemove={editDays.includes(date) ? undefined : () => removeDay(date)}
+            />
+          );
+        }
         const dayOwed = cart.dayEmployeePaid(date);
         const daySub = cart.daySubsidy(date);
         return (
@@ -225,13 +293,21 @@ export function CartDayList() {
                 <CalendarDays className="size-4 text-primary" />
                 {formatDay(fromISODate(date))}
               </h3>
-              {!subsidized ? (
-                <Badge tone="neutral">{formatCurrency(dayOwed)}</Badge>
-              ) : dayOwed > 0 ? (
-                <Badge tone="warning">You pay {formatCurrency(dayOwed)}</Badge>
-              ) : (
-                <Badge tone="success">Fully covered</Badge>
-              )}
+              <div className="flex items-center gap-2">
+                {!subsidized ? (
+                  <Badge tone="neutral">{formatCurrency(dayOwed)}</Badge>
+                ) : dayOwed > 0 ? (
+                  <Badge tone="warning">You pay {formatCurrency(dayOwed)}</Badge>
+                ) : (
+                  <Badge tone="success">Fully covered</Badge>
+                )}
+                {/* An edit's own days can't be dropped here — the day is what
+                    the order *is*; moving or losing it is the re-order path,
+                    not a bin in the cart. */}
+                {editDays.includes(date) ? null : (
+                  <RemoveDayButton date={date} onRemove={() => removeDay(date)} />
+                )}
+              </div>
             </div>
             <CardBody className="space-y-3">
               {items.map((line) => (
@@ -332,7 +408,7 @@ export function CartDayList() {
  * A planned day with no meal yet. Shown in the cart for every selected multi-day
  * date so the user can see — and act on — the days still waiting to be filled.
  */
-function EmptyDayCard({ date }: { date: string }) {
+function EmptyDayCard({ date, onRemove }: { date: string; onRemove?: () => void }) {
   const router = useRouter();
   const setActiveOrderDate = useUiStore((s) => s.setActiveOrderDate);
   const requestFocusDay = useUiStore((s) => s.requestFocusDay);
@@ -356,7 +432,10 @@ function EmptyDayCard({ date }: { date: string }) {
           <CalendarDays className="size-4 text-muted-foreground" />
           {formatDay(fromISODate(date))}
         </h3>
-        <Badge tone="neutral">No meal yet</Badge>
+        {/* The bin stands where the "No meal yet" chip used to: the card's own
+            body already says the day is empty, so the chip was repeating it in
+            the one spot the day had for an action. */}
+        {onRemove ? <RemoveDayButton date={date} onRemove={onRemove} /> : null}
       </div>
       <CardBody className="flex flex-col items-center gap-3 py-6 text-center">
         <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
