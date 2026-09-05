@@ -4,6 +4,7 @@ import * as React from "react";
 import { Check } from "lucide-react";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { PortionPicker } from "@/components/menu/portion-picker";
+import { OptionDietary } from "@/components/menu/option-dietary";
 import { formatCurrency, cn } from "@/lib/utils";
 import { portionOf, summarizeAddOns, cleanOptionName } from "@/data/menu";
 import type { MenuItem, AddOnGroup } from "@/data/types";
@@ -184,6 +185,9 @@ export function OptionGroups({
                         {/* The price lives in its own badge, so drop the
                             "(+$3)" the option name carries for legacy surfaces. */}
                         <span className="block truncate font-medium">{cleanOptionName(option.name)}</span>
+                        {/* What picking this does to the plate's diet — the
+                            meal's own tags describe it before any choice. */}
+                        <OptionDietary tags={option.tags} allergens={option.allergens} />
                       </span>
                     </span>
                     {/* Under a group portion the price is a sum, and it shows as

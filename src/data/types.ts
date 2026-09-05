@@ -43,6 +43,13 @@ export interface AddOnOption {
   name: string;
   /** Up-charge in dollars; 0 = included. */
   price: number;
+  /**
+   * What this option does to the plate's diet — the meal's own tags describe it
+   * as it ships by default, and a chosen protein or side can take them away.
+   */
+  tags?: DietaryTag[];
+  /** Allergens the option itself brings, e.g. "Milk, Egg". Omit for none. */
+  allergens?: string;
 }
 
 /**
@@ -103,6 +110,8 @@ export interface ServingOption {
   /** Per-serving up-charge over the package's per-guest price. 0 = included. */
   upchargePerServing: number;
   tags?: DietaryTag[];
+  /** Allergens the option itself brings, e.g. "Milk, Egg". Omit for none. */
+  allergens?: string;
 }
 
 /**

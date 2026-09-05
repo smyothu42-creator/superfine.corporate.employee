@@ -41,9 +41,9 @@ export const INDIVIDUAL_OPTION_GROUPS: AddOnGroup[] = [
     select: "single",
     required: true,
     options: [
-      { id: "chicken", name: "Chicken", price: 2 },
-      { id: "beef", name: "Beef", price: 3 },
-      { id: "tofu", name: "Tofu", price: 1.5 },
+      { id: "chicken", name: "Chicken", price: 2, tags: ["Gluten-Free", "Dairy-Free"] },
+      { id: "beef", name: "Beef", price: 3, tags: ["Gluten-Free", "Dairy-Free"] },
+      { id: "tofu", name: "Tofu", price: 1.5, tags: ["Vegan", "Gluten-Free"], allergens: "Soy" },
     ],
     // How much protein, asked once for the group — the same question the
     // family-style packages ask, so a dish is portioned the same way whether
@@ -56,9 +56,9 @@ export const INDIVIDUAL_OPTION_GROUPS: AddOnGroup[] = [
     select: "single",
     required: true,
     options: [
-      { id: "ranch", name: "Ranch", price: 0.5 },
-      { id: "italian", name: "Italian", price: 0.5 },
-      { id: "caesar", name: "Caesar Dressing", price: 0 },
+      { id: "ranch", name: "Ranch", price: 0.5, tags: ["Vegetarian", "Gluten-Free"], allergens: "Milk, Egg" },
+      { id: "italian", name: "Italian", price: 0.5, tags: ["Vegan", "Gluten-Free"] },
+      { id: "caesar", name: "Caesar Dressing", price: 0, allergens: "Milk, Egg, Fish (anchovy)" },
     ],
   },
   {
@@ -67,8 +67,8 @@ export const INDIVIDUAL_OPTION_GROUPS: AddOnGroup[] = [
     select: "single",
     required: false,
     options: [
-      { id: "garlic-bread", name: "Garlic Bread", price: 1.5 },
-      { id: "rice", name: "Rice", price: 1 },
+      { id: "garlic-bread", name: "Garlic Bread", price: 1.5, tags: ["Vegetarian"], allergens: "Wheat, Milk" },
+      { id: "rice", name: "Rice", price: 1, tags: ["Vegan", "Gluten-Free"] },
       { id: "napkins", name: "Extra Napkins", price: 0 },
     ],
   },
@@ -80,15 +80,15 @@ export const INDIVIDUAL_OPTION_GROUPS: AddOnGroup[] = [
  * with a sauce.
  */
 const FAMILY_PROTEIN_CHOICES: ServingOption[] = [
-  { id: "chicken", name: "Chicken", upchargePerServing: 2 },
-  { id: "paneer", name: "Paneer", upchargePerServing: 2.5 },
-  { id: "tofu", name: "Tofu", upchargePerServing: 1.5 },
+  { id: "chicken", name: "Chicken", upchargePerServing: 2, tags: ["Gluten-Free", "Dairy-Free"] },
+  { id: "paneer", name: "Paneer", upchargePerServing: 2.5, tags: ["Vegetarian", "Gluten-Free"], allergens: "Milk" },
+  { id: "tofu", name: "Tofu", upchargePerServing: 1.5, tags: ["Vegan", "Gluten-Free"], allergens: "Soy" },
 ];
 
 const FAMILY_SAUCE_CHOICES: ServingOption[] = [
-  { id: "ranch", name: "Ranch", upchargePerServing: 0.5 },
-  { id: "bbq", name: "BBQ", upchargePerServing: 0.5 },
-  { id: "honey-mustard", name: "Honey Mustard", upchargePerServing: 0.5 },
+  { id: "ranch", name: "Ranch", upchargePerServing: 0.5, tags: ["Vegetarian", "Gluten-Free"], allergens: "Milk, Egg" },
+  { id: "bbq", name: "BBQ", upchargePerServing: 0.5, tags: ["Vegan", "Gluten-Free"] },
+  { id: "honey-mustard", name: "Honey Mustard", upchargePerServing: 0.5, tags: ["Vegetarian", "Gluten-Free"], allergens: "Egg, Mustard" },
 ];
 
 /**

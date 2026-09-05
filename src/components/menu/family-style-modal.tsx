@@ -14,6 +14,7 @@ import {
   familyStyleTotal,
 } from "@/data/menu";
 import { PortionPicker, PortionedPrice } from "@/components/menu/portion-picker";
+import { OptionDietary } from "@/components/menu/option-dietary";
 import { useDialog } from "@/lib/use-dialog";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { MenuItem, ServingGroup } from "@/data/types";
@@ -288,14 +289,16 @@ export function FamilyStyleModal({
       </p>
     );
 
-  /* Same treatment as the individual-meal sheet, and the same as checkout's
-     "Add a delivery address": the coral pill at full strength once the table is
-     balanced, at half while it isn't. Half-strength but never `disabled` — what
-     it's waiting on is a serving count up this same sheet, so it stays tappable
-     and jumps to the group that doesn't add up. See `add-on-modal.tsx`. */
+  /* Full strength throughout, exactly as the individual-meal sheet's button —
+     see the reasoning spelled out in `add-on-modal.tsx`. It used to sit at half
+     opacity while the table was unbalanced, which read as disabled and
+     discouraged the very tap that moves things forward: the button is always
+     live, and "Balance Protein" takes the tap and jumps to the group that
+     doesn't add up. The label alone carries what's left to do; the line above it
+     names the groups. */
   const cta = (className: string) => (
     <Button
-      className={cn(className, !valid && "opacity-50 hover:bg-coral")}
+      className={className}
       size="lg"
       onClick={() => (valid ? confirm() : scrollToGroup(unbalanced[0].id))}
     >
@@ -511,6 +514,7 @@ function ServingGroupPicker({
                   <p className="truncate text-[13px] font-medium">
                     {option.name}
                   </p>
+                  <OptionDietary tags={option.tags} allergens={option.allergens} />
                   {/* With a portion on the group, every row shows the sum and
                       both halves of it; without one there's nothing to break
                       down, so a bare up-charge stays a bare up-charge. */}
