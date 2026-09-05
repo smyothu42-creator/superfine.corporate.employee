@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Leaf, Wheat, ShieldCheck, AlertTriangle, Check } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Leaf } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { Badge } from "@/components/ui/badge";
@@ -24,13 +24,6 @@ import { toast } from "@/store/use-toast-store";
 import { nextServiceDays, startOfToday, toISODate, fromISODate, formatDay, WEEKDAY_SHORT } from "@/lib/dates";
 import { formatCurrency } from "@/lib/utils";
 import type { MenuItem } from "@/data/types";
-
-const TAG_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
-  Vegan: Leaf,
-  Vegetarian: Leaf,
-  "Gluten-Free": Wheat,
-  Halal: ShieldCheck,
-};
 
 export function ItemDetailView({ item }: { item: MenuItem }) {
   const router = useRouter();
@@ -120,111 +113,179 @@ export function ItemDetailView({ item }: { item: MenuItem }) {
         <ArrowLeft className="size-4" /> Back to menu
       </Link>
 
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
-        <Card className="overflow-hidden">
-          {/* Decorative: the <h2> directly below is the meal's name. Naming the
-              photo as well makes a screen reader say it twice in a row. */}
-          <FoodPhoto src={item.image} alt="" className="aspect-[5/3]" iconClassName="size-16" />
-          <CardBody className="space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="font-display text-2xl font-semibold tracking-tight">{item.name}</h2>
-                <p className="mt-0.5 text-[13px] text-muted-foreground">
-                  {item.cuisine} · {menuCategory(item)}
-                  {family ? ` · ${minGuestsFor(item)} guest minimum` : ""}
-                </p>
-              </div>
-              {program.showPrices ? (
-                <span className="shrink-0 text-right">
-                  <span className="block font-display text-2xl font-semibold nums">
-                    {formatCurrency(family ? pricePerGuestFor(item) : item.price)}
-                  </span>
-                  {family ? (
-                    <span className="block text-2xs text-muted-foreground">per guest</span>
-                  ) : null}
-                </span>
+      {/* Two columns: the meal on the left as a stack of cards — who it is and
+          what it means for you, then what it asks — and the preview card on the
+          right holding the photo, the price and the ingredients. */}
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-6">
+        {/* Left — the name and every section that asks or tells something.
+            Ordered second on a phone so the photo still introduces the meal. */}
+        <div className="order-2 min-w-0 space-y-5 lg:order-1">
+          {/* Who the meal is, and whether you can eat it. One card, because the
+              second half only makes sense as a fact about the first: a rule
+              between them, not a gap. */}
+          <Card>
+            <CardBody>
+              <h1 className="font-display text-3xl font-semibold tracking-tight">{item.name}</h1>
+              <p className="mt-1 text-[13px] text-muted-foreground">
+                {item.cuisine} · {menuCategory(item)}
+                {family ? ` · ${minGuestsFor(item)} guest minimum` : ""}
+              </p>
+              <p className="mt-3 text-lg font-medium leading-relaxed text-foreground">
+                {item.description}
+              </p>
+              {allergenHit ? (
+                <Notice tone="warning" className="mt-4">
+                  <AlertTriangle className="inline size-3.5" /> Heads up: this item lists an allergen on
+                  your profile (<strong>{me.allergens.join(", ")}</strong>). See the allergens below.
+                </Notice>
               ) : null}
-            </div>
-            {/* Prominent description — larger, black — with what's included right
-                beneath it, so the sides are visible before any scrolling. */}
-            <p className="text-lg font-medium leading-relaxed text-foreground">{item.description}</p>
 
-            {family && item.includedItems?.length ? (
-              <div className="rounded-2xl border border-border bg-muted/40 p-3.5">
-                <div className="text-overline">Included with every package</div>
-                <ul className="mt-2 space-y-1.5">
-                  {item.includedItems.map((inc) => (
-                    <li key={inc.name} className="flex items-baseline justify-between gap-3 text-sm">
-                      <span className="flex min-w-0 items-baseline gap-2">
-                        <Check className="size-4 shrink-0 translate-y-0.5 text-primary" />
-                        <span className="font-medium text-foreground">{inc.name}</span>
-                      </span>
-                      {inc.note ? (
-                        <span className="shrink-0 text-2xs text-muted-foreground">{inc.note}</span>
-                      ) : null}
-                    </li>
+              <div className="mt-5 border-t border-border pt-5">
+                <h2 className="font-display text-base font-semibold tracking-tight">
+                  Dietary &amp; allergens
+                </h2>
+                {/* Tags and allergens on one wrapping row, centred on a shared
+                    line rather than stacked as a row of pills over a sentence
+                    that started somewhere else. They answer the same question —
+                    what is in this for me — so they read as one line of facts,
+                    and the tag pills give the row its height. */}
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  {/* One leaf on every chip. Per-tag glyphs (wheat for
+                      gluten-free, a shield for halal) made three pills that
+                      differ in shape as well as word, and the eye reads the row
+                      as three kinds of thing rather than one list of tags. */}
+                  {item.tags.map((tag) => (
+                    <Badge key={tag} tone="brand" className="h-6 gap-1 px-2.5">
+                      <Leaf className="size-3" />
+                      {tag}
+                    </Badge>
                   ))}
-                </ul>
+                  <span className="text-[13px] leading-none text-muted-foreground">
+                    <span className="font-semibold text-foreground">Contains:</span>{" "}
+                    {item.allergens || "no listed allergens"}
+                  </span>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* The questions, in their own card. A meal with nothing to choose
+              gets no card at all: its Add button is docked to the viewport, not
+              to this column, so the card would be an empty pill under the one
+              above. Family packages always ask for a headcount, so they always
+              get one. */}
+          {asksSomething ? (
+            <Card>
+              <CardBody>
+                <h2 className="font-display text-base font-semibold tracking-tight">
+                  {family ? "Guests & servings" : "Choose your options"}
+                </h2>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">
+                  {family
+                    ? "Tell us the headcount and how the dishes should split."
+                    : "Every choice is packed into its own box."}
+                </p>
+                <div className="mt-4">{configurator}</div>
+              </CardBody>
+            </Card>
+          ) : (
+            /* Nothing to choose. The slot still gets a card, because an empty
+               column under the meal reads as a page that failed to load its
+               options — and because the Add button is docked to the foot of the
+               viewport, far from anything explaining why it is the only control
+               on the page. Saying so plainly is shorter than making someone
+               scroll to find out. The configurator still renders alongside: it
+               is what puts that docked bar on the page. */
+            <>
+              <Card>
+                <CardBody>
+                  <h2 className="font-display text-base font-semibold tracking-tight">
+                    Nothing to choose
+                  </h2>
+                  <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                    This meal comes as it is. Just add it to your order below.
+                  </p>
+                </CardBody>
+              </Card>
+              {configurator}
+            </>
+          )}
+        </div>
+
+        {/* Right — the preview card: the photo and the plain facts about the
+            package, held still while the left column is answered. */}
+        <Card
+          /* Sticky, but never taller than the room it has: a family package's
+             card (photo, price, ingredients, allergens, the included list) runs
+             past the fold, and a sticky box taller than the viewport pins its
+             top and puts its last lines somewhere the page can never scroll to.
+             Capping it and letting the card scroll inside keeps every line
+             reachable. The subtracted height is the top offset plus the docked
+             commit bar at the foot of the screen. */
+          className="order-1 overflow-hidden lg:order-2 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto"
+        >
+          <CardBody className="space-y-4">
+            {/* Decorative: the <h1> in the left column is the meal's name, so
+                naming the photo as well says it twice in a row. */}
+            <FoodPhoto
+              src={item.image}
+              alt=""
+              /* Square, as on the menu cards, and the full width of the card —
+                 the card is what was narrowed to bring the photo down, so the
+                 two shrink together and the photo never floats in a box wider
+                 than itself. */
+              className="aspect-square rounded-xl"
+              iconClassName="size-10"
+            />
+            {program.showPrices ? (
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-sm font-semibold text-foreground">
+                  {family ? "Per guest" : "Price"}
+                </span>
+                <span className="font-display text-2xl font-semibold nums">
+                  {formatCurrency(family ? pricePerGuestFor(item) : item.price)}
+                </span>
               </div>
             ) : null}
 
-            {/* Dietary restrictions and allergens, merged into one section. */}
-            <div>
-              <div className="text-overline">Dietary &amp; allergens</div>
-              {item.tags.length ? (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {item.tags.map((tag) => {
-                    const Icon = TAG_ICON[tag];
-                    return (
-                      <Badge key={tag} tone="brand" className="gap-1">
-                        {Icon ? <Icon className="size-3" /> : null}
-                        {tag}
-                      </Badge>
-                    );
-                  })}
-                </div>
-              ) : null}
-              {item.allergens ? (
-                <p className="mt-2 text-[13px] text-muted-foreground">
-                  <span className="font-semibold text-foreground">Contains:</span> {item.allergens}
-                </p>
-              ) : null}
-            </div>
+            {/* What the dish is made of, in the card with the photo of it — the
+                one line that only describes the food. Dietary and allergens are
+                a different question (can *I* eat this?), and they stay on the
+                left with the choices they bear on. */}
+            {item.ingredients ? (
+              <p className="border-t border-border pt-4 text-sm leading-relaxed text-muted-foreground">
+                <span className="font-semibold text-foreground">What&rsquo;s in it:</span>{" "}
+                {item.ingredients}
+              </p>
+            ) : null}
 
-            {allergenHit ? (
-              <Notice tone="warning">
-                <AlertTriangle className="inline size-3.5" /> Heads up: this item lists an allergen on your
-                profile (<strong>{me.allergens.join(", ")}</strong>). See the allergens above.
-              </Notice>
+            {/* What comes with the package, as one wrapping sentence rather than
+                a ticked list. The list gave five sides five rows and a column of
+                right-aligned notes, which read as five decisions to make — they
+                are not decisions at all, they simply arrive. As prose it takes
+                three lines and matches the allergen line directly above it, so
+                the whole card is one voice describing the meal. Each side keeps
+                its note in parentheses; that is where "1 per guest" and "shared
+                trays" live now. */}
+            {family && item.includedItems?.length ? (
+              <p className="border-t border-border pt-4 text-sm leading-relaxed text-muted-foreground">
+                <span className="font-semibold text-foreground">Included with every package:</span>{" "}
+                {item.includedItems
+                  .map((inc) => (inc.note ? `${inc.name} (${inc.note.toLowerCase()})` : inc.name))
+                  .join(", ")}
+              </p>
             ) : null}
           </CardBody>
         </Card>
-
-        {/* Options + add — the full configurator inline (same as the popup).
-            The card is drawn only when there is something to hold: a meal with
-            nothing to choose renders no body at all (its Add button is docked
-            to the viewport, not to this column), so the card would be an empty
-            pill under the details. Family packages always ask for a headcount,
-            so they always get one. */}
-        <div className="space-y-5">
-          {asksSomething ? (
-            <Card>
-              <CardBody className="space-y-3">{configurator}</CardBody>
-            </Card>
-          ) : (
-            configurator
-          )}
-        </div>
       </div>
 
       {/* Both embedded configurators dock their commit bar to the foot of the
           viewport, so the foot of the page is under it. The spacer is the page's
-          job, not theirs: they render inside the card above, where reserving the
-          room would just open a hole in the card instead of below it. Sized for
-          the taller of the two bars — family style carries a total and a
-          balancing line over its button. */}
+          job, not theirs: they render inside the column above, where reserving
+          the room would open a hole mid-page instead of below it. Sized for the
+          taller of the two bars — family style carries a total and a balancing
+          line over its button. */}
       <div className="h-32" aria-hidden />
     </div>
   );
 }
-

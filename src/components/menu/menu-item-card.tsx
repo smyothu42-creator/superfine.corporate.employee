@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, Check, Leaf, Wheat, ShieldCheck, SunSnow, Flame, Nut, Milk, Users } from "lucide-react";
+import { Plus, Check, Leaf, SunSnow, Flame, Users } from "lucide-react";
 import { FoodPhoto } from "@/components/menu/food-photo";
 import { flyCardToCart } from "@/lib/fly-to-cart";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -14,15 +14,6 @@ import {
   minGuestsFor,
 } from "@/data/menu";
 import type { MenuItem } from "@/data/types";
-
-const TAG_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
-  Vegan: Leaf,
-  Vegetarian: Leaf,
-  "Gluten-Free": Wheat,
-  Halal: ShieldCheck,
-  "Nut-Free": Nut,
-  "Dairy-Free": Milk,
-};
 
 interface MenuItemCardProps {
   item: MenuItem;
@@ -80,15 +71,16 @@ export function MenuItemCard({
   // Dietary tags (Vegan, Gluten-Free, …) — part of the secondary meta section.
   const dietaryTags = item.tags.length ? (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs font-medium text-muted-foreground">
-      {item.tags.map((tag) => {
-        const Icon = TAG_ICON[tag] ?? Leaf;
-        return (
-          <span key={tag} className="inline-flex items-center gap-1">
-            <Icon className="size-3 text-primary" />
-            {tag}
-          </span>
-        );
-      })}
+      {/* One leaf on every tag, as on the meal detail page. A glyph per tag
+          (wheat, a shield, a nut, a milk carton) made a row of six-odd small
+          pictures that differ in shape as much as in meaning, and at 12px the
+          difference is noise: the word is what's read. */}
+      {item.tags.map((tag) => (
+        <span key={tag} className="inline-flex items-center gap-1">
+          <Leaf className="size-3 text-primary" />
+          {tag}
+        </span>
+      ))}
     </div>
   ) : null;
 
